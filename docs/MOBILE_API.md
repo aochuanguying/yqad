@@ -16,7 +16,7 @@
 
 ### 1.1 查询短信列表
 
-获取短信记录列表。
+获取短信记录列表。支持分页查询，最大返回 100 条记录。
 
 **请求**
 
@@ -28,7 +28,7 @@ GET /api/posts/mobile/sms
 
 | 参数名 | 类型 | 必填 | 默认值 | 说明 |
 |--------|------|------|--------|------|
-| limit | number | 否 | 50 | 返回记录数限制 |
+| limit | number | 否 | 50 | 返回记录数限制（最大 100） |
 | offset | number | 否 | 0 | 偏移量 |
 | phone_number | string | 否 | - | 按电话号码筛选 |
 
@@ -42,17 +42,21 @@ GET /api/posts/mobile/sms
       "id": 1,
       "phoneNumber": "13800138000",
       "content": "您的验证码是 123456",
-      "receivedAt": "2024-06-27T10:30:00.000Z",
-      "createdAt": "2024-06-27T10:31:00.000Z"
+      "receivedAt": "2024-06-27T10:30:00.000Z"
     },
     {
       "id": 2,
       "phoneNumber": "13900139000",
       "content": "您好，这是一条测试短信",
-      "receivedAt": "2024-06-27T09:15:00.000Z",
-      "createdAt": "2024-06-27T09:16:00.000Z"
+      "receivedAt": "2024-06-27T09:15:00.000Z"
     }
-  ]
+  ],
+  "pagination": {
+    "total": 150,
+    "limit": 50,
+    "offset": 0,
+    "hasMore": true
+  }
 }
 ```
 
@@ -60,11 +64,14 @@ GET /api/posts/mobile/sms
 
 | 字段名 | 类型 | 说明 |
 |--------|------|------|
-| id | number | 记录 ID |
+| id | number | 记录 ID（前端隐藏，仅 API 返回） |
 | phoneNumber | string | 发送方电话号码 |
-| content | string | 短信内容 |
+| content | string | 短信内容（支持点击查看详情） |
 | receivedAt | string (ISO 8601) | 短信接收时间 |
-| createdAt | string (ISO 8601) | 记录创建时间 |
+| pagination.total | number | 总记录数 |
+| pagination.limit | number | 每页记录数 |
+| pagination.offset | number | 当前偏移量 |
+| pagination.hasMore | boolean | 是否还有更多数据 |
 
 **状态码**
 
@@ -131,7 +138,7 @@ Content-Type: application/json
 
 ### 2.1 查询未接电话列表
 
-获取未接电话记录列表。
+获取未接电话记录列表。支持分页查询，最大返回 100 条记录。
 
 **请求**
 
@@ -143,7 +150,7 @@ GET /api/posts/mobile/missed-calls
 
 | 参数名 | 类型 | 必填 | 默认值 | 说明 |
 |--------|------|------|--------|------|
-| limit | number | 否 | 50 | 返回记录数限制 |
+| limit | number | 否 | 50 | 返回记录数限制（最大 100） |
 | offset | number | 否 | 0 | 偏移量 |
 | phone_number | string | 否 | - | 按电话号码筛选 |
 
@@ -156,16 +163,20 @@ GET /api/posts/mobile/missed-calls
     {
       "id": 1,
       "phoneNumber": "13800138000",
-      "receivedAt": "2024-06-27T10:30:00.000Z",
-      "createdAt": "2024-06-27T10:31:00.000Z"
+      "receivedAt": "2024-06-27T10:30:00.000Z"
     },
     {
       "id": 2,
       "phoneNumber": "13900139000",
-      "receivedAt": "2024-06-27T09:15:00.000Z",
-      "createdAt": "2024-06-27T09:16:00.000Z"
+      "receivedAt": "2024-06-27T09:15:00.000Z"
     }
-  ]
+  ],
+  "pagination": {
+    "total": 150,
+    "limit": 50,
+    "offset": 0,
+    "hasMore": true
+  }
 }
 ```
 
@@ -173,10 +184,13 @@ GET /api/posts/mobile/missed-calls
 
 | 字段名 | 类型 | 说明 |
 |--------|------|------|
-| id | number | 记录 ID |
+| id | number | 记录 ID（前端隐藏，仅 API 返回） |
 | phoneNumber | string | 呼叫方电话号码 |
 | receivedAt | string (ISO 8601) | 电话接收时间 |
-| createdAt | string (ISO 8601) | 记录创建时间 |
+| pagination.total | number | 总记录数 |
+| pagination.limit | number | 每页记录数 |
+| pagination.offset | number | 当前偏移量 |
+| pagination.hasMore | boolean | 是否还有更多数据 |
 
 **状态码**
 
@@ -426,3 +440,4 @@ curl -X POST "http://localhost:3001/api/posts/mobile/missed-calls" \
 | 版本 | 日期 | 说明 |
 |------|------|------|
 | v1.0 | 2024-06-27 | 初始版本，提供短信和未接电话的增删查改功能 |
+| v1.1 | 2024-06-27 | 短信列表支持分页（最大 100 条），隐藏 ID 和创建时间，支持点击查看详情；未接电话列表同样支持分页、隐藏 ID 和创建时间 |

@@ -5790,15 +5790,24 @@
       loadSmsList();
     }
 
+    // 当前短信分页状态
+    let smsCurrentPage = 1;
+    const smsPageSize = 20; // 每页 20 条
+    let smsTotalCount = 0;
+
     // 加载短信列表
-    async function loadSmsList() {
+    async function loadSmsList(page = 1) {
       const container = document.getElementById('sms-list-container');
       
       try {
-        const resp = await fetch('/api/posts/mobile/sms?limit=50');
+        const offset = (page - 1) * smsPageSize;
+        const resp = await fetch(`/api/posts/mobile/sms?limit=${smsPageSize}&offset=${offset}`);
         const result = await resp.json();
         
         if (result.success && result.data) {
+          smsTotalCount = result.pagination?.total || result.data.length;
+          smsCurrentPage = page;
+          
           if (result.data.length === 0) {
             container.innerHTML = `
               <div class="flex items-center justify-center py-12">
@@ -5806,33 +5815,48 @@
               </div>
             `;
           } else {
+            const totalPages = Math.ceil(smsTotalCount / smsPageSize);
             container.innerHTML = `
               <div class="overflow-x-auto">
                 <table class="min-w-full divide-y divide-gray-200">
                   <thead class="bg-gray-50">
                     <tr>
-                      <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
                       <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">电话号码</th>
                       <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">短信内容</th>
                       <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">接收时间</th>
-                      <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">创建时间</th>
                     </tr>
                   </thead>
                   <tbody class="bg-white divide-y divide-gray-200">
                     ${result.data.map(sms => `
                       <tr>
-                        <td class="px-4 py-3 text-sm text-gray-900">${sms.id}</td>
                         <td class="px-4 py-3 text-sm text-gray-900">${sms.phoneNumber}</td>
-                        <td class="px-4 py-3 text-sm text-gray-900 max-w-md truncate">${sms.content}</td>
+                        <td class="px-4 py-3 text-sm text-gray-900 max-w-md truncate cursor-pointer text-blue-600 hover:text-blue-800" 
+                            onclick="showSmsContent('${sms.content.replace(/'/g, "\\'")}')"
+                            title="点击查看详情">
+                          ${sms.content.length > 50 ? sms.content.substring(0, 50) + '...' : sms.content}
+                        </td>
                         <td class="px-4 py-3 text-sm text-gray-500">${new Date(sms.receivedAt).toLocaleString('zh-CN')}</td>
-                        <td class="px-4 py-3 text-sm text-gray-500">${new Date(sms.createdAt).toLocaleString('zh-CN')}</td>
                       </tr>
                     `).join('')}
                   </tbody>
                 </table>
               </div>
-              <div class="px-4 py-3 border-t bg-gray-50 text-sm text-gray-600">
-                共 ${result.data.length} 条记录
+              <div class="px-4 py-3 border-t bg-gray-50 flex items-center justify-between">
+                <div class="text-sm text-gray-600">
+                  共 ${smsTotalCount} 条记录，第 ${smsCurrentPage} 页 / 共 ${totalPages} 页
+                </div>
+                <div class="flex gap-2">
+                  <button 
+                    onclick="loadSmsList(${smsCurrentPage - 1})" 
+                    ${smsCurrentPage === 1 ? 'disabled class="px-3 py-1 bg-gray-200 text-gray-400 rounded cursor-not-allowed"' : 'class="px-3 py-1 bg-white border border-gray-300 text-gray-700 rounded hover:bg-gray-50"'}>
+                    上一页
+                  </button>
+                  <button 
+                    onclick="loadSmsList(${smsCurrentPage + 1})" 
+                    ${smsCurrentPage >= totalPages ? 'disabled class="px-3 py-1 bg-gray-200 text-gray-400 rounded cursor-not-allowed"' : 'class="px-3 py-1 bg-white border border-gray-300 text-gray-700 rounded hover:bg-gray-50"'}>
+                    下一页
+                  </button>
+                </div>
               </div>
             `;
           }
@@ -5841,6 +5865,50 @@
         }
       } catch (error) {
         container.innerHTML = `<div class="p-4 text-red-500">加载失败：${error.message}</div>`;
+      }
+    }
+
+    // 显示短信完整内容
+    function showSmsContent(content) {
+      const modalHtml = `
+        <div id="sms-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onclick="closeSmsModal()">
+          <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto" onclick="event.stopPropagation()">
+            <div class="p-6">
+              <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-semibold text-gray-800">📨 短信详情</h3>
+                <button onclick="closeSmsModal()" class="text-gray-400 hover:text-gray-600">
+                  <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                  </svg>
+                </button>
+              </div>
+              <div class="prose max-w-none">
+                <p class="whitespace-pre-wrap text-gray-700 text-base leading-relaxed">${content}</p>
+              </div>
+              <div class="mt-6 flex justify-end">
+                <button onclick="closeSmsModal()" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+                  关闭
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+      
+      // 移除可能存在的旧模态框
+      const existingModal = document.getElementById('sms-modal');
+      if (existingModal) {
+        existingModal.remove();
+      }
+      
+      document.body.insertAdjacentHTML('beforeend', modalHtml);
+    }
+
+    // 关闭短信详情模态框
+    function closeSmsModal() {
+      const modal = document.getElementById('sms-modal');
+      if (modal) {
+        modal.remove();
       }
     }
 
@@ -5870,15 +5938,24 @@
       loadMissedCallsList();
     }
 
+    // 当前未接电话分页状态
+    let missedCallsCurrentPage = 1;
+    const missedCallsPageSize = 20; // 每页 20 条
+    let missedCallsTotalCount = 0;
+
     // 加载未接电话列表
-    async function loadMissedCallsList() {
+    async function loadMissedCallsList(page = 1) {
       const container = document.getElementById('missed-calls-list-container');
       
       try {
-        const resp = await fetch('/api/posts/mobile/missed-calls?limit=50');
+        const offset = (page - 1) * missedCallsPageSize;
+        const resp = await fetch(`/api/posts/mobile/missed-calls?limit=${missedCallsPageSize}&offset=${offset}`);
         const result = await resp.json();
         
         if (result.success && result.data) {
+          missedCallsTotalCount = result.pagination?.total || result.data.length;
+          missedCallsCurrentPage = page;
+          
           if (result.data.length === 0) {
             container.innerHTML = `
               <div class="flex items-center justify-center py-12">
@@ -5886,31 +5963,42 @@
               </div>
             `;
           } else {
+            const totalPages = Math.ceil(missedCallsTotalCount / missedCallsPageSize);
             container.innerHTML = `
               <div class="overflow-x-auto">
                 <table class="min-w-full divide-y divide-gray-200">
                   <thead class="bg-gray-50">
                     <tr>
-                      <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
                       <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">电话号码</th>
                       <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">接收时间</th>
-                      <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">创建时间</th>
                     </tr>
                   </thead>
                   <tbody class="bg-white divide-y divide-gray-200">
                     ${result.data.map(call => `
                       <tr>
-                        <td class="px-4 py-3 text-sm text-gray-900">${call.id}</td>
                         <td class="px-4 py-3 text-sm text-gray-900">${call.phoneNumber}</td>
                         <td class="px-4 py-3 text-sm text-gray-500">${new Date(call.receivedAt).toLocaleString('zh-CN')}</td>
-                        <td class="px-4 py-3 text-sm text-gray-500">${new Date(call.createdAt).toLocaleString('zh-CN')}</td>
                       </tr>
                     `).join('')}
                   </tbody>
                 </table>
               </div>
-              <div class="px-4 py-3 border-t bg-gray-50 text-sm text-gray-600">
-                共 ${result.data.length} 条记录
+              <div class="px-4 py-3 border-t bg-gray-50 flex items-center justify-between">
+                <div class="text-sm text-gray-600">
+                  共 ${missedCallsTotalCount} 条记录，第 ${missedCallsCurrentPage} 页 / 共 ${totalPages} 页
+                </div>
+                <div class="flex gap-2">
+                  <button 
+                    onclick="loadMissedCallsList(${missedCallsCurrentPage - 1})" 
+                    ${missedCallsCurrentPage === 1 ? 'disabled class="px-3 py-1 bg-gray-200 text-gray-400 rounded cursor-not-allowed"' : 'class="px-3 py-1 bg-white border border-gray-300 text-gray-700 rounded hover:bg-gray-50"'}>
+                    上一页
+                  </button>
+                  <button 
+                    onclick="loadMissedCallsList(${missedCallsCurrentPage + 1})" 
+                    ${missedCallsCurrentPage >= totalPages ? 'disabled class="px-3 py-1 bg-gray-200 text-gray-400 rounded cursor-not-allowed"' : 'class="px-3 py-1 bg-white border border-gray-300 text-gray-700 rounded hover:bg-gray-50"'}>
+                    下一页
+                  </button>
+                </div>
               </div>
             `;
           }

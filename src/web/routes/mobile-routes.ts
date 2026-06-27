@@ -90,6 +90,7 @@ router.post('/sms', mixedAuthMiddleware, async (req: Request, res: Response) => 
 /**
  * GET /api/posts/mobile/sms
  * 查询短信记录列表（混合认证：Session 或 API Token）
+ * 支持分页，最大返回 100 条记录
  */
 router.get('/sms', mixedAuthMiddleware, async (req: Request, res: Response) => {
   try {
@@ -97,13 +98,23 @@ router.get('/sms', mixedAuthMiddleware, async (req: Request, res: Response) => {
 
     const options = {
       phoneNumber: phone_number as string | undefined,
-      limit: limit ? parseInt(limit as string, 10) : 50,
+      limit: Math.min(limit ? parseInt(limit as string, 10) : 50, 100), // 最多 100 条
       offset: offset ? parseInt(offset as string, 10) : 0,
     };
 
     const records = await mobileSmsStorage.getSmsList(options);
+    const total = await mobileSmsStorage.getSmsCount(options.phoneNumber);
     
-    res.json({ success: true, data: records });
+    res.json({ 
+      success: true, 
+      data: records,
+      pagination: {
+        total,
+        limit: options.limit,
+        offset: options.offset,
+        hasMore: options.offset + options.limit < total
+      }
+    });
   } catch (error: any) {
     logger.error(`查询短信记录失败：${error.message}`);
     res.status(500).json({ error: '服务器内部错误', code: 'INTERNAL_ERROR' });

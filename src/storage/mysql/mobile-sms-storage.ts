@@ -51,11 +51,37 @@ class MobileSmsStorage extends BaseDAO {
         `INSERT INTO mobile_sms (phone_number, content, received_at) VALUES (?, ?, ?)`,
         [record.phoneNumber, record.content, record.receivedAt]
       );
-      logger.info(`短信记录已添加，ID: ${result.insertId}`);
-      return result.insertId;
+      
+      const insertId = result.insertId;
+      logger.info(`短信记录已添加，ID: ${insertId}`);
+      
+      // 清理超过 100 条的旧记录（按接收时间排序，保留最新的 100 条）
+      await this.cleanupOldRecords();
+      
+      return insertId;
     } catch (error) {
       logger.error('添加短信记录失败:', error instanceof Error ? error.message : String(error));
       throw error;
+    }
+  }
+
+  private async cleanupOldRecords(): Promise<void> {
+    try {
+      // 删除超过 100 条的旧记录，保留最新的 100 条（按 received_at 降序排序）
+      await this.query(`
+        DELETE FROM mobile_sms 
+        WHERE id NOT IN (
+          SELECT id FROM (
+            SELECT id FROM mobile_sms 
+            ORDER BY received_at DESC 
+            LIMIT 100
+          ) AS recent_records
+        )
+      `);
+      logger.info('已清理超过 100 条的旧短信记录');
+    } catch (error) {
+      logger.error('清理旧短信记录失败:', error instanceof Error ? error.message : String(error));
+      // 清理失败不影响主流程，仅记录日志
     }
   }
 

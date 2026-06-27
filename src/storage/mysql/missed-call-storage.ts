@@ -49,11 +49,37 @@ class MissedCallStorage extends BaseDAO {
         `INSERT INTO missed_calls (phone_number, received_at) VALUES (?, ?)`,
         [record.phoneNumber, record.receivedAt]
       );
-      logger.info(`未接电话记录已添加，ID: ${result.insertId}`);
-      return result.insertId;
+      
+      const insertId = result.insertId;
+      logger.info(`未接电话记录已添加，ID: ${insertId}`);
+      
+      // 清理超过 100 条的旧记录（按接收时间排序，保留最新的 100 条）
+      await this.cleanupOldRecords();
+      
+      return insertId;
     } catch (error) {
       logger.error('添加未接电话记录失败:', error instanceof Error ? error.message : String(error));
       throw error;
+    }
+  }
+
+  private async cleanupOldRecords(): Promise<void> {
+    try {
+      // 删除超过 100 条的旧记录，保留最新的 100 条（按 received_at 降序排序）
+      await this.query(`
+        DELETE FROM missed_calls 
+        WHERE id NOT IN (
+          SELECT id FROM (
+            SELECT id FROM missed_calls 
+            ORDER BY received_at DESC 
+            LIMIT 100
+          ) AS recent_records
+        )
+      `);
+      logger.info('已清理超过 100 条的旧未接电话记录');
+    } catch (error) {
+      logger.error('清理旧未接电话记录失败:', error instanceof Error ? error.message : String(error));
+      // 清理失败不影响主流程，仅记录日志
     }
   }
 
