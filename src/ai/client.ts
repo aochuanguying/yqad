@@ -60,6 +60,8 @@ export async function generateContent(
     const config = loadConfig();
     const aiConfig = config.ai;
     
+    console.log(`[AI Client] 配置中的 providers: ${JSON.stringify(aiConfig?.providers?.map(p => p.name) || [])}`);
+    
     // 获取第一个 provider
     const provider = aiConfig.providers?.[0];
     if (!provider) {

@@ -9,7 +9,7 @@ export interface AIProviderConfig {
   model: string;
   temperature?: number;
   maxTokens?: number;
-  requestTimeout?: number;  // 单个模型的请求超时(毫秒)
+  requestTimeout?: number;  // 单个模型的请求超时 (毫秒)
 }
 
 export interface AppConfig {
@@ -218,12 +218,12 @@ export interface AppConfig {
  * 若配置中未声明 providers，将顶层 ai.* 字段包装为单元素数组（向后兼容旧格式）。
  */
 function normalizeAIConfig(config: AppConfig): void {
-  // 如果 config.ai 不存在，初始化为空对象（从数据库读取）
+  // 如果 config.ai 不存在，初始化为空对象
   if (!config.ai) {
     config.ai = {};
   }
   
-  // providers 从数据库读取，这里不处理
+  // providers 从数据库读取，这里不处理（由应用启动时注入）
 }
 
 /**
@@ -294,9 +294,10 @@ function migrateMaterialProcessingConfig(config: AppConfig): void {
 }
 
 let cachedConfig: AppConfig | null = null;
+let aiProvidersInitialized = false;
 
 export function loadConfig(): AppConfig {
-  if (cachedConfig) return cachedConfig;
+  if (cachedConfig && cachedConfig.ai?.providers !== undefined) return cachedConfig;
 
   const configPath = path.resolve(process.cwd(), 'config/default.yaml');
   const localConfigPath = path.resolve(process.cwd(), 'config/local.yaml');
@@ -331,7 +332,7 @@ export function loadConfig(): AppConfig {
     config.web.auth.enabled = process.env.WEB_AUTH_ENABLED === 'true';
   }
 
-  // 归一化 AI 配置，确保 providers 数组可用
+  // 归一化 AI 配置
   normalizeAIConfig(config);
   normalizeApiConfig(config);
   normalizeSchedulerConfig(config);
@@ -341,8 +342,56 @@ export function loadConfig(): AppConfig {
   // 迁移素材整理调度配置（旧格式 -> 新格式）
   migrateMaterialProcessingConfig(config);
 
+  // 如果已经初始化过 AI providers，尝试从数据库重新加载
+  if (aiProvidersInitialized && !config.ai?.providers) {
+    try {
+      const { AIProviderStorage } = require('../storage/mysql/ai-provider-storage');
+      const storage = AIProviderStorage.getInstance();
+      // 同步读取（假设数据库连接已建立）
+      const promise = storage.getEnabledProviders();
+      promise.then((providers: any[]) => {
+        if (cachedConfig && cachedConfig.ai) {
+          cachedConfig.ai.providers = providers;
+        }
+      }).catch((err: any) => {
+        console.warn('[Config] 异步加载 AI Provider 失败:', err.message);
+      });
+    } catch (error: any) {
+      // 忽略错误，providers 会在下次 loadAIProvidersFromDB 时加载
+    }
+  }
+
   cachedConfig = config;
   return config;
+}
+
+/**
+ * 从数据库加载 AI Provider 并更新缓存
+ * 必须在 MySQL 初始化完成后调用
+ */
+export async function loadAIProvidersFromDB(): Promise<void> {
+  try {
+    const { AIProviderStorage } = await import('../storage/mysql/ai-provider-storage');
+    const storage = AIProviderStorage.getInstance();
+    const providers = await storage.getEnabledProviders();
+    
+    if (!cachedConfig) {
+      loadConfig();
+    }
+    
+    if (!cachedConfig!.ai) cachedConfig!.ai = {};
+    cachedConfig!.ai.providers = providers;
+    aiProvidersInitialized = true;
+    
+    console.log(`[Config] 从数据库加载了 ${providers.length} 个 AI Provider`);
+    console.log(`[Config] 缓存配置中的 providers: ${JSON.stringify(providers.map(p => p.name))}`);
+  } catch (error: any) {
+    console.warn('[Config] 从数据库读取 AI Provider 失败:', error.message);
+    if (!cachedConfig) cachedConfig = loadConfig();
+    if (!cachedConfig!.ai) cachedConfig!.ai = {};
+    cachedConfig!.ai.providers = [];
+    aiProvidersInitialized = true;
+  }
 }
 
 function deepMerge(target: any, source: any): any {

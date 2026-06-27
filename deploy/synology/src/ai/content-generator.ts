@@ -4,6 +4,7 @@ import { PostFeatures } from '../services/comment-analyzer';
 import { PostGenerationOptions } from '../types/posting-optimization';
 import { loadConfig } from '../utils/config';
 import { getLogger } from '../utils/logger';
+import { getContentLimitsStorage } from '../storage/mysql/content-limits-storage';
 
 const logger = getLogger('content-gen');
 
@@ -33,8 +34,18 @@ export async function generateComment(
     recentOpenings?: string[];
   }
 ): Promise<GeneratedComment> {
-  const config = loadConfig();
-  const { min, max } = config.contentLimits.comment;
+  // 从数据库获取内容限制配置
+  let min = 5;
+  let max = 20;
+  try {
+    const limitsConfig = await getContentLimitsStorage().getConfig();
+    if (limitsConfig) {
+      min = limitsConfig.comment.min;
+      max = limitsConfig.comment.max;
+    }
+  } catch (error: any) {
+    logger.warn(`获取内容限制配置失败，使用默认值：${error.message}`);
+  }
 
   // 使用拟人化 prompt 策略
   const useColloquial = Math.random() < 0.3;
@@ -66,8 +77,19 @@ export async function generatePost(
 ): Promise<GeneratedPost> {
   const config = loadConfig();
   const mode = options?.mode ?? 'normal';
-  let min = config.contentLimits.post.min;
-  let max = config.contentLimits.post.max;
+  
+  // 从数据库获取内容限制配置
+  let min = 100;
+  let max = 480;
+  try {
+    const limitsConfig = await getContentLimitsStorage().getConfig();
+    if (limitsConfig) {
+      min = limitsConfig.post.min;
+      max = limitsConfig.post.max;
+    }
+  } catch (error: any) {
+    logger.warn(`获取内容限制配置失败，使用默认值：${error.message}`);
+  }
 
   if (mode === 'featured') {
     min = Math.max(min, config.featuredPosting.minContentChars);

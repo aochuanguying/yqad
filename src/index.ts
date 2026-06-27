@@ -16,6 +16,7 @@ import { commentConfigStorage } from './storage/mysql/comment-config-storage';
 import { postConfigStorage } from './storage/mysql/post-config-storage';
 import { schedulerConfigStorage } from './storage/mysql/scheduler-config-storage';
 import { apiConfigStorage } from './storage/mysql/api-config-storage';
+import { loadAIProvidersFromDB } from './utils/config';
 
 const logger = getLogger('main');
 
@@ -46,6 +47,8 @@ async function main() {
   // 初始化 MySQL 存储（可选，失败时不影响运行）
   try {
     await initializeMySQLStorage();
+    // MySQL 初始化完成后，从数据库加载 AI Provider 配置
+    await loadAIProvidersFromDB();
   } catch (error) {
     logger.warn('MySQL 初始化失败，将仅使用 Redis 存储:', error);
   }

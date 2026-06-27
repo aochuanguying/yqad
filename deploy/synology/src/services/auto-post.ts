@@ -5,6 +5,7 @@ import { AuthService } from './auth';
 import { generatePost, GeneratedPost } from '../ai/content-generator';
 import { loadConfig } from '../utils/config';
 import { getLogger } from '../utils/logger';
+import { getContentLimitsStorage } from '../storage/mysql/content-limits-storage';
 import { Topic } from '../web/services/topics-service';
 import { load as loadGlobalPrompt } from './global-prompt-service';
 import { selectImages, selectFeaturedImageCandidates } from './image-selector';
@@ -724,7 +725,17 @@ export class AutoPostService {
       ? Math.max(2, config.featuredPosting.maxGenerateRetries)
       : 2;
     const historyTitles = topic.postHistory.map((h: any) => h.title);
-    const minContentChars = mode === 'featured' ? config.featuredPosting.minContentChars : config.contentLimits.post.min;
+    
+    // 从数据库获取内容限制配置
+    let minContentChars = mode === 'featured' ? config.featuredPosting.minContentChars : 100;
+    try {
+      const limitsConfig = await getContentLimitsStorage().getConfig();
+      if (limitsConfig && mode !== 'featured') {
+        minContentChars = limitsConfig.post.min;
+      }
+    } catch (error: any) {
+      logger.warn(`获取内容限制配置失败，使用默认值：${error.message}`);
+    }
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       const generated = await generatePost(
@@ -878,6 +889,20 @@ export class AutoPostService {
       // 使用第一篇参考帖子的标题作为主题方向
       const topic = references[0].title || '奥迪用车分享';
 
+      // 从数据库获取内容限制配置
+      let minContentChars = featuredEnabled ? config.featuredPosting.minContentChars : 100;
+      let maxGenerateRetries = featuredEnabled ? config.featuredPosting.maxGenerateRetries : 0;
+      if (!featuredEnabled) {
+        try {
+          const limitsConfig = await getContentLimitsStorage().getConfig();
+          if (limitsConfig) {
+            minContentChars = limitsConfig.post.min;
+          }
+        } catch (error: any) {
+          logger.warn(`获取内容限制配置失败，使用默认值：${error.message}`);
+        }
+      }
+
       const generated = await this.generatePostWithMinChars(
         topic,
         recentTopics,
@@ -887,8 +912,8 @@ export class AutoPostService {
           referenceTexts: references,
           mode: featuredEnabled ? 'featured' : 'normal',
         },
-        featuredEnabled ? config.featuredPosting.minContentChars : config.contentLimits.post.min,
-        featuredEnabled ? config.featuredPosting.maxGenerateRetries : 0
+        minContentChars,
+        maxGenerateRetries
       );
 
       // 抄袭检测
@@ -1375,6 +1400,20 @@ export class AutoPostService {
         const topic = references[0].title || '奥迪用车分享';
         const globalPrompt = loadGlobalPrompt() ?? undefined;
 
+        // 从数据库获取内容限制配置
+        let minContentChars = featuredEnabled ? config.featuredPosting.minContentChars : 100;
+        let maxGenerateRetries = featuredEnabled ? config.featuredPosting.maxGenerateRetries : 0;
+        if (!featuredEnabled) {
+          try {
+            const limitsConfig = await getContentLimitsStorage().getConfig();
+            if (limitsConfig) {
+              minContentChars = limitsConfig.post.min;
+            }
+          } catch (error: any) {
+            logger.warn(`获取内容限制配置失败，使用默认值：${error.message}`);
+          }
+        }
+
         generated = await this.generatePostWithMinChars(
           topic,
           recentTopics,
@@ -1384,8 +1423,8 @@ export class AutoPostService {
             referenceTexts: references,
             mode: featuredEnabled ? 'featured' : 'normal',
           },
-          featuredEnabled ? config.featuredPosting.minContentChars : config.contentLimits.post.min,
-          featuredEnabled ? config.featuredPosting.maxGenerateRetries : 0
+          minContentChars,
+          maxGenerateRetries
         );
 
         // 抄袭检测
