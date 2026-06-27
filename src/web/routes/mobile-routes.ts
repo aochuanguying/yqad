@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { getLogger } from '../../utils/logger';
+import { verifyApiToken } from '../../utils/api-token';
 import { mobileSmsStorage, MobileSmsRecord } from '../../storage/mysql/mobile-sms-storage';
 import { missedCallStorage, MissedCallRecord } from '../../storage/mysql/missed-call-storage';
 
@@ -7,13 +8,56 @@ const logger = getLogger('mobile-routes');
 
 const router = Router();
 
+/**
+ * 混合认证中间件
+ * 系统内部访问：Session 认证（已登录用户无需 Token）
+ * 外部设备访问：API Token 认证（使用发帖 API Token）
+ */
+async function mixedAuthMiddleware(req: any, res: any, next: any) {
+  try {
+    // 优先检查 Session 认证（系统内部访问）
+    if (req.session && req.session.authenticated) {
+      logger.info('Session 会话认证通过（系统内部访问）');
+      return next();
+    }
+
+    // 其次检查 API Token 认证（外部设备访问）
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      logger.warn('鉴权失败：缺少 Authorization 头');
+      return res.status(401).json({ error: '缺少 Authorization 头', code: 'UNAUTHORIZED' });
+    }
+
+    // 提取 Token
+    const token = authHeader.split(' ')[1];
+    if (!token) {
+      logger.warn('鉴权失败：Token 格式无效');
+      return res.status(401).json({ error: 'Token 格式无效', code: 'INVALID_TOKEN' });
+    }
+
+    // 验证 Token（使用发帖 API Token）
+    const isValid = await verifyApiToken(token);
+    if (!isValid) {
+      logger.warn(`鉴权失败：Token 无效`);
+      return res.status(401).json({ error: 'Token 无效', code: 'INVALID_TOKEN' });
+    }
+    
+    logger.info('API Token 鉴权成功（外部设备访问）');
+    next();
+  } catch (error: any) {
+    logger.error(`混合认证异常：${error.message}`);
+    res.status(401).json({ error: '鉴权失败', code: 'AUTH_FAILED' });
+  }
+}
+
 // ==================== 手机短信 API ====================
 
 /**
  * POST /api/posts/mobile/sms
- * 添加短信记录
+ * 添加短信记录（混合认证：Session 或 API Token）
  */
-router.post('/sms', async (req: Request, res: Response) => {
+router.post('/sms', mixedAuthMiddleware, async (req: Request, res: Response) => {
   try {
     const { phone_number, content, received_at } = req.body;
 
@@ -45,9 +89,9 @@ router.post('/sms', async (req: Request, res: Response) => {
 
 /**
  * GET /api/posts/mobile/sms
- * 查询短信记录列表
+ * 查询短信记录列表（混合认证：Session 或 API Token）
  */
-router.get('/sms', async (req: Request, res: Response) => {
+router.get('/sms', mixedAuthMiddleware, async (req: Request, res: Response) => {
   try {
     const { phone_number, limit, offset } = req.query;
 
@@ -70,9 +114,9 @@ router.get('/sms', async (req: Request, res: Response) => {
 
 /**
  * POST /api/posts/mobile/missed-calls
- * 添加未接电话记录
+ * 添加未接电话记录（混合认证：Session 或 API Token）
  */
-router.post('/missed-calls', async (req: Request, res: Response) => {
+router.post('/missed-calls', mixedAuthMiddleware, async (req: Request, res: Response) => {
   try {
     const { phone_number, received_at } = req.body;
 
@@ -103,9 +147,9 @@ router.post('/missed-calls', async (req: Request, res: Response) => {
 
 /**
  * GET /api/posts/mobile/missed-calls
- * 查询未接电话记录列表
+ * 查询未接电话记录列表（混合认证：Session 或 API Token）
  */
-router.get('/missed-calls', async (req: Request, res: Response) => {
+router.get('/missed-calls', mixedAuthMiddleware, async (req: Request, res: Response) => {
   try {
     const { phone_number, limit, offset } = req.query;
 

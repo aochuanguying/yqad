@@ -6,7 +6,9 @@
 
 **基础路径**: `/api/posts/mobile`
 
-**认证方式**: 无（无需鉴权，可直接调用）
+**认证方式**: 混合认证
+- **系统内部访问**：Session 会话认证（已登录用户无需 Token）
+- **外部设备访问**：API Token 认证（使用发帖 API Token，格式：`Bearer <token>`）
 
 ---
 
@@ -120,6 +122,7 @@ Content-Type: application/json
 |--------|------|
 | 200 | 成功 |
 | 400 | 缺少必填字段 |
+| 401 | 未登录或 Token 无效 |
 | 500 | 服务器内部错误 |
 
 ---
@@ -180,6 +183,7 @@ GET /api/posts/mobile/missed-calls
 | 状态码 | 说明 |
 |--------|------|
 | 200 | 成功 |
+| 401 | 未登录或 Token 无效 |
 | 500 | 服务器内部错误 |
 
 ---
@@ -360,12 +364,18 @@ add_sms('13800138000', '这是一条测试短信')
 ### 4.3 cURL
 
 ```bash
-# 查询短信列表
-curl -X GET "http://localhost:3001/api/posts/mobile/sms?limit=50"
+# 系统内部访问（已登录，使用 Cookie）
+curl -X GET "http://localhost:3001/api/posts/mobile/sms?limit=50" \
+  -H "Cookie: session=your_session_id"
+
+# 外部设备访问（使用 API Token）
+curl -X GET "http://localhost:3001/api/posts/mobile/sms?limit=50" \
+  -H "Authorization: Bearer YOUR_API_TOKEN"
 
 # 添加短信记录
 curl -X POST "http://localhost:3001/api/posts/mobile/sms" \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_API_TOKEN" \
   -d '{
     "phone_number": "13800138000",
     "content": "这是一条测试短信",
@@ -373,11 +383,13 @@ curl -X POST "http://localhost:3001/api/posts/mobile/sms" \
   }'
 
 # 查询未接电话列表
-curl -X GET "http://localhost:3001/api/posts/mobile/missed-calls?limit=50"
+curl -X GET "http://localhost:3001/api/posts/mobile/missed-calls?limit=50" \
+  -H "Authorization: Bearer YOUR_API_TOKEN"
 
 # 添加未接电话记录
 curl -X POST "http://localhost:3001/api/posts/mobile/missed-calls" \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_API_TOKEN" \
   -d '{
     "phone_number": "13800138000",
     "received_at": "2024-06-27T10:30:00.000Z"
@@ -388,7 +400,9 @@ curl -X POST "http://localhost:3001/api/posts/mobile/missed-calls" \
 
 ## 5. 注意事项
 
-1. **认证要求**: 所有 API 无需鉴权，可直接调用
+1. **认证方式**: 
+   - 系统内部访问（Web 管理界面）：使用 Session Cookie，无需 Token
+   - 外部设备访问：使用发帖 API Token，格式为 `Authorization: Bearer <token>`
 2. **时间格式**: 时间字段使用 ISO 8601 格式 (如：`2024-06-27T10:30:00.000Z`)
 3. **字符编码**: 请求和响应都使用 UTF-8 编码
 4. **分页查询**: 建议使用 `limit` 和 `offset` 参数进行分页查询
@@ -400,6 +414,8 @@ curl -X POST "http://localhost:3001/api/posts/mobile/missed-calls" \
 
 | 错误码 | HTTP 状态码 | 说明 |
 |--------|------------|------|
+| UNAUTHORIZED | 401 | 未登录或 Token 无效 |
+| INVALID_TOKEN | 401 | Token 格式无效 |
 | MISSING_FIELDS | 400 | 缺少必填字段 |
 | INTERNAL_ERROR | 500 | 服务器内部错误 |
 
