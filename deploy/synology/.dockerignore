@@ -1,0 +1,40 @@
+# 编译产物
+dist
+**/*.js
+**/*.d.ts
+**/*.js.map
+**/*.d.ts.map
+
+# 测试文件
+**/__tests__
+**/*.test.ts
+**/*.spec.ts
+
+# 备份文件
+**/*.bak
+
+# 文档
+*.md
+!README.md
+
+# 开发工具
+.idea
+.vscode
+*.swp
+*.swo
+
+# 日志
+logs
+*.log
+
+# 环境变量
+.env
+.env.local
+
+# Docker 相关文件
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# 数据目录（运行时挂载）
+data

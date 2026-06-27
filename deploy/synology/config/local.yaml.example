@@ -1,0 +1,54 @@
+# 本地配置覆盖示例
+# 复制此文件为 local.yaml 并根据实际需求修改
+# 注意：请勿将真实密码提交到版本控制系统！
+
+# API 设置
+api:
+  mode: real  # real 或 mock
+  nickName: "您的昵称"
+  ipRegion: "您的 IP 归属地"
+
+# AI 配置
+ai:
+  requestTimeout: 120000  # AI 请求超时时间（毫秒）
+
+# 任务开关
+comment:
+  enabled: false
+post:
+  enabled: true
+  dailyLimit: 1
+
+# ========== Web 认证配置（新增）==========
+# 重要：开放外网访问时必须配置！
+
+web:
+  auth:
+    enabled: true  # 是否启用 Web 认证
+    
+    # 方式一：使用配置文件（开发环境）
+    username: admin  # 管理员用户名
+    passwordHash: ""  # bcrypt 密码哈希（使用 npm run generate-password-hash 生成）
+    
+    # 方式二：使用环境变量（推荐用于生产环境）
+    # 在 .env 文件或 Docker 环境中设置：
+    # WEB_AUTH_USERNAME=admin
+    # WEB_AUTH_PASSWORD_HASH=$2b$10$...
+    # WEB_AUTH_SESSION_SECRET=your-secret-key
+    
+    sessionSecret: ""  # Session 签名密钥（生产环境必须设置）
+    sessionMaxAge: 86400000  # Session 有效期（毫秒），默认 24 小时
+    
+    # 公开路由白名单（不需要认证的路由）
+    publicRoutes:
+      - "/api/auth/login"        # 登录接口
+      - "/api/auth/status"        # 登录状态查询
+      - "/api/posts/token"        # 远程发帖 API（独立 Token 认证）
+      - "/api/posts/token/*"      # 远程发帖 API 所有子路由
+
+# ========== 安全建议 ==========
+# 1. 生产环境必须使用 HTTPS
+# 2. 使用强密码（至少 12 位，包含大小写字母、数字、特殊字符）
+# 3. 定期更换密码
+# 4. 配置文件权限设置为 600（仅所有者可读写）
+# 5. 使用环境变量存储敏感信息，不要提交到版本控制

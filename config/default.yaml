@@ -1,0 +1,234 @@
+api:
+  mode: "real"
+  baseUrl: "https://audi2c.faw-vw.com"
+  timeout: 10000
+  deviceId: "AUDI_APP_iPhone_71A0E430-DB97-448F-868A-A6352E31FC13_26.5_6.1.1"
+  nickName: "王大锤"
+  ipRegion: "山东省"
+auth:
+  tokenStorePath: "./data/api-token.json"
+mysql:
+  test:
+    host: "10.6.0.5"
+    port: 3306
+    user: "root"
+    password: "Wfw7539148@"
+    database: "yqad_db"
+    connectionLimit: 5
+  production:
+    host: "mysql"
+    port: 3306
+    user: "root"
+    password: "Wfw7539148@"
+    database: "yqad_db"
+    connectionLimit: 10
+  connectTimeout: 10000
+  acquireTimeout: 30000
+  timeout: 30000
+ai:
+  providerOrder:
+    - "gpt"
+    - "higpt"
+  requestTimeout: 120000
+  providers:
+    - name: "gpt"
+      model: "gpt-5.5"
+      baseUrl: "http://47.104.95.133:16781/v1"
+      apiKey: "sk-chenyao-JBr74LyRGDbxaih1OqtHJcFP2Og3n8BeroW82Y2P"
+      temperature: 0.7
+      maxTokens: 1000
+      requestTimeout: 30000
+    - name: "higpt"
+      model: "higpt"
+      baseUrl: "https://higpt.hxfssc.com:8088/v1"
+      apiKey: "LqgltIIdlFVQFdi5EMa98HtRVXzq6KGA"
+      temperature: 0.7
+      maxTokens: 6000
+      requestTimeout: 60000
+  fallback:
+    enabled: true
+    mode: "robust"
+    maxRetries: 2
+    baseDelay: 2000
+    maxDelay: 10000
+    providerOrder:
+      - "gpt"
+      - "higpt"
+  timeout:
+    global: 30000
+    dynamicAdjustment: true
+    scene:
+      comment: 15000
+      post: 60000
+      analysis: 30000
+  rateLimit:
+    enabled: true
+    tokensPerMinute: 60
+    burstSize: 10
+    whitelist:
+      - "higpt"
+  circuitBreaker:
+    enabled: true
+    failureThreshold: 5
+    resetTimeout: 60000
+    halfOpenMaxRequests: 3
+comment:
+  enabled: false
+  dailyLimit: 3
+  delayMin: 60
+  delayMax: 180
+  maxFetchPages: 5
+post:
+  enabled: true
+  mode: "mock"
+  dailyLimit: 1
+  avoidRepeatDays: 7
+featuredPosting:
+  enabled: true
+  minContentChars: 250
+  minImages: 4
+  maxImages: 9
+  maxGenerateRetries: 2
+  maxImageUploadRetries: 2
+scheduler:
+  comment:
+    cron: "0 10 * * *"
+    randomOffsetMin: 0
+    randomOffsetMax: 600
+  post:
+    cron: "0 12 * * *"
+    randomOffsetMin: 0
+    randomOffsetMax: 360
+  materialProcessing:
+    intervalMinutes: 45
+    enabled: true
+web:
+  enabled: true
+  port: 3000
+  baseUrl: "http://192.168.50.191:3000"
+  auth:
+    sessionSecret: "random-secret-key-yqad-auto-tasks"
+    sessionMaxAge: 86400000
+    publicRoutes:
+      - "/api/auth/login"
+      - "/api/auth/status"
+      - "/api/auth/token-status"
+      - "/api/auth/verify"
+      - "/api/member/info"
+      - "/api/posts/token"
+      - "/api/posts/token/*"
+      - "/api/posts/generate"
+      - "/api/posts/batch"
+      - "/api/posts/confirm"
+      - "/api/posts/tasks/*"
+materials:
+  basePath: "./data/materials/processed"
+  rawPath: "./data/materials/raw"
+  processedPath: "./data/materials/processed"
+  processing:
+    enabled: true
+    outputFormat: "jpeg"
+    jpegQuality: 82
+    enableVision: true
+    maxFilesPerRun: 1000
+    heicFallback:
+      enabled: true
+      command: "auto"
+      timeoutMs: 30000
+contentLimits:
+  comment:
+    min: 5
+    max: 20
+  post:
+    min: 100
+    max: 480
+internetReference:
+  enabled: true
+  searchKeywords:
+    - "奥迪"
+    - "奥迪 Q5L"
+    - "奥迪用车"
+    - "自驾游"
+    - "露营"
+  maxResults: 5
+  timeout: 90000
+  rateLimitPerHour: 10
+  platform: "xiaohongshu"
+  watermarkRemoval:
+    enabled: true
+    timeout: 30000
+    maxRetries: 2
+    batchSize: 5
+vehicleMonitor:
+  enabled: true
+  intervalMinutes: 15
+  quickIntervalMinutes: 5
+  safeDistanceMeters: 50
+  moveThresholdMeters: 50
+  minBatteryVolt: 11.5
+  alertPhone: "18953272532"
+  haBaseUrl: "https://ha.hxfssc.com:8088"
+  haToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiI3OWY2OGIxZmVjZGY0NTE3YjE2ZDI5NjgxN2I0ODJjYyIsImlhdCI6MTc4MTQ4Mzc4MiwiZXhwIjoyMDk2ODQzNzgyfQ.B4MZVRCLwc6w3cvftSNJWW2ZyzZY5jmj1NRcefnj-2g"
+  deviceTrackerEntity: "device_tracker.iphone"
+telecomApi:
+  enabled: true
+  apiUrl: "http://10.6.0.2:5000"
+  apiToken: "rDmpsGmKhmeGCt86h_Ovhxxtp1Mt2CxOu7p3Xac6xPg"
+  alertPhone: "18953272532"
+autojsApi:
+  enabled: true
+  baseUrl: "http://10.6.0.2:8899"
+  apiToken: "api_token_2ad316f6d071285a1929c9417db4ccc7b23133f96a960adf18534cb1f4380fa2"
+  postScript: "audi_post.js"
+contentDeduplication:
+  enabled: true
+  checkDays: 14
+  similarityThreshold: 0.7
+  titleWeight: 0.4
+  retainDays: 30
+sensitiveWordFilter:
+  enabled: true
+  wordLibraryPath: "./data/sensitive-words.json"
+  enableReplacement: true
+  autoRejectOnForbidden: true
+  warningThreshold: 3
+contentQualityScoring:
+  enabled: true
+  minScore: 60
+  weights:
+    completeness: 0.3
+    originality: 0.3
+    diversity: 0.2
+    attractiveness: 0.2
+postingIntervalControl:
+  enabled: true
+  minIntervalDays: 5
+  whitelist: []
+  enableEmergencyOverride: false
+complianceCheckReport:
+  enabled: true
+  storagePath: "./data/compliance-reports"
+  retainDays: 30
+  timeout: 5000
+  postScript: "audi_post.js"
+redis:
+  test:
+    host: "10.6.0.5"
+    port: 6379
+    db: 0
+    keyPrefix: "test:"
+  production:
+    host: "redis"
+    port: 6379
+    db: 1
+    keyPrefix: "prod:"
+hybridMaterial:
+  enabled: true
+  priorityMode: "hybrid"
+  localRatio: 0.6
+  internetRatio: 0.4
+enhancedCommentService:
+  enabled: true
+  enableSentimentAnalysis: true
+  enableSuspiciousDetection: true
+  logOnly: true

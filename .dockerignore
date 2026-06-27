@@ -1,0 +1,14 @@
+.git
+.trae
+openspec
+node_modules
+dist
+coverage
+logs
+data
+README_MacBook-Pro-4.local_Jun-08-235043-2026_Conflict.md
+config/local.yaml
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.DS_Store

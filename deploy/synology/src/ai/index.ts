@@ -1,0 +1,19 @@
+/**
+ * AI 模块入口
+ * 
+ * 导出所有 AI 相关功能
+ */
+
+export {
+  generateContent,
+  resetAIClient,
+  initFallbackMechanism,
+  getFallbackHealthStatus,
+  getProviderMetrics,
+  getAllHealthStatus,
+} from './client';
+
+export {
+  generatePost,
+  generateComment,
+} from './content-generator';

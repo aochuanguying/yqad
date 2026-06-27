@@ -1,0 +1,3453 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>一汽奥迪APP - 配置管理</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .tab-active { border-bottom: 2px solid #2563eb; color: #2563eb; font-weight: 600; }
+    .toast { animation: slideIn 0.3s ease-out; }
+    @keyframes slideIn { from { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    
+    /* 图片懒加载渐显效果 */
+    .lazy-image {
+      opacity: 0;
+      transition: opacity 0.3s ease-in-out;
+    }
+    .lazy-image.loaded {
+      opacity: 1;
+    }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+  <!-- Header -->
+  <header class="bg-white shadow-sm border-b">
+    <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-4">
+        <h1 class="text-xl font-bold text-gray-800">⚙️ 一汽奥迪 APP 配置管理</h1>
+        <a href="/ai-health.html" class="px-3 py-1 bg-green-600 text-white text-sm rounded-md hover:bg-green-700 transition-colors flex items-center gap-1">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+          </svg>
+          AI 健康状态
+        </a>
+        <a href="/vehicle-monitor.html" class="px-3 py-1 bg-orange-600 text-white text-sm rounded-md hover:bg-orange-700 transition-colors flex items-center gap-1">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5l5 5v6a2 2 0 01-2 2z"></path>
+          </svg>
+          车辆监控
+        </a>
+      </div>
+      <div class="flex items-center gap-4">
+        <span class="text-sm text-gray-500" id="status-text">加载中...</span>
+        <span id="user-info" class="text-sm text-gray-600 hidden"></span>
+        <button id="logout-btn" class="hidden px-3 py-1 bg-red-600 text-white text-sm rounded-md hover:bg-red-700 transition-colors flex items-center gap-1">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
+          </svg>
+          退出登录
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Toast notification -->
+  <div id="toast" class="fixed top-4 right-4 z-50 hidden"></div>
+
+  <!-- Main content -->
+  <main class="max-w-6xl mx-auto px-6 py-6">
+    <!-- Tabs -->
+    <div class="bg-white rounded-lg shadow-sm border overflow-hidden">
+      <nav class="flex overflow-x-auto border-b" id="tabs">
+        <button class="tab-btn px-4 py-3 text-sm whitespace-nowrap hover:bg-gray-50" data-group="api">API 设置</button>
+        <button class="tab-btn px-4 py-3 text-sm whitespace-nowrap hover:bg-gray-50 text-red-700 font-medium" data-group="login">🔐 登录</button>
+        <button class="tab-btn px-4 py-3 text-sm whitespace-nowrap hover:bg-gray-50 text-blue-700 font-medium" data-group="api-token">🔑 API Token</button>
+        <button class="tab-btn px-4 py-3 text-sm whitespace-nowrap hover:bg-gray-50" data-group="ai">AI 模型</button>
+        <button class="tab-btn px-4 py-3 text-sm whitespace-nowrap hover:bg-gray-50" data-group="comment">评论</button>
+        <button class="tab-btn px-4 py-3 text-sm whitespace-nowrap hover:bg-gray-50" data-group="post">发帖</button>
+        <button class="tab-btn px-4 py-3 text-sm whitespace-nowrap hover:bg-gray-50" data-group="scheduler">调度</button>
+        <button class="tab-btn px-4 py-3 text-sm whitespace-nowrap hover:bg-gray-50" data-group="contentLimits">内容长度</button>
+        <button class="tab-btn px-4 py-3 text-sm whitespace-nowrap hover:bg-gray-50 text-green-700 font-medium" data-group="materials">📷 素材库</button>
+        <button class="tab-btn px-4 py-3 text-sm whitespace-nowrap hover:bg-gray-50 text-purple-700 font-medium" data-group="topics">📝 发帖主题</button>
+        <button class="tab-btn px-4 py-3 text-sm whitespace-nowrap hover:bg-gray-50 text-indigo-700 font-medium" data-group="post-logs">📝 发帖日志</button>
+        <button class="tab-btn px-4 py-3 text-sm whitespace-nowrap hover:bg-gray-50 text-cyan-700 font-medium" onclick="window.open('/autojs-config.html', '_blank')">🤖 AutoJS 配置</button>
+        <button class="tab-btn px-4 py-3 text-sm whitespace-nowrap hover:bg-gray-50 text-orange-700 font-medium" data-group="vehicleMonitor">🚗 车辆监控</button>
+      </nav>
+
+      <!-- Form content -->
+      <div class="p-6" id="form-container">
+        <p class="text-gray-500">加载配置...</p>
+      </div>
+
+      <!-- Save button -->
+      <div class="px-6 py-4 border-t bg-gray-50 flex justify-end items-center gap-3">
+        <button id="manual-post-btn" class="hidden px-6 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+          </svg>
+          立即发帖
+        </button>
+        <button id="manual-comment-btn" class="hidden px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+          </svg>
+          立即评论
+        </button>
+        <button id="save-btn" class="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+          保存配置
+        </button>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    // 字段中文标签映射（完整版）
+    const FIELD_LABELS = {
+      api: {
+        mode: 'API 模式',
+        baseUrl: '服务器地址',
+        timeout: '请求超时 (毫秒)',
+        deviceId: '设备 ID',
+        nickName: '昵称',
+        ipRegion: 'IP 归属地',
+      },
+      auth: { username: '用户名', password: '密码' },
+      ai: {
+        providerOrder: '模型调用顺序（逗号分隔）',
+        requestTimeout: 'AI 请求超时 (毫秒)',
+        providers: 'AI 服务商列表',
+        fallback: '降级配置',
+        timeout: '超时控制',
+        rateLimit: '速率限制',
+        circuitBreaker: '熔断器',
+      },
+      comment: {
+        enabled: '启用评论',
+        dailyLimit: '每日评论上限',
+        delayMin: '最小延时 (秒)',
+        delayMax: '最大延时 (秒)',
+        maxFetchPages: '最大获取页数',
+      },
+      post: {
+        enabled: '启用发帖',
+        dailyLimit: '每日发帖上限',
+        avoidRepeatDays: '避免重复天数',
+      },
+      featuredPosting: {
+        enabled: '启用精选发帖',
+        minContentChars: '最小内容字数',
+        minImages: '最小图片数',
+        maxGenerateRetries: '最大生成重试次数',
+        maxImageUploadRetries: '最大图片上传重试次数',
+      },
+      scheduler: {
+        comment: { cron: '评论定时', randomOffsetMin: '最小偏移 (分钟)', randomOffsetMax: '最大偏移 (分钟)' },
+        post: { cron: '发帖定时', randomOffsetMin: '最小偏移 (分钟)', randomOffsetMax: '最大偏移 (分钟)' },
+        materialProcessing: { intervalMinutes: '执行间隔 (分钟)', enabled: '启用间隔模式' },
+      },
+      web: { enabled: '启用 Web 界面', port: '端口' },
+      materials: {
+        basePath: '素材库路径',
+        rawPath: '原始素材路径',
+        processedPath: '处理后素材路径',
+        processing: '处理配置',
+      },
+      contentLimits: {
+        comment: { min: '评论最小长度', max: '评论最大长度' },
+        post: { min: '帖子最小长度', max: '帖子最大长度' },
+      },
+      internetReference: {
+        enabled: '启用互联网参考',
+        searchKeywords: '搜索关键词',
+        maxResults: '最大结果数',
+        timeout: '超时时间 (毫秒)',
+        rateLimitPerHour: '每小时请求限制',
+        platform: '参考平台',
+        watermarkRemoval: '水印移除配置',
+      },
+      vehicleMonitor: {
+        enabled: '启用车辆监控',
+        intervalMinutes: '正常监控间隔 (分钟)',
+        quickIntervalMinutes: '异常状态快速监控间隔 (分钟)',
+        safeDistanceMeters: '安全距离阈值 (米)',
+        moveThresholdMeters: '车辆移动判定阈值 (米)',
+        minBatteryVolt: '最低电池电压阈值 (V)',
+        haBaseUrl: 'Home Assistant 地址',
+        haToken: 'Home Assistant Token',
+        deviceTrackerEntity: '手机设备实体 ID',
+        token: '奥捷智行 Token',
+      },
+    };
+
+    // 字段提示词（Tooltip）映射
+    const FIELD_TOOLTIPS = {
+      // API 设置
+      'api.mode': '选择 API 模式：mock 为模拟数据，real 为真实 API',
+      'api.baseUrl': '一汽奥迪 APP 服务器地址，一般无需修改',
+      'api.timeout': 'API 请求超时时间，单位毫秒。建议 10000ms 以上',
+      'api.deviceId': '设备唯一标识符，用于模拟真实设备请求',
+      'api.nickName': '评论和发帖时显示的昵称',
+      'api.ipRegion': '评论和发帖时显示的 IP 归属地',
+
+      // AI 模型
+      'ai.providerOrder': '模型调用优先级顺序，从上到下依次尝试。逗号分隔，如：gpt,higpt',
+      'ai.requestTimeout': 'AI 请求默认超时时间，单位毫秒。单个模型可覆盖此值',
+      'ai.providers': '配置多个 AI 服务商，支持故障自动切换',
+      'ai.fallback.enabled': '是否启用降级机制，当主模型失败时自动切换备用模型',
+      'ai.fallback.mode': '降级模式：fast 快速失败，robust 稳健重试（评论�� fast，发帖用 robust）',
+      'ai.fallback.maxRetries': 'robust 模式下的最大重试次数',
+      'ai.fallback.baseDelay': '重试基础等待时间，单位毫秒',
+      'ai.fallback.maxDelay': '重试最大等待时间，单位毫秒',
+      'ai.timeout.global': '全局默认超时时间，单位毫秒',
+      'ai.timeout.dynamicAdjustment': '启用后，连续 3 次接近超时会自动增加 20% 超时时间',
+      'ai.timeout.scene.comment': '评论场景专用超时时间，单位毫秒',
+      'ai.timeout.scene.post': '发帖场景专用超时时间，单位毫秒',
+      'ai.timeout.scene.analysis': '内容分析场景专用超时时间，单位毫秒',
+      'ai.rateLimit.enabled': '是否启用速率限制，防止触发 API 频率限制',
+      'ai.rateLimit.tokensPerMinute': '每分钟允许的 token 数量',
+      'ai.rateLimit.burstSize': '突发容量，允许短时间内超过平均速率的请求数',
+      'ai.rateLimit.whitelist': '白名单模型，不受速率限制',
+      'ai.circuitBreaker.enabled': '是否启用熔断器，连续失败后自动暂停该模型',
+      'ai.circuitBreaker.failureThreshold': '连续失败多少次后触发熔断',
+      'ai.circuitBreaker.resetTimeout': '熔断后多少毫秒后尝试恢复',
+      'ai.circuitBreaker.halfOpenMaxRequests': '半开状态最多允许的请求数',
+
+      // 评论设置
+      'comment.enabled': '是否启用自动评论功能',
+      'comment.dailyLimit': '每天最多评论多少条',
+      'comment.delayMin': '评论后最小随机延时，单位秒。避免行为过于机械',
+      'comment.delayMax': '评论后最大随机延时，单位秒',
+      'comment.maxFetchPages': '获取帖子列表时最多获取多少页',
+
+      // 发帖设置
+      'post.enabled': '是否启用自动发帖功能',
+      'post.dailyLimit': '每天最多发布多少条帖子',
+      'post.avoidRepeatDays': '避免重复发帖的天数，防止内容重复',
+
+      // 精选发帖
+      'featuredPosting.enabled': '是否启用精选发帖模式，生成更高质量的内容',
+      'featuredPosting.minContentChars': '生成内容的最低字数要求',
+      'featuredPosting.minImages': '配图最少数量',
+      'featuredPosting.maxGenerateRetries': '内容生成失败时的最大重试次数',
+      'featuredPosting.maxImageUploadRetries': '图片上传失败时的最大重试次数',
+
+      // 调度设置
+      'scheduler.comment.cron': '评论任务的定时表达式，格式：秒 分 时 日 月 周',
+      'scheduler.comment.randomOffsetMin': '评论时间最小随机偏移，单位分钟。让执行时间更自然',
+      'scheduler.comment.randomOffsetMax': '评论时间最大随机偏移，单位分钟',
+      'scheduler.post.cron': '发帖任务的定时表达式',
+      'scheduler.post.randomOffsetMin': '发帖时间最小随机偏移，单位分钟',
+      'scheduler.post.randomOffsetMax': '发帖时间最大随机偏移，单位分钟',
+      'scheduler.materialProcessing.intervalMinutes': '素材整理任务的执行间隔时间，单位分钟（5-1440 分钟）',
+      'scheduler.materialProcessing.enabled': '是否启用间隔模式（启用后按固定间隔执行，禁用则使用 Cron 模式）',
+
+      // Web 设置
+      'web.enabled': '是否启用 Web 管理界面',
+      'web.port': 'Web 服务监听的端口号',
+
+      // 素材库
+      'materials.basePath': '素材库根路径',
+      'materials.rawPath': '原始素材（待处理）存储路径',
+      'materials.processedPath': '处理后素材（可用）存储路径',
+      'materials.processing.enabled': '是否启用素材自动处理（格式转换、���水印等）',
+      'materials.processing.outputFormat': '输出图片格式：jpeg 或 png',
+      'materials.processing.jpegQuality': 'JPEG 压缩质量 (1-100)',
+      'materials.processing.enableVision': '是否启用视觉分析（识别图片内容）',
+      'materials.processing.maxFilesPerRun': '每次处理的最大文件数',
+
+      // 内容长度限制
+      'contentLimits.comment.min': '评论内容的最低字数要求',
+      'contentLimits.comment.max': '评论内容的最高字数限制',
+      'contentLimits.post.min': '帖子内容的最低字数要求',
+      'contentLimits.post.max': '帖子内容的最高字数限制',
+
+      // 互联网参考
+      'internetReference.enabled': '是否启用互联网参考功能（从外部获取内容灵感）',
+      'internetReference.searchKeywords': '搜索关键词列表，用于查找相关内容',
+      'internetReference.maxResults': '每次搜索返回的最大结果数',
+      'internetReference.timeout': '搜索请求超时时间，单位毫秒',
+      'internetReference.rateLimitPerHour': '每小时最多搜索多少次，防止触发反爬',
+      'internetReference.platform': '参考平台：xiaohongshu（小红书）',
+      'internetReference.watermarkRemoval.enabled': '是否启用自动去水印',
+      'internetReference.watermarkRemoval.timeout': '去水印请求超时时间，单位毫秒',
+      'internetReference.watermarkRemoval.maxRetries': '去水印失败时的最大重试次数',
+      'internetReference.watermarkRemoval.batchSize': '批量去水印的批次大小',
+
+      // 车辆监控
+      'vehicleMonitor.enabled': '是否启用车辆监控功能（奥捷智行 API 集成）',
+      'vehicleMonitor.intervalMinutes': '正常情况下监控间隔时间，单位分钟',
+      'vehicleMonitor.quickIntervalMinutes': '检测到异常（车辆移动、低电量）时的快速监控间隔，单位分钟',
+      'vehicleMonitor.safeDistanceMeters': '车辆与手机位置的安全距离阈值，超过此距离会告警',
+      'vehicleMonitor.moveThresholdMeters': '判定车辆发生移动的阈值，单位米',
+      'vehicleMonitor.minBatteryVolt': '最低电池电压阈值，低于此值会告警',
+      'vehicleMonitor.haBaseUrl': 'Home Assistant 服务器地址，用于推送告警',
+      'vehicleMonitor.haToken': 'Home Assistant 长期访问 Token',
+      'vehicleMonitor.deviceTrackerEntity': 'Home Assistant 中的手机设备追踪实体 ID',
+      'vehicleMonitor.token': '奥捷智行访问 Token（从 iOS Scriptable 获取）',
+    };
+
+    let currentGroup = 'api';
+    let configData = {};
+
+    // 初始化
+    async function init() {
+      await checkAuthStatus();
+      await loadConfig();
+      setupTabs();
+      switchTab('api');
+      setupLogout();
+    }
+
+    // 检查登录状态
+    async function checkAuthStatus() {
+      try {
+        const resp = await fetch('/api/auth/status');
+        const data = await resp.json();
+        
+        if (data.data && data.data.authenticated) {
+          // 已登录，显示用户信息和登出按钮
+          const userInfo = document.getElementById('user-info');
+          const logoutBtn = document.getElementById('logout-btn');
+          
+          if (userInfo && logoutBtn) {
+            userInfo.textContent = `欢迎，${data.data.username || '管理员'}`;
+            userInfo.classList.remove('hidden');
+            logoutBtn.classList.remove('hidden');
+          }
+        } else {
+          // 未登录，跳转到登录页
+          window.location.href = '/login.html?redirect=' + encodeURIComponent(window.location.pathname);
+        }
+      } catch (e) {
+        console.error('检查登录状态失败:', e);
+        window.location.href = '/login.html?redirect=' + encodeURIComponent(window.location.pathname);
+      }
+    }
+
+    // 设置登出功能
+    function setupLogout() {
+      const logoutBtn = document.getElementById('logout-btn');
+      if (logoutBtn) {
+        logoutBtn.addEventListener('click', async () => {
+          try {
+            const resp = await fetch('/api/auth/logout', { method: 'POST' });
+            if (resp.ok) {
+              showToast('已退出登录', 'success');
+              setTimeout(() => {
+                window.location.href = '/login.html';
+              }, 500);
+            } else {
+              showToast('退出登录失败', 'error');
+            }
+          } catch (e) {
+            console.error('退出登录失败:', e);
+            showToast('退出登录失败', 'error');
+          }
+        });
+      }
+    }
+
+    // 加载配置
+    async function loadConfig() {
+      try {
+        const resp = await fetch('/api/config');
+        if (!resp.ok) {
+          if (resp.status === 401) {
+            window.location.href = '/login.html?redirect=' + encodeURIComponent(window.location.pathname);
+            return;
+          }
+          throw new Error(`HTTP ${resp.status}`);
+        }
+        configData = await resp.json();
+        document.getElementById('status-text').textContent = '已连接';
+      } catch (e) {
+        document.getElementById('status-text').textContent = '连接失败';
+        showToast('无法加载配置：' + e.message, 'error');
+      }
+    }
+
+    // 设置 Tab 点击事件
+    function setupTabs() {
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        // 只对有 data-group 的按钮绑定事件
+        if (btn.dataset.group) {
+          btn.addEventListener('click', () => switchTab(btn.dataset.group));
+        }
+      });
+    }
+
+    // 切换 Tab
+    function switchTab(group) {
+      currentGroup = group;
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.toggle('tab-active', btn.dataset.group === group);
+      });
+
+      // 特殊 Tab 处理
+      const saveBtn = document.getElementById('save-btn');
+      const manualCommentBtn = document.getElementById('manual-comment-btn');
+      const manualPostBtn = document.getElementById('manual-post-btn');
+      
+      // 评论 Tab 显示立即评论按钮和评论记录
+      if (group === 'comment') {
+        manualCommentBtn.style.display = 'flex';
+        manualPostBtn.style.display = 'none';
+        saveBtn.style.display = '';
+        renderCommentTab();
+      } else if (group === 'login') {
+        manualCommentBtn.style.display = 'none';
+        manualPostBtn.style.display = 'none';
+        saveBtn.style.display = 'none';
+        renderLoginTab();
+      } else if (group === 'api-token') {
+        manualCommentBtn.style.display = 'none';
+        manualPostBtn.style.display = 'none';
+        saveBtn.style.display = 'none';
+        renderApiTokenTab();
+      } else if (group === 'materials') {
+        manualCommentBtn.style.display = 'none';
+        manualPostBtn.style.display = 'none';
+        saveBtn.style.display = 'none';
+        loadMaterials('').then(() => renderMaterials());
+      } else if (group === 'topics') {
+        manualCommentBtn.style.display = 'none';
+        manualPostBtn.style.display = 'none';
+        saveBtn.style.display = 'none';
+        loadTopics().then(() => renderTopics());
+      } else if (group === 'post-logs') {
+        manualCommentBtn.style.display = 'none';
+        manualPostBtn.style.display = 'none';
+        saveBtn.style.display = 'none';
+        renderPostLogsTab();
+      } else if (group === 'ai') {
+        manualCommentBtn.style.display = 'none';
+        manualPostBtn.style.display = 'none';
+        saveBtn.style.display = 'none';
+        renderAITab();
+      } else if (group === 'post') {
+        manualCommentBtn.style.display = 'none';
+        manualPostBtn.style.display = 'flex';
+        saveBtn.style.display = '';
+        renderForm(group);
+      } else {
+        manualCommentBtn.style.display = 'none';
+        manualPostBtn.style.display = 'none';
+        saveBtn.style.display = '';
+        renderForm(group);
+      }
+    }
+
+    // 渲染表单
+    function renderForm(group) {
+      const container = document.getElementById('form-container');
+      const data = configData[group];
+      if (!data) {
+        container.innerHTML = '<p class="text-red-500">该分组配置不存在</p>';
+        return;
+      }
+
+      const labels = FIELD_LABELS[group] || {};
+      let filteredData = data;
+      
+      // 特殊分组处理
+      if (group === 'ai') {
+        filteredData = { providerOrder: data.providerOrder || '', requestTimeout: data.requestTimeout || 30000, providers: data.providers };
+      } else if (group === 'scheduler') {
+        // 过滤掉 analysis 字段
+        filteredData = Object.fromEntries(Object.entries(data).filter(([key]) => key !== 'analysis'));
+      } else if (group === 'vehicleMonitor') {
+        // 确保车辆监控的所有字段都显示（包括可能缺失的字段）
+        filteredData = {
+          enabled: data.enabled !== undefined ? data.enabled : true,
+          intervalMinutes: data.intervalMinutes || 15,
+          quickIntervalMinutes: data.quickIntervalMinutes || 5,
+          safeDistanceMeters: data.safeDistanceMeters || 100,
+          moveThresholdMeters: data.moveThresholdMeters || 50,
+          minBatteryVolt: data.minBatteryVolt || 11.5,
+          haBaseUrl: data.haBaseUrl || '',
+          haToken: data.haToken || '',
+          deviceTrackerEntity: data.deviceTrackerEntity || '',
+          token: data.token || '',
+        };
+      }
+      
+      container.innerHTML = buildFormFields(filteredData, labels, group);
+    }
+
+    // 构建表单字段 HTML（支持嵌套对象）
+    function buildFormFields(data, labels, prefix) {
+      let html = '';
+      for (const [key, value] of Object.entries(data)) {
+        const fieldPath = prefix + '.' + key;
+        const label = (typeof labels === 'object' && labels[key]) || key;
+
+        if (Array.isArray(value)) {
+          // 字符串数组（如 providerOrder）：以逗号分隔的输入框
+          if (value.length === 0 || typeof value[0] === 'string') {
+            html += buildSingleField(fieldPath, typeof label === 'string' ? label : key, value.join(', '), key, 'string-array');
+          } else {
+            // 对象数组（如 providers）：每个元素渲染为嵌套 fieldset
+            html += `<fieldset class="border rounded-md p-4 mb-4"><legend class="text-sm font-semibold text-gray-600 px-2">${key}</legend>`;
+            value.forEach((item, idx) => {
+              if (item !== null && typeof item === 'object') {
+                const itemLabel = item.name || (idx + 1);
+                html += `<fieldset class="border border-dashed rounded-md p-3 mb-3"><legend class="text-xs font-medium text-gray-500 px-1">${itemLabel}</legend>`;
+                html += buildFormFields(item, {}, fieldPath + '.' + idx);
+                html += '</fieldset>';
+              }
+            });
+            html += '</fieldset>';
+          }
+        } else if (value !== null && typeof value === 'object') {
+          // 嵌套对象 - 创建子分组
+          const subLabels = (typeof label === 'object') ? label : {};
+          html += `<fieldset class="border rounded-md p-4 mb-4"><legend class="text-sm font-semibold text-gray-600 px-2">${typeof label === 'string' ? label : key}</legend>`;
+          html += buildFormFields(value, subLabels, fieldPath);
+          html += '</fieldset>';
+        } else {
+          const displayLabel = typeof label === 'string' ? label : key;
+          html += buildSingleField(fieldPath, displayLabel, value, key);
+        }
+      }
+      return html;
+    }
+
+    // 构建单个字段
+    function buildSingleField(fieldPath, label, value, key, typeOverride) {
+      const inputId = 'field-' + fieldPath.replace(/\./g, '-');
+      let inputHtml = '';
+      const effectiveType = typeOverride || (typeof value);
+
+      // 获取提示词
+      const tooltip = FIELD_TOOLTIPS[fieldPath] || '';
+      const tooltipIcon = tooltip ? `<span class="ml-2 text-gray-400 cursor-help" title="${escapeHtml(tooltip)}">💡</span>` : '';
+
+      if (effectiveType === 'string-array') {
+        inputHtml = `<input id="${inputId}" data-path="${fieldPath}" data-type="string-array" type="text" value="${escapeHtml(String(value))}" class="w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="逗号分隔，如: higpt, gpt" />`;
+      } else if (effectiveType === 'boolean') {
+        inputHtml = `<select id="${inputId}" data-path="${fieldPath}" data-type="boolean" class="w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+          <option value="true" ${value ? 'selected' : ''}>启用</option>
+          <option value="false" ${!value ? 'selected' : ''}>禁用</option>
+        </select>`;
+      } else if (typeof value === 'number') {
+        // 检查是否是 intervalMinutes 字段
+        const isIntervalField = fieldPath === 'scheduler.materialProcessing.intervalMinutes';
+        let quickSelectHtml = '';
+        if (isIntervalField) {
+          quickSelectHtml = `
+            <div class="flex gap-2 mt-2 flex-wrap">
+              <span class="text-xs text-gray-500 self-center">快速选择：</span>
+              <button type="button" onclick="setIntervalValue(5)" class="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded">5 分钟</button>
+              <button type="button" onclick="setIntervalValue(10)" class="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded">10 分钟</button>
+              <button type="button" onclick="setIntervalValue(15)" class="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded">15 分钟</button>
+              <button type="button" onclick="setIntervalValue(30)" class="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded">30 分钟</button>
+              <button type="button" onclick="setIntervalValue(60)" class="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded">60 分钟</button>
+            </div>`;
+        }
+        inputHtml = `<input id="${inputId}" data-path="${fieldPath}" data-type="number" type="number" value="${value}" min="5" max="1440" class="w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />${quickSelectHtml}`;
+      } else if (key === 'mode') {
+        inputHtml = `<select id="${inputId}" data-path="${fieldPath}" data-type="string" class="w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+          <option value="mock" ${value === 'mock' ? 'selected' : ''}>mock</option>
+          <option value="real" ${value === 'real' ? 'selected' : ''}>real</option>
+        </select>`;
+      } else if (key === 'level') {
+        inputHtml = `<select id="${inputId}" data-path="${fieldPath}" data-type="string" class="w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+          <option value="error" ${value === 'error' ? 'selected' : ''}>error</option>
+          <option value="warn" ${value === 'warn' ? 'selected' : ''}>warn</option>
+          <option value="info" ${value === 'info' ? 'selected' : ''}>info</option>
+          <option value="debug" ${value === 'debug' ? 'selected' : ''}>debug</option>
+        </select>`;
+      } else if (key === 'apiKey' || key === 'password' || key === 'passwordHash') {
+        // 敏感字段使用密码输入框（Token 字段需要明文显示）
+        inputHtml = `<input id="${inputId}" data-path="${fieldPath}" data-type="string" type="password" value="${escapeHtml(String(value))}" class="w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500" autocomplete="off" />`;
+      } else if (key === 'token' || key === 'haToken') {
+        // Token 字段使用明文输入框
+        inputHtml = `<input id="${inputId}" data-path="${fieldPath}" data-type="string" type="text" value="${escapeHtml(String(value))}" class="w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />`;
+      } else {
+        inputHtml = `<input id="${inputId}" data-path="${fieldPath}" data-type="string" type="text" value="${escapeHtml(String(value))}" class="w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />`;
+      }
+
+      return `<div class="mb-4">
+        <label for="${inputId}" class="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+          ${label}
+          ${tooltipIcon}
+        </label>
+        ${inputHtml}
+      </div>`;
+    }
+
+    // 收集表单数据
+    function collectFormData() {
+      const data = JSON.parse(JSON.stringify(configData[currentGroup]));
+      if (currentGroup === 'scheduler') {
+        delete data.analysis;
+      }
+      const inputs = document.querySelectorAll('[data-path]');
+
+      inputs.forEach(input => {
+        const path = input.dataset.path;
+        const type = input.dataset.type;
+        const parts = path.split('.').slice(1); // 去掉第一段（group名）
+
+        let value;
+        if (type === 'boolean') {
+          value = input.value === 'true';
+        } else if (type === 'number') {
+          value = Number(input.value);
+        } else if (type === 'string-array') {
+          // 逗号分隔的字符串 → 数组
+          value = input.value.split(',').map(s => s.trim()).filter(s => s.length > 0);
+        } else {
+          value = input.value;
+        }
+
+        // 设置嵌套值
+        let obj = data;
+        for (let i = 0; i < parts.length - 1; i++) {
+          obj = obj[parts[i]];
+        }
+        obj[parts[parts.length - 1]] = value;
+      });
+
+      return data;
+    }
+
+    // 保存配置
+    async function saveConfig() {
+      const saveBtn = document.getElementById('save-btn');
+      saveBtn.disabled = true;
+      saveBtn.textContent = '保存中...';
+
+      try {
+        const data = collectFormData();
+        const resp = await fetch(`/api/config/${currentGroup}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        });
+
+        const result = await resp.json();
+        if (resp.ok) {
+          showToast('配置保存成功', 'success');
+          // 刷新本地数据
+          configData[currentGroup] = data;
+        } else {
+          showToast('保存失败: ' + (result.error || '未知错误'), 'error');
+        }
+      } catch (e) {
+        showToast('保存失败: ' + e.message, 'error');
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = '保存配置';
+      }
+    }
+
+    // 设置间隔时间值
+    function setIntervalValue(minutes) {
+      const input = document.getElementById('field-scheduler-materialProcessing-intervalMinutes');
+      if (input) {
+        input.value = minutes;
+        // 触发 input 事件以更新配置数据
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        showToast(`已设置间隔时间为 ${minutes} 分钟`, 'success');
+      }
+    }
+
+    // 显示提示
+    function showToast(message, type) {
+      const toast = document.getElementById('toast');
+      const bgColor = type === 'success' ? 'bg-green-500' : 'bg-red-500';
+      toast.innerHTML = `<div class="toast ${bgColor} text-white px-6 py-3 rounded-lg shadow-lg">${escapeHtml(message)}</div>`;
+      toast.classList.remove('hidden');
+      setTimeout(() => toast.classList.add('hidden'), 4000);
+    }
+
+    // HTML 转义
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    // 绑定保存按钮
+    document.getElementById('save-btn').addEventListener('click', saveConfig);
+
+    // ========== 手动评论功能 ==========
+    let isCommentRunning = false;
+
+    // 立即评论按钮点击事件
+    async function executeManualComment() {
+      if (isCommentRunning) return;
+
+      const commentBtn = document.getElementById('manual-comment-btn');
+      const originalText = commentBtn.innerHTML;
+
+      try {
+        isCommentRunning = true;
+        commentBtn.disabled = true;
+        commentBtn.innerHTML = `
+          <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          执行中...
+        `;
+
+        showToast('开始执行评论任务...', 'success');
+
+        const resp = await fetch('/api/comment/execute', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include',  // 携带 Session Cookie
+        });
+
+        const result = await resp.json();
+
+        if (resp.ok && result.success) {
+          const data = result.data || {};
+          showToast(`评论任务完成：成功 ${data.success || 0}/${data.total || 0} 条`, 'success');
+          
+          // 显示详细结果
+          if (data.results && data.results.length > 0) {
+            const failedCount = data.failed || 0;
+            if (failedCount > 0) {
+              showToast(`有 ${failedCount} 条评论失败，请查看日志`, 'warn');
+            }
+          }
+        } else {
+          showToast('评论任务失败：' + (result.error || '未知错误'), 'error');
+        }
+      } catch (e) {
+        showToast('评论任务异常：' + e.message, 'error');
+      } finally {
+        isCommentRunning = false;
+        commentBtn.disabled = false;
+        commentBtn.innerHTML = originalText;
+      }
+    }
+
+    // 获取 API Token（从配置中获取）
+    async function getApiToken() {
+      try {
+        const resp = await fetch('/api/posts/token', {
+          headers: { 'Content-Type': 'application/json' },
+        });
+        if (resp.ok) {
+          const result = await resp.json();
+          if (result.success && result.data && result.data.configured) {
+            // Token 已配置，直接返回标记，后端会从配置文件读取
+            return 'configured';
+          } else {
+            showToast('请先在"API Token"标签页生成 Token', 'error');
+            return null;
+          }
+        } else {
+          showToast('获取 Token 状态失败', 'error');
+          return null;
+        }
+      } catch (e) {
+        showToast('获取 Token 状态异常：' + e.message, 'error');
+        return null;
+      }
+    }
+
+    // 绑定立即评论按钮
+    const manualCommentBtn = document.getElementById('manual-comment-btn');
+    if (manualCommentBtn) {
+      manualCommentBtn.addEventListener('click', executeManualComment);
+    }
+
+    // ========== 手动发帖功能 ==========
+    let isPostRunning = false;
+
+    // 立即发帖按钮点击事件
+    async function executeManualPost() {
+      if (isPostRunning) return;
+
+      const postBtn = document.getElementById('manual-post-btn');
+      const originalText = postBtn.innerHTML;
+
+      try {
+        isPostRunning = true;
+        postBtn.disabled = true;
+        postBtn.innerHTML = `
+          <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          执行中...
+        `;
+
+        showToast('开始执行发帖任务...', 'success');
+
+        const resp = await fetch('/api/posts/execute', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
+
+        const result = await resp.json();
+
+        if (result.success && result.data) {
+          showToast(`发帖成功：${result.data.title}`, 'success');
+          // 自动切换到发帖日志 Tab 查看结果
+          setTimeout(() => {
+            document.querySelector('[data-group="post-logs"]').click();
+          }, 1500);
+        } else {
+          showToast(`发帖失败：${result.error || '未知错误'}`, 'error');
+        }
+      } catch (e) {
+        showToast('发帖异常：' + e.message, 'error');
+      } finally {
+        isPostRunning = false;
+        postBtn.disabled = false;
+        postBtn.innerHTML = originalText;
+      }
+    }
+
+    // 绑定立即发帖按钮
+    const manualPostBtn = document.getElementById('manual-post-btn');
+    if (manualPostBtn) {
+      manualPostBtn.addEventListener('click', executeManualPost);
+    }
+
+    // ========== 评论 Tab 渲染 ==========
+    let commentLogsPage = 1;
+    const commentLogsPageSize = 20;
+    let commentLogsTotal = 0;
+
+    // 渲染评论 Tab（包含配置表单和评论记录）
+    function renderCommentTab() {
+      const container = document.getElementById('form-container');
+      const data = configData.comment;
+      const labels = FIELD_LABELS.comment || {};
+      
+      let html = '<div class="space-y-6">';
+      
+      // 评论配置表单
+      html += '<div class="border-b pb-4">';
+      html += '<h3 class="text-lg font-semibold text-gray-700 mb-3">📝 评论设置</h3>';
+      html += buildFormFields(data, labels, 'comment');
+      html += '</div>';
+      
+      // 评论记录
+      html += '<div>';
+      html += '<div class="flex items-center justify-between mb-3">';
+      html += '<h3 class="text-lg font-semibold text-gray-700">📋 评论记录</h3>';
+      html += '<button onclick="loadCommentLogs()" class="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700">🔄 刷新</button>';
+      html += '</div>';
+      html += '<div id="comment-logs-container" class="space-y-3">';
+      html += '<p class="text-gray-500 text-sm">加载中...</p>';
+      html += '</div>';
+      // 分页控制
+      html += '<div id="comment-logs-pagination" class="mt-4 flex justify-center items-center gap-2"></div>';
+      html += '</div>';
+      
+      html += '</div>';
+      container.innerHTML = html;
+      
+      // 加载评论记录
+      loadCommentLogs();
+    }
+
+    // 加载评论日志
+    async function loadCommentLogs(page = 1) {
+      const container = document.getElementById('comment-logs-container');
+      const paginationContainer = document.getElementById('comment-logs-pagination');
+      
+      try {
+        const resp = await fetch(`/api/comment/logs?page=${page}&pageSize=${commentLogsPageSize}`);
+        const result = await resp.json();
+        
+        if (!result.success) {
+          container.innerHTML = '<p class="text-red-500">加载失败</p>';
+          return;
+        }
+        
+        const { logs, total } = result.data;
+        commentLogsTotal = total;
+        
+        if (logs.length === 0) {
+          container.innerHTML = '<p class="text-gray-500 text-sm">暂无评论记录</p>';
+          paginationContainer.innerHTML = '';
+          return;
+        }
+        
+        // 渲染评论记录
+        let html = '<div class="space-y-3">';
+        for (const log of logs) {
+          // MySQL 返回 created_at，兼容旧的 timestamp 字段
+          const timestamp = log.created_at ? new Date(log.created_at).toLocaleString('zh-CN') : (log.timestamp ? new Date(log.timestamp).toLocaleString('zh-CN') : 'Invalid Date');
+          
+          // 成功显示"成功"，失败显示"失败" + 模式
+          let statusBadge = '';
+          let modeBadge = '';
+          let sourceBadge = '';
+          
+          if (log.success) {
+            // 成功：只显示"成功"标签
+            statusBadge = '<span class="px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded">成功</span>';
+          } else {
+            // 失败：显示"失败"标签，只有兜底模式才显示"兜底"标签
+            statusBadge = '<span class="px-2 py-0.5 text-xs bg-red-100 text-red-700 rounded">失败</span>';
+            modeBadge = log.mode === 'fallback'
+              ? '<span class="px-2 py-0.5 text-xs bg-orange-100 text-orange-700 rounded">兜底</span>'
+              : '';  // 正常模式失败时不显示模式标签
+          }
+          
+          // 显示来源标签
+          sourceBadge = log.source === 'manual'
+            ? '<span class="px-2 py-0.5 text-xs bg-purple-100 text-purple-700 rounded">手工</span>'
+            : '<span class="px-2 py-0.5 text-xs bg-gray-100 text-gray-700 rounded">自动</span>';
+          
+          // MySQL 返回 post_title，兼容旧的 postTitle 字段
+          const postTitle = log.post_title || log.postTitle || '未知帖子';
+          
+          html += `<div class="border rounded-md p-3 bg-white hover:shadow-sm transition-shadow">`;
+          html += `<div class="flex items-start justify-between gap-2 mb-2">`;
+          html += `<div class="flex items-center gap-2">`;
+          html += statusBadge;
+          if (modeBadge) html += modeBadge;
+          html += sourceBadge;
+          html += `<span class="text-xs text-gray-500">${timestamp}</span>`;
+          html += `</div>`;
+          html += `</div>`;
+          html += `<div class="space-y-1 text-sm">`;
+          html += `<div class="text-gray-800 font-medium">📌 ${escapeHtml(postTitle)}</div>`;
+          if (log.comment_content && log.success) {
+            html += `<div class="text-gray-600">💬 ${escapeHtml(log.comment_content.substring(0, 100))}${log.comment_content.length > 100 ? '...' : ''}</div>`;
+          }
+          if (log.error) {
+            html += `<div class="text-red-500">❌ ${escapeHtml(log.error)}</div>`;
+          }
+          html += `</div>`;
+          html += `</div>`;
+        }
+        html += '</div>';
+        
+        container.innerHTML = html;
+        
+        // 渲染分页
+        const totalPages = Math.ceil(total / commentLogsPageSize);
+        if (totalPages > 1) {
+          let paginationHtml = '<div class="flex items-center gap-2">';
+          paginationHtml += `<button onclick="loadCommentLogs(${page - 1})" ${page === 1 ? 'disabled class="px-3 py-1 text-gray-400 cursor-not-allowed"' : 'class="px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded"'}>上一页</button>`;
+          paginationHtml += `<span class="text-sm text-gray-600">第 ${page} / ${totalPages} 页</span>`;
+          paginationHtml += `<button onclick="loadCommentLogs(${page + 1})" ${page === totalPages ? 'disabled class="px-3 py-1 text-gray-400 cursor-not-allowed"' : 'class="px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded"'}>下一页</button>`;
+          paginationHtml += '</div>';
+          paginationContainer.innerHTML = paginationHtml;
+        } else {
+          paginationContainer.innerHTML = '';
+        }
+      } catch (e) {
+        container.innerHTML = '<p class="text-red-500">加载失败：' + e.message + '</p>';
+      }
+    }
+
+    // ========== 发帖日志 Tab 渲染 ==========
+    let postLogsPage = 1;
+    const postLogsPageSize = 20;
+    let postLogsTotal = 0;
+    let postLogsFilter = 'all'; // 'all', 'auto', 'manual'
+
+    // 渲染发帖日志 Tab
+    function renderPostLogsTab() {
+      const container = document.getElementById('form-container');
+      
+      let html = '<div class="space-y-4">';
+      
+      // 标题和筛选
+      html += '<div class="flex items-center justify-between">';
+      html += '<h3 class="text-lg font-semibold text-gray-700">📝 发帖日志</h3>';
+      html += '<div class="flex items-center gap-2">';
+      html += '<select id="post-logs-filter" onchange="loadPostLogs(1, this.value)" class="px-3 py-1 border rounded text-sm">';
+      html += '<option value="all">全部</option>';
+      html += '<option value="auto">自动发帖</option>';
+      html += '<option value="manual">手动发帖</option>';
+      html += '</select>';
+      html += '<button onclick="loadPostLogs(1, document.getElementById(\'post-logs-filter\').value)" class="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700">🔄 刷新</button>';
+      html += '</div>';
+      html += '</div>';
+      
+      // 日志列表
+      html += '<div id="post-logs-container" class="space-y-3">';
+      html += '<p class="text-gray-500 text-sm">加载中...</p>';
+      html += '</div>';
+      
+      // 分页
+      html += '<div id="post-logs-pagination" class="mt-4 flex justify-center items-center gap-2"></div>';
+      
+      html += '</div>';
+      container.innerHTML = html;
+      
+      // 加载日志
+      loadPostLogs();
+    }
+
+    // 加载发帖日志
+    async function loadPostLogs(page = 1, filter = 'all') {
+      const container = document.getElementById('post-logs-container');
+      const paginationContainer = document.getElementById('post-logs-pagination');
+      
+      try {
+        let url = `/api/posts/logs?page=${page}&limit=${postLogsPageSize}`;
+        if (filter && filter !== 'all') {
+          url += `&triggerType=${filter}`;
+        }
+        
+        const resp = await fetch(url);
+        const result = await resp.json();
+        
+        if (!result.success) {
+          container.innerHTML = '<p class="text-red-500">加载失败</p>';
+          return;
+        }
+        
+        const { logs, total, totalPages } = result.data;
+        postLogsTotal = total;
+        
+        if (logs.length === 0) {
+          container.innerHTML = '<p class="text-gray-500 text-sm">暂无发帖记录</p>';
+          paginationContainer.innerHTML = '';
+          return;
+        }
+        
+        // 渲染日志列表
+        let html = '<div class="space-y-3">';
+        logs.forEach(log => {
+          const isManual = log.triggerType === 'manual';
+          const isTopic = log.postType === 'topic';
+          const isSuccess = log.status === 'success';
+          const timeStr = new Date(log.timestamp).toLocaleString('zh-CN');
+          
+          html += `<div class="border rounded-lg p-4 hover:shadow-md transition-shadow ${isSuccess ? 'bg-white' : 'bg-red-50'}">`;
+          html += '<div class="flex items-start justify-between mb-2">';
+          html += '<div class="flex items-center gap-2">';
+          html += `<span class="px-2 py-1 text-xs rounded ${isManual ? 'bg-indigo-100 text-indigo-700' : 'bg-blue-100 text-blue-700'}">${isManual ? '手动' : '自动'}</span>`;
+          html += `<span class="px-2 py-1 text-xs rounded ${isTopic ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-700'}">${isTopic ? '��题发帖' : '自由发帖'}</span>`;
+          if (log.topicName) {
+            html += `<span class="px-2 py-1 text-xs rounded bg-green-100 text-green-700">${escapeHtml(log.topicName)}</span>`;
+          }
+          html += '</div>';
+          html += `<span class="text-xs text-gray-500">${timeStr}</span>`;
+          html += '</div>';
+          
+          html += `<h4 class="font-semibold text-gray-800 mb-2">${escapeHtml(log.title)}</h4>`;
+          
+          // 显示发帖内容（折叠）
+          if (log.content && log.content.trim()) {
+            html += `<details class="mb-2">`;
+            html += `<summary class="text-xs text-blue-600 cursor-pointer hover:text-blue-800">📄 查看内容（${log.content.length}字）</summary>`;
+            html += `<p class="text-sm text-gray-700 mt-1 p-2 bg-gray-50 rounded">${escapeHtml(log.content)}</p>`;
+            html += `</details>`;
+          }
+          
+          if (log.status === 'failed' && log.errorMessage) {
+            html += `<p class="text-sm text-red-600 mb-2">❌ ${escapeHtml(log.errorMessage)}</p>`;
+          } else {
+            html += `<p class="text-sm text-green-600 mb-2">✅ 发布成功</p>`;
+          }
+          
+          // 图片预览
+          if (log.imageUrls && log.imageUrls.length > 0) {
+            html += '<div class="flex gap-2 mt-2 overflow-x-auto">';
+            log.imageUrls.slice(0, 5).forEach((imgUrl, idx) => {
+              html += `<div class="relative w-16 h-16">`;
+              html += `<img src="${imgUrl}" class="w-16 h-16 object-cover rounded" loading="lazy" onerror="this.style.display='none';document.getElementById('img-placeholder-${idx}-${log.id}').style.display='flex';" />`;
+              html += `<div id="img-placeholder-${idx}-${log.id}" class="absolute inset-0 bg-gray-100 rounded flex items-center justify-center text-xs text-gray-400" style="display:none;">图片</div>`;
+              html += `</div>`;
+            });
+            if (log.imageUrls.length > 5) {
+              html += `<span class="w-16 h-16 flex items-center justify-center bg-gray-100 rounded text-xs text-gray-500">+${log.imageUrls.length - 5}</span>`;
+            }
+            html += '</div>';
+          }
+          
+          html += '</div>';
+        });
+        html += '</div>';
+        
+        container.innerHTML = html;
+        
+        // 渲染分页
+        if (totalPages > 1) {
+          let paginationHtml = '<div class="flex items-center gap-2">';
+          
+          if (page > 1) {
+            paginationHtml += `<button onclick="loadPostLogs(${page - 1}, '${filter}')" class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">上一页</button>`;
+          }
+          
+          paginationHtml += `<span class="text-sm text-gray-600">第 ${page} / ${totalPages} 页（共 ${total} 条）</span>`;
+          
+          if (page < totalPages) {
+            paginationHtml += `<button onclick="loadPostLogs(${page + 1}, '${filter}')" class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">下一页</button>`;
+          }
+          
+          paginationHtml += '</div>';
+          paginationContainer.innerHTML = paginationHtml;
+        } else {
+          paginationContainer.innerHTML = '';
+        }
+      } catch (e) {
+        container.innerHTML = '<p class="text-red-500">加载异常：' + e.message + '</p>';
+      }
+    }
+
+    // ========== 素材库功能 ==========
+    let materialsData = [];
+    let materialsDirs = [];
+    let currentMaterialsDir = '';
+    
+    // 分页状态
+    let currentPage = 1;
+    const pageSize = 24;
+    let displayedCount = 0;
+    let hasMore = false;
+    
+    // 图片懒加载 Observer
+    let imageObserver = null;
+
+    async function loadMaterials(dir) {
+      try {
+        currentMaterialsDir = dir || '';
+        const url = dir ? `/api/materials?dir=${encodeURIComponent(dir)}` : '/api/materials';
+        const resp = await fetch(url);
+        const data = await resp.json();
+        materialsData = data.items || [];
+        materialsDirs = data.directories || [];
+        // 重置分页状态
+        currentPage = 1;
+        displayedCount = Math.min(pageSize, materialsData.length);
+        hasMore = displayedCount < materialsData.length;
+      } catch (e) {
+        showToast('加载素材失败：' + e.message, 'error');
+      }
+    }
+
+    function renderMaterialCard(item) {
+      const ext = (item.filename || '').split('.').pop().toLowerCase();
+      const previewable = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext);
+      const relPath = (item.relativePath || '').replace(/\\/g, '/');
+      const relJson = JSON.stringify(relPath);
+      const preview = previewable
+        ? `<img data-src="/api/materials/file/${item.relativePath}" alt="${escapeHtml(item.filename)}" class="w-full h-24 object-cover bg-gray-100 lazy-image" loading="lazy" />`
+        : `<a href="/api/materials/file/${item.relativePath}" target="_blank" class="w-full h-24 flex items-center justify-center bg-gray-100 text-xs text-gray-500 hover:bg-gray-200">打开文件</a>`;
+
+      const delBtn = relPath
+        ? `<button onclick="deleteMaterial(${relJson})" class="absolute top-1 right-1 px-2 py-1 bg-white/90 border rounded text-xs text-gray-600 hover:bg-white">🗑</button>`
+        : '';
+
+      return `<div class="relative border rounded-lg overflow-hidden hover:shadow-md transition-shadow">
+        ${preview}
+        ${delBtn}
+        <div class="p-2">
+          <p class="text-xs text-gray-700 truncate">${escapeHtml(item.filename)}</p>
+          <p class="text-xs text-gray-400">${item.directory || '根目录'}</p>
+        </div>
+      </div>`;
+    }
+
+    function renderMaterials() {
+      const container = document.getElementById('form-container');
+      let html = `<div class="flex items-center justify-between mb-4">
+        <div class="flex items-center gap-2">
+          <select id="materials-dir-filter" class="px-3 py-2 border rounded-md text-sm">
+            <option value="" ${currentMaterialsDir ? '' : 'selected'}>全部目录</option>
+            ${materialsDirs.map(d => `<option value="${d}" ${d === currentMaterialsDir ? 'selected' : ''}>${d}</option>`).join('')}
+          </select>
+          <button onclick="processMaterials()" id="materials-process-btn" class="px-3 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">🧹 整理素材</button>
+          <button onclick="rebuildIndex()" id="materials-rebuild-index-btn" class="px-3 py-2 bg-purple-600 text-white rounded-md text-sm hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed">🧱 重建索引</button>
+          <button onclick="refreshMaterials()" class="px-3 py-2 bg-gray-100 border rounded-md text-sm hover:bg-gray-200">🔄 刷新</button>
+        </div>
+        <span class="text-sm text-gray-500">已显示 ${displayedCount}/${materialsData.length} 个素材</span>
+      </div>`;
+
+      if (materialsData.length === 0) {
+        html += '<p class="text-gray-500 text-center py-8">暂无素材。请将图片放入素材库路径中。</p>';
+      } else {
+        // 计算当前页应显示的素材
+        const currentCount = Math.min(currentPage * pageSize, materialsData.length);
+        const displayedItems = materialsData.slice(0, currentCount);
+        
+        if (currentMaterialsDir) {
+          const sorted = displayedItems.slice().sort((a, b) => (a.filename || '').localeCompare(b.filename || ''));
+          html += `<div class="mb-2 flex items-center justify-between">
+            <h3 class="text-sm font-semibold text-gray-700">📁 ${escapeHtml(currentMaterialsDir)}</h3>
+            <span class="text-xs text-gray-400">${sorted.length} 个</span>
+          </div>`;
+          html += '<div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">';
+          for (const item of sorted) {
+            html += renderMaterialCard(item);
+          }
+          html += '</div>';
+        } else {
+          const grouped = new Map();
+          for (const item of displayedItems) {
+            const key = item.directory || '';
+            if (!grouped.has(key)) grouped.set(key, []);
+            grouped.get(key).push(item);
+          }
+          const orderedKeys = [];
+          if (grouped.has('')) orderedKeys.push('');
+          for (const d of materialsDirs) {
+            if (grouped.has(d)) orderedKeys.push(d);
+          }
+
+          for (const dirKey of orderedKeys) {
+            const items = grouped.get(dirKey) || [];
+            items.sort((a, b) => (a.filename || '').localeCompare(b.filename || ''));
+            const label = dirKey || '根目录';
+            html += `<div class="mt-4 mb-2 flex items-center justify-between">
+              <h3 class="text-sm font-semibold text-gray-700">📁 ${escapeHtml(label)}</h3>
+              <span class="text-xs text-gray-400">${items.length} 个</span>
+            </div>`;
+            html += '<div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">';
+            for (const item of items) {
+              html += renderMaterialCard(item);
+            }
+            html += '</div>';
+          }
+        }
+        
+        // 加载更多按钮
+        if (hasMore) {
+          html += `<div class="mt-4 text-center">
+            <button onclick="loadMoreMaterials()" class="px-6 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700 transition-colors">
+              加载更多
+            </button>
+          </div>`;
+        }
+      }
+      container.innerHTML = html;
+
+      // 初始化图片懒加载 Observer
+      initImageObserver();
+
+      // 绑定目录筛选
+      const dirFilter = document.getElementById('materials-dir-filter');
+      if (dirFilter) {
+        dirFilter.addEventListener('change', async () => {
+          await loadMaterials(dirFilter.value);
+          renderMaterials();
+        });
+      }
+    }
+
+    async function refreshMaterials() {
+      await fetch('/api/materials/refresh', { method: 'POST' });
+      await loadMaterials('');
+      renderMaterials();
+      showToast('素材索引已刷新', 'success');
+    }
+
+    async function rebuildIndex() {
+      const btn = document.getElementById('materials-rebuild-index-btn');
+      try {
+        if (btn) {
+          btn.disabled = true;
+          btn.textContent = '重建中...';
+        }
+        const resp = await fetch('/api/materials/rebuild-index', { method: 'POST' });
+        const data = await resp.json();
+        if (!resp.ok) {
+          throw new Error(data.error || '重建索引失败');
+        }
+        await loadMaterials(currentMaterialsDir);
+        renderMaterials();
+        const r = data.result || {};
+        showToast(`索引重建完成：移除记录 ${r.removedRecords || 0}，移除info ${r.removedInfoFiles || 0}，孤儿info ${r.removedOrphanInfoFiles || 0}，索引总数 ${r.total || 0}`, 'success');
+      } catch (e) {
+        showToast('重建索引失败: ' + e.message, 'error');
+      } finally {
+        const nextBtn = document.getElementById('materials-rebuild-index-btn');
+        if (nextBtn) {
+          nextBtn.disabled = false;
+          nextBtn.textContent = '🧱 重建索引';
+        }
+      }
+    }
+
+    async function deleteMaterial(relativePath) {
+      if (!relativePath) return;
+      const ok = confirm(`确认删除该素材？\n${relativePath}`);
+      if (!ok) return;
+      try {
+        const resp = await fetch('/api/materials/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ relativePath })
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+          throw new Error(data.error || '删除失败');
+        }
+        await loadMaterials(currentMaterialsDir);
+        renderMaterials();
+        showToast('删除成功', 'success');
+      } catch (e) {
+        showToast('删除失败: ' + e.message, 'error');
+      }
+    }
+
+    async function loadMoreMaterials() {
+      currentPage++;
+      displayedCount = Math.min(currentPage * pageSize, materialsData.length);
+      hasMore = displayedCount < materialsData.length;
+      renderMaterials();
+    }
+
+    function initImageObserver() {
+      // 创建 Intersection Observer
+      if (!imageObserver) {
+        imageObserver = new IntersectionObserver((entries) => {
+          entries.forEach(entry => {
+            if (entry.isIntersecting) {
+              const img = entry.target;
+              const dataSrc = img.dataset.src;
+              if (dataSrc && !img.src) {
+                img.src = dataSrc;
+                // 图片加载完成后添加渐显效果
+                img.onload = () => {
+                  img.classList.add('loaded');
+                };
+              }
+              imageObserver.unobserve(img);
+            }
+          });
+        }, { rootMargin: '50px' });
+      }
+
+      // 观察所有懒加载图片
+      document.querySelectorAll('.lazy-image').forEach(img => {
+        const dataSrc = img.dataset.src;
+        if (dataSrc && !img.src) {
+          imageObserver.observe(img);
+        } else if (dataSrc && img.src !== dataSrc) {
+          // 如果已经有 src 但不是 data-src，更新
+          img.src = dataSrc;
+        } else if (!dataSrc && img.src) {
+          // 已经有 src 的图片，直接标记为 loaded
+          img.classList.add('loaded');
+        }
+      });
+    }
+
+    async function processMaterials() {
+      const btn = document.getElementById('materials-process-btn');
+      try {
+        if (btn) {
+          btn.disabled = true;
+          btn.textContent = '整理中...';
+        }
+        const resp = await fetch('/api/materials/process', { method: 'POST' });
+        const data = await resp.json();
+        if (!resp.ok) {
+          throw new Error(data.error || '素材整理失败');
+        }
+        await loadMaterials(currentMaterialsDir);
+        renderMaterials();
+        const r = data.result || {};
+        const remaining = r.skipped || 0;
+        const prefix = remaining > 0 ? `本次整理完成，仍有 ${remaining} 个待整理：` : '素材整理完成：';
+        showToast(`${prefix}转换 ${r.processed || 0}，忽略非图片 ${r.ignored || 0}，失败 ${r.failed || 0}`, remaining > 0 || (r.failed || 0) > 0 ? 'error' : 'success');
+      } catch (e) {
+        showToast('素材整理失败: ' + e.message, 'error');
+      } finally {
+        const nextBtn = document.getElementById('materials-process-btn');
+        if (nextBtn) {
+          nextBtn.disabled = false;
+          nextBtn.textContent = '🧹 整理素材';
+        }
+      }
+    }
+
+    // ========== 发帖主题功能 ==========
+    let topicsData = [];
+
+    async function loadTopics() {
+      try {
+        const resp = await fetch('/api/topics');
+        const data = await resp.json();
+        topicsData = data.items || [];
+      } catch (e) {
+        showToast('加载主题失败: ' + e.message, 'error');
+      }
+    }
+
+    function renderTopics() {
+      const container = document.getElementById('form-container');
+      const unused = topicsData.filter(t => t.status === 'unused');
+      const used = topicsData.filter(t => t.status === 'used');
+
+      let html = '';
+
+      // ========== 全局发帖人设区域 ==========
+      html += `<div class="border border-indigo-200 rounded-lg p-4 mb-6 bg-indigo-50">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="font-semibold text-indigo-800">🎭 全局发帖人设</h3>
+          <button onclick="toggleGlobalPromptForm()" id="global-prompt-toggle-btn" class="px-3 py-1 text-xs bg-indigo-100 border border-indigo-300 text-indigo-700 rounded hover:bg-indigo-200">展开编辑</button>
+        </div>
+        <p class="text-xs text-indigo-600 mb-2">配置后所有AI生成的帖子将遵循此人设风格</p>
+        <div id="global-prompt-preview" class="text-sm text-gray-600">加载中...</div>
+        <div id="global-prompt-form" class="hidden mt-3 space-y-3 border-t border-indigo-200 pt-3">
+          <div class="grid grid-cols-3 gap-3">
+            <div>
+              <label class="block text-xs text-gray-600 mb-1">车型</label>
+              <input id="gp-carModel" type="text" class="w-full px-2 py-1.5 border rounded text-sm" maxlength="50" placeholder="例如：奥迪A6L 2024款" />
+            </div>
+            <div>
+              <label class="block text-xs text-gray-600 mb-1">性别</label>
+              <input id="gp-gender" type="text" class="w-full px-2 py-1.5 border rounded text-sm" maxlength="50" placeholder="例如：男" />
+            </div>
+            <div>
+              <label class="block text-xs text-gray-600 mb-1">年龄段</label>
+              <input id="gp-ageGroup" type="text" class="w-full px-2 py-1.5 border rounded text-sm" maxlength="50" placeholder="例如：30-40岁" />
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs text-gray-600 mb-1">内容风格描述 <span class="text-gray-400">(最多500字)</span></label>
+            <textarea id="gp-styleDescription" rows="3" class="w-full px-2 py-1.5 border rounded text-sm" maxlength="500" placeholder="例如：资深奥迪车主，喜欢自驾游和摄影。文风偏理性分享，语气亲切随和。"></textarea>
+          </div>
+          <div class="flex gap-2">
+            <button onclick="saveGlobalPrompt()" class="px-4 py-1.5 bg-indigo-600 text-white rounded text-sm hover:bg-indigo-700">保存人设</button>
+            <button onclick="toggleGlobalPromptForm()" class="px-4 py-1.5 bg-white border rounded text-sm hover:bg-gray-50">收起</button>
+          </div>
+        </div>
+      </div>`;
+
+      // ========== 主题列表区域 ==========
+      html += `<div class="flex items-center justify-between mb-4">
+        <button onclick="showTopicForm()" class="px-4 py-2 bg-purple-600 text-white rounded-md text-sm hover:bg-purple-700">+ 新建主题</button>
+        <div class="flex items-center gap-3">
+          <span class="text-sm text-gray-500">可用: ${unused.length} | 已耗尽: ${used.length}</span>
+          <button onclick="resetAllTopicsUI()" class="px-3 py-2 bg-gray-100 border rounded-md text-sm hover:bg-gray-200">全部重置</button>
+        </div>
+      </div>`;
+
+      html += '<div id="topic-form-area"></div>';
+
+      if (topicsData.length === 0) {
+        html += '<p class="text-gray-500 text-center py-8">暂无主题配置。点击"新建主题"创建第一个。</p>';
+      } else {
+        html += '<div class="space-y-3">';
+        for (const topic of topicsData) {
+          const useCount = topic.useCount || 0;
+          const maxUseCount = topic.maxUseCount || 1;
+          const isAvailable = useCount < maxUseCount;
+          const statusColor = isAvailable ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-gray-50';
+          const statusBadge = isAvailable
+            ? `<span class="px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs">可用 (${useCount}/${maxUseCount})</span>`
+            : `<span class="px-2 py-0.5 bg-gray-200 text-gray-600 rounded text-xs">已耗尽 (${useCount}/${maxUseCount})</span>`;
+
+          html += `<div class="border ${statusColor} rounded-lg p-4">
+            <div class="flex items-start justify-between">
+              <div class="flex-1">
+                <div class="flex items-center gap-2 mb-1">
+                  <h3 class="font-medium text-gray-800">${escapeHtml(topic.title)}</h3>
+                  ${statusBadge}
+                </div>
+                <p class="text-sm text-gray-600 mb-1">方向: ${escapeHtml(topic.direction)}</p>
+                ${topic.outline ? `<p class="text-xs text-gray-500">提纲: ${escapeHtml(topic.outline.substring(0, 100))}${topic.outline.length > 100 ? '...' : ''}</p>` : ''}
+                <div class="flex items-center gap-3 mt-1">
+                  ${topic.materialPaths && topic.materialPaths.length > 0 ? `<span class="text-xs text-blue-500">📷 ${topic.materialPaths.length} 个素材</span>` : ''}
+                  ${topic.postHistory && topic.postHistory.length > 0 ? `<span class="text-xs text-orange-500">📝 已发 ${topic.postHistory.length} 篇</span>` : ''}
+                </div>
+              </div>
+              <div class="flex flex-col gap-1 ml-2 items-end">
+                <div class="flex gap-1">
+                  <button onclick="showEditTopicForm('${topic.id}')" class="px-2 py-1 text-xs bg-white border rounded hover:bg-gray-50" title="编辑主题">✏️</button>
+                  <button onclick="showMaxUseCountEditor('${topic.id}', ${maxUseCount})" class="px-2 py-1 text-xs bg-white border rounded hover:bg-gray-50" title="修改复用次数">⚙️</button>
+                  ${!isAvailable ? `<button onclick="resetTopicUI('${topic.id}')" class="px-2 py-1 text-xs bg-white border rounded hover:bg-gray-50">重置</button>` : ''}
+                  <button onclick="deleteTopicUI('${topic.id}')" class="px-2 py-1 text-xs bg-white border border-red-200 text-red-600 rounded hover:bg-red-50">删除</button>
+                </div>
+                <div id="max-use-editor-${topic.id}" class="hidden"></div>
+              </div>
+            </div>
+          </div>`;
+        }
+        html += '</div>';
+      }
+      container.innerHTML = html;
+
+      // 加载全局人设配置
+      loadGlobalPromptPreview();
+    }
+
+    // ========== 全局人设功能 ==========
+    let globalPromptData = null;
+
+    async function loadGlobalPromptPreview() {
+      try {
+        const resp = await fetch('/api/global-prompt');
+        globalPromptData = await resp.json();
+        const preview = document.getElementById('global-prompt-preview');
+        if (!preview) return;
+
+        if (globalPromptData && globalPromptData.personalInfo) {
+          const p = globalPromptData.personalInfo;
+          preview.innerHTML = `<span class="text-gray-700">🚗 ${escapeHtml(p.carModel || '未设置')} | 👤 ${escapeHtml(p.gender || '未设置')} | 🎂 ${escapeHtml(p.ageGroup || '未设置')}</span>
+            ${globalPromptData.styleDescription ? `<br><span class="text-gray-500 text-xs mt-1 block">风格: ${escapeHtml(globalPromptData.styleDescription.substring(0, 80))}${globalPromptData.styleDescription.length > 80 ? '...' : ''}</span>` : ''}`;
+        } else {
+          preview.innerHTML = '<span class="text-gray-400 italic">未配置人设，将使用社区风格分析生成内容</span>';
+        }
+      } catch (e) {
+        const preview = document.getElementById('global-prompt-preview');
+        if (preview) preview.innerHTML = '<span class="text-red-400">加载失败</span>';
+      }
+    }
+
+    function toggleGlobalPromptForm() {
+      const form = document.getElementById('global-prompt-form');
+      const btn = document.getElementById('global-prompt-toggle-btn');
+      if (!form) return;
+
+      const isHidden = form.classList.contains('hidden');
+      form.classList.toggle('hidden');
+      if (btn) btn.textContent = isHidden ? '收起' : '展开编辑';
+
+      // 填充表单
+      if (isHidden && globalPromptData) {
+        const p = globalPromptData.personalInfo || {};
+        document.getElementById('gp-carModel').value = p.carModel || '';
+        document.getElementById('gp-gender').value = p.gender || '';
+        document.getElementById('gp-ageGroup').value = p.ageGroup || '';
+        document.getElementById('gp-styleDescription').value = globalPromptData.styleDescription || '';
+      }
+    }
+
+    async function saveGlobalPrompt() {
+      const payload = {
+        personalInfo: {
+          carModel: document.getElementById('gp-carModel').value.trim(),
+          gender: document.getElementById('gp-gender').value.trim(),
+          ageGroup: document.getElementById('gp-ageGroup').value.trim(),
+        },
+        styleDescription: document.getElementById('gp-styleDescription').value.trim(),
+      };
+
+      try {
+        const resp = await fetch('/api/global-prompt', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const result = await resp.json();
+        if (resp.ok) {
+          showToast('人设配置保存成功', 'success');
+          globalPromptData = payload;
+          toggleGlobalPromptForm();
+          loadGlobalPromptPreview();
+        } else {
+          showToast('保存失败: ' + (result.error || '未知错误'), 'error');
+        }
+      } catch (e) {
+        showToast('保存失败: ' + e.message, 'error');
+      }
+    }
+
+    // ========== maxUseCount 编辑 ==========
+    function showMaxUseCountEditor(topicId, currentValue) {
+      const container = document.getElementById('max-use-editor-' + topicId);
+      if (!container) return;
+
+      if (!container.classList.contains('hidden')) {
+        container.classList.add('hidden');
+        container.innerHTML = '';
+        return;
+      }
+
+      container.classList.remove('hidden');
+      container.innerHTML = `<div class="flex items-center gap-1 mt-1">
+        <label class="text-xs text-gray-500">复用次数:</label>
+        <input type="number" id="max-use-input-${topicId}" value="${currentValue}" min="1" max="100" class="w-14 px-1 py-0.5 text-xs border rounded" />
+        <button onclick="updateMaxUseCount('${topicId}')" class="px-2 py-0.5 text-xs bg-blue-500 text-white rounded hover:bg-blue-600">保存</button>
+      </div>`;
+    }
+
+    async function updateMaxUseCount(topicId) {
+      const input = document.getElementById('max-use-input-' + topicId);
+      if (!input) return;
+      const value = parseInt(input.value, 10);
+
+      if (isNaN(value) || value < 1 || value > 100) {
+        showToast('复用次数必须是 1-100 之间的整数', 'error');
+        return;
+      }
+
+      try {
+        const resp = await fetch(`/api/topics/${topicId}/max-use-count`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ maxUseCount: value }),
+        });
+        if (resp.ok) {
+          showToast('复用次数已更新', 'success');
+          await loadTopics();
+          renderTopics();
+        } else {
+          const err = await resp.json();
+          showToast('更新失败: ' + (err.error || '未知错误'), 'error');
+        }
+      } catch (e) {
+        showToast('更新失败: ' + e.message, 'error');
+      }
+    }
+
+    function showTopicForm() {
+      const area = document.getElementById('topic-form-area');
+      if (!area) return;
+      area.innerHTML = `<div class="border rounded-lg p-4 mb-4 bg-white">
+        <h3 class="font-medium mb-3">新建主题</h3>
+        <div class="space-y-3">
+          <div>
+            <label class="block text-sm text-gray-700 mb-1">标题 *</label>
+            <input id="topic-title" type="text" class="w-full px-3 py-2 border rounded-md" placeholder="例如：春季自驾游分享" />
+          </div>
+          <div>
+            <label class="block text-sm text-gray-700 mb-1">方向描述 *</label>
+            <input id="topic-direction" type="text" class="w-full px-3 py-2 border rounded-md" placeholder="例如：分享一次奥迪车主的周末自驾体验" />
+          </div>
+          <div>
+            <label class="block text-sm text-gray-700 mb-1">内容提纲（可选）</label>
+            <textarea id="topic-outline" rows="3" class="w-full px-3 py-2 border rounded-md" placeholder="例如：1.出发准备 2.沿途风景 3.驾驶感受 4.总结推荐"></textarea>
+          </div>
+          <div>
+            <label class="block text-sm text-gray-700 mb-1">最大复用次数</label>
+            <input id="topic-maxUseCount" type="number" min="1" max="100" value="1" class="w-32 px-3 py-2 border rounded-md" />
+            <span class="text-xs text-gray-400 ml-2">同一主题可发帖次数（1=用一次即耗尽）</span>
+          </div>
+          <div>
+            <label class="block text-sm text-gray-700 mb-1">关联素材（可选）</label>
+            <div class="w-full" id="selected-materials-display">
+              <span class="text-xs text-gray-400">未选择素材</span>
+            </div>
+            <button type="button" onclick="openMaterialPicker()" class="mt-2 px-3 py-1.5 text-sm bg-blue-50 border border-blue-200 text-blue-700 rounded-md hover:bg-blue-100">
+              📷 选择素材文件
+            </button>
+          </div>
+          <div class="flex gap-2">
+            <button onclick="submitTopic()" class="px-4 py-2 bg-purple-600 text-white rounded-md text-sm hover:bg-purple-700">保存</button>
+            <button onclick="cancelTopicForm()" class="px-4 py-2 bg-gray-100 border rounded-md text-sm hover:bg-gray-200">取消</button>
+          </div>
+        </div>
+      </div>`;
+      // 重置已选素材
+      selectedMaterialPaths = [];
+    }
+
+    function cancelTopicForm() {
+      const area = document.getElementById('topic-form-area');
+      if (area) area.innerHTML = '';
+    }
+
+    async function submitTopic() {
+      const title = document.getElementById('topic-title').value.trim();
+      const direction = document.getElementById('topic-direction').value.trim();
+      const outline = document.getElementById('topic-outline').value.trim();
+      const maxUseCount = parseInt(document.getElementById('topic-maxUseCount').value, 10) || 1;
+      const materialPaths = selectedMaterialPaths.slice();
+
+      if (!title || !direction) {
+        showToast('标题和方向描述不能为空', 'error');
+        return;
+      }
+
+      try {
+        const resp = await fetch('/api/topics', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, direction, outline, materialPaths, maxUseCount }),
+        });
+        if (resp.ok) {
+          showToast('主题创建成功', 'success');
+          selectedMaterialPaths = [];
+          await loadTopics();
+          renderTopics();
+        } else {
+          const err = await resp.json();
+          showToast('创建失败: ' + err.error, 'error');
+        }
+      } catch (e) {
+        showToast('创建失败: ' + e.message, 'error');
+      }
+    }
+
+    async function deleteTopicUI(id) {
+      if (!confirm('确定要删除这个主题吗？')) return;
+      try {
+        await fetch(`/api/topics/${id}`, { method: 'DELETE' });
+        showToast('主题已删除', 'success');
+        await loadTopics();
+        renderTopics();
+      } catch (e) {
+        showToast('删除失败: ' + e.message, 'error');
+      }
+    }
+
+    async function resetTopicUI(id) {
+      try {
+        await fetch(`/api/topics/${id}/reset`, { method: 'POST' });
+        showToast('主题已重置', 'success');
+        await loadTopics();
+        renderTopics();
+      } catch (e) {
+        showToast('重置失败: ' + e.message, 'error');
+      }
+    }
+
+    async function resetAllTopicsUI() {
+      if (!confirm('确定要重置所有已使用的主题吗？')) return;
+      try {
+        await fetch('/api/topics/reset-all', { method: 'POST' });
+        showToast('所有主题已重置', 'success');
+        await loadTopics();
+        renderTopics();
+      } catch (e) {
+        showToast('重置失败：' + e.message, 'error');
+      }
+    }
+
+    // ========== 编辑主题功能 ==========
+    let editingTopicId = null;
+
+    function showEditTopicForm(topicId) {
+      const topic = topicsData.find(t => t.id === topicId);
+      if (!topic) return;
+
+      editingTopicId = topicId;
+      const area = document.getElementById('topic-form-area');
+      if (!area) return;
+
+      area.innerHTML = `<div class="border rounded-lg p-4 mb-4 bg-white">
+        <h3 class="font-medium mb-3">编辑主题</h3>
+        <div class="space-y-3">
+          <div>
+            <label class="block text-sm text-gray-700 mb-1">标题 *</label>
+            <input id="edit-topic-title" type="text" value="${escapeHtml(topic.title)}" class="w-full px-3 py-2 border rounded-md" />
+          </div>
+          <div>
+            <label class="block text-sm text-gray-700 mb-1">方向描述 *</label>
+            <input id="edit-topic-direction" type="text" value="${escapeHtml(topic.direction)}" class="w-full px-3 py-2 border rounded-md" />
+          </div>
+          <div>
+            <label class="block text-sm text-gray-700 mb-1">内容提纲（可选）</label>
+            <textarea id="edit-topic-outline" rows="3" class="w-full px-3 py-2 border rounded-md">${escapeHtml(topic.outline || '')}</textarea>
+          </div>
+          <div>
+            <label class="block text-sm text-gray-700 mb-1">最大复用次数</label>
+            <input id="edit-topic-maxUseCount" type="number" min="1" max="100" value="${topic.maxUseCount || 1}" class="w-32 px-3 py-2 border rounded-md" />
+            <span class="text-xs text-gray-400 ml-2">同一主题可发帖次数（1=用一次即耗尽）</span>
+          </div>
+          <div>
+            <label class="block text-sm text-gray-700 mb-1">关联素材（可选）</label>
+            <div class="w-full" id="selected-materials-display">
+              <span class="text-xs text-gray-400">加载中...</span>
+            </div>
+            <button type="button" onclick="openMaterialPicker()" class="mt-2 px-3 py-1.5 text-sm bg-blue-50 border border-blue-200 text-blue-700 rounded-md hover:bg-blue-100">
+              📷 选择素材文件
+            </button>
+          </div>
+          <div class="flex gap-2">
+            <button onclick="submitEditTopic()" class="px-4 py-2 bg-purple-600 text-white rounded-md text-sm hover:bg-purple-700">保存修改</button>
+            <button onclick="cancelEditTopicForm()" class="px-4 py-2 bg-gray-100 border rounded-md text-sm hover:bg-gray-200">取消</button>
+          </div>
+        </div>
+      </div>`;
+
+      // 初始化已选素材
+      selectedMaterialPaths = topic.materialPaths || [];
+      updateSelectedMaterialsDisplay();
+    }
+
+    function cancelEditTopicForm() {
+      const area = document.getElementById('topic-form-area');
+      if (area) area.innerHTML = '';
+      editingTopicId = null;
+      selectedMaterialPaths = [];
+    }
+
+    async function submitEditTopic() {
+      if (!editingTopicId) return;
+
+      const title = document.getElementById('edit-topic-title').value.trim();
+      const direction = document.getElementById('edit-topic-direction').value.trim();
+      const outline = document.getElementById('edit-topic-outline').value.trim();
+      const maxUseCount = parseInt(document.getElementById('edit-topic-maxUseCount').value, 10) || 1;
+      const materialPaths = selectedMaterialPaths.slice();
+
+      if (!title || !direction) {
+        showToast('标题和方向描述不能为空', 'error');
+        return;
+      }
+
+      try {
+        const resp = await fetch(`/api/topics/${editingTopicId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, direction, outline, materialPaths, maxUseCount }),
+        });
+
+        if (resp.ok) {
+          showToast('主题已更新', 'success');
+          editingTopicId = null;
+          selectedMaterialPaths = [];
+          await loadTopics();
+          renderTopics();
+        } else {
+          const err = await resp.json();
+          showToast('更新失败：' + (err.error || '未知错误'), 'error');
+        }
+      } catch (e) {
+        showToast('更新失败：' + e.message, 'error');
+      }
+    }
+
+    // ========== 素材文件选择器 ==========
+    let selectedMaterialPaths = [];   // 当前表单中已选的文件/目录路径（相对路径）
+    let pickerChecked = new Set();    // 弹窗中当前勾选的路径
+    let pickerCurrentDir = '';        // 当前浏览的目录（相对路径，空=根目录）
+
+    /**
+     * 打开素材文件选择器弹窗
+     */
+    async function openMaterialPicker() {
+      pickerCurrentDir = '';
+      pickerChecked = new Set(selectedMaterialPaths);
+
+      const overlay = document.createElement('div');
+      overlay.id = 'material-picker-overlay';
+      overlay.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+      overlay.innerHTML = `
+        <div class="bg-white rounded-xl shadow-2xl flex flex-col" style="width:680px;max-width:95vw;max-height:85vh;">
+          <!-- 标题栏 -->
+          <div class="flex items-center justify-between px-5 py-3 border-b flex-shrink-0">
+            <div class="flex items-center gap-2">
+              <span class="font-semibold text-gray-800">选择素材</span>
+              <span id="picker-breadcrumb" class="text-xs text-gray-400"></span>
+            </div>
+            <button onclick="closeMaterialPicker()" class="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+          </div>
+          <!-- 工具栏 -->
+          <div class="flex items-center gap-2 px-5 py-2 border-b bg-gray-50 flex-shrink-0" id="picker-toolbar">
+            <button id="picker-back-btn" onclick="pickerGoUp()" class="hidden px-2 py-1 text-xs bg-white border rounded hover:bg-gray-50">← 返回上级</button>
+            <span id="picker-dir-label" class="text-xs text-gray-500">根目录</span>
+            <div class="ml-auto flex items-center gap-2">
+              <label class="flex items-center gap-1 text-xs text-gray-500 cursor-pointer">
+                <input type="checkbox" id="picker-select-dir" onchange="toggleSelectDir(this.checked)" class="w-3.5 h-3.5" />
+                选择整个目录
+              </label>
+            </div>
+          </div>
+          <!-- 内容区 -->
+          <div id="picker-body" class="flex-1 overflow-y-auto p-4">
+            <p class="text-gray-400 text-sm text-center py-8">加载中...</p>
+          </div>
+          <!-- 底栏 -->
+          <div class="px-5 py-3 border-t bg-gray-50 flex items-center justify-between flex-shrink-0">
+            <span id="picker-selected-count" class="text-xs text-gray-500">已选 0 项</span>
+            <div class="flex gap-2">
+              <button onclick="closeMaterialPicker()" class="px-4 py-1.5 text-sm bg-white border rounded-md hover:bg-gray-50">取消</button>
+              <button onclick="confirmMaterialPicker()" class="px-4 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700">确认</button>
+            </div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+      await pickerLoadDir('');
+    }
+
+    /**
+     * 加载指定目录内容
+     */
+    async function pickerLoadDir(dir) {
+      pickerCurrentDir = dir;
+      const body = document.getElementById('picker-body');
+      const backBtn = document.getElementById('picker-back-btn');
+      const dirLabel = document.getElementById('picker-dir-label');
+      const breadcrumb = document.getElementById('picker-breadcrumb');
+      const selectDirCheckbox = document.getElementById('picker-select-dir');
+
+      if (body) body.innerHTML = '<p class="text-gray-400 text-sm text-center py-8">加载中...</p>';
+
+      // 更新导航状态
+      if (backBtn) backBtn.classList.toggle('hidden', !dir);
+      if (dirLabel) dirLabel.textContent = dir ? dir : '根目录';
+      if (breadcrumb) breadcrumb.textContent = dir ? `/ ${dir}` : '';
+
+      // 目录整选复选框：反映当前目录是否已被整选
+      if (selectDirCheckbox) {
+        selectDirCheckbox.checked = dir ? pickerChecked.has(dir) : false;
+        selectDirCheckbox.disabled = !dir; // 根目录不支持整选
+      }
+
+      try {
+        const url = dir ? `/api/materials/browser?dir=${encodeURIComponent(dir)}` : '/api/materials/browser';
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error('请求失败 ' + resp.status);
+        const data = await resp.json();
+        renderPickerBody(data.entries || []);
+      } catch (e) {
+        if (body) body.innerHTML =
+          `<p class="text-red-500 text-sm text-center py-6">加载失败：${escapeHtml(e.message)}</p>`;
+      }
+
+      updatePickerCount();
+    }
+
+    /**
+     * 返回上级目录
+     */
+    function pickerGoUp() {
+      const parts = pickerCurrentDir.split('/').filter(Boolean);
+      parts.pop();
+      pickerLoadDir(parts.join('/'));
+    }
+
+    /**
+     * 渲染浏览器内容（文件+目录网格）
+     */
+    function renderPickerBody(entries) {
+      const body = document.getElementById('picker-body');
+      if (!body) return;
+
+      if (entries.length === 0) {
+        body.innerHTML = `<p class="text-gray-400 text-sm text-center py-8">
+          ${pickerCurrentDir ? '此目录下暂无图片文件' : '素材库为空，请将图片放入宿主机映射目录中'}
+        </p>`;
+        return;
+      }
+
+      const dirs = entries.filter(e => e.type === 'dir');
+      const files = entries.filter(e => e.type === 'file');
+
+      let html = '';
+
+      // 目录列表
+      if (dirs.length > 0) {
+        html += '<div class="mb-4">';
+        html += '<p class="text-xs text-gray-400 mb-2 font-medium">📁 目录</p>';
+        html += '<div class="grid grid-cols-3 gap-2">';
+        for (const dir of dirs) {
+          const isChecked = pickerChecked.has(dir.path);
+          html += `<div class="relative border rounded-lg p-3 hover:border-blue-300 hover:bg-blue-50 cursor-pointer transition-colors ${isChecked ? 'border-blue-400 bg-blue-50' : 'border-gray-200 bg-white'}">
+            <div class="flex items-start gap-2">
+              <input type="checkbox" value="${escapeHtml(dir.path)}" data-type="dir" ${isChecked ? 'checked' : ''}
+                onchange="togglePickerEntry(this.value, 'dir', this.checked)"
+                onclick="event.stopPropagation()"
+                class="w-4 h-4 mt-0.5 flex-shrink-0 text-blue-600" />
+              <div class="min-w-0 flex-1" onclick="pickerLoadDir('${escapeHtml(dir.path)}')" title="进入 ${escapeHtml(dir.name)}">
+                <span class="text-2xl block mb-1">📁</span>
+                <p class="text-xs text-gray-700 truncate font-medium">${escapeHtml(dir.name)}</p>
+                <p class="text-xs text-blue-500 hover:underline">点击进入</p>
+              </div>
+            </div>
+          </div>`;
+        }
+        html += '</div></div>';
+      }
+
+      // 图片文件网格
+      if (files.length > 0) {
+        html += '<div>';
+        html += `<p class="text-xs text-gray-400 mb-2 font-medium">🖼 图片文件（${files.length} 张）</p>`;
+        html += '<div class="grid grid-cols-4 gap-2">';
+        for (const file of files) {
+          const isChecked = pickerChecked.has(file.path);
+          const sizeKb = ((file.size || 0) / 1024).toFixed(0);
+          html += `<label class="relative border rounded-lg overflow-hidden cursor-pointer hover:border-blue-400 transition-colors ${isChecked ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200'}">
+            <input type="checkbox" value="${escapeHtml(file.path)}" data-type="file" ${isChecked ? 'checked' : ''}
+              onchange="togglePickerEntry(this.value, 'file', this.checked)"
+              class="sr-only" />
+            <div class="relative">
+              <img src="/api/materials/file/${file.path}" alt="${escapeHtml(file.name)}"
+                class="w-full h-20 object-cover bg-gray-100"
+                loading="lazy"
+                onerror="this.parentNode.innerHTML='<div class=\\'w-full h-20 bg-gray-100 flex items-center justify-center text-2xl\\'>🖼</div>'" />
+              ${isChecked ? '<div class="absolute inset-0 bg-blue-500 bg-opacity-20 flex items-center justify-center"><span class="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center text-white text-xs">✓</span></div>' : ''}
+            </div>
+            <div class="p-1.5">
+              <p class="text-xs text-gray-700 truncate" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</p>
+              <p class="text-xs text-gray-400">${sizeKb} KB</p>
+            </div>
+          </label>`;
+        }
+        html += '</div></div>';
+      }
+
+      body.innerHTML = html;
+    }
+
+    /**
+     * 勾选/取消文件或目录
+     */
+    function togglePickerEntry(entryPath, type, checked) {
+      if (checked) {
+        pickerChecked.add(entryPath);
+      } else {
+        pickerChecked.delete(entryPath);
+      }
+      // 同步刷新当前格子的选中样式（避免整页重绘）
+      const input = document.querySelector(`input[value="${CSS.escape(entryPath)}"]`);
+      if (input) {
+        const card = input.closest('label, div.relative');
+        if (card) {
+          if (type === 'file') {
+            card.classList.toggle('border-blue-500', checked);
+            card.classList.toggle('ring-2', checked);
+            card.classList.toggle('ring-blue-200', checked);
+            card.classList.toggle('border-gray-200', !checked);
+            // 更新打勾浮层
+            const imgWrap = card.querySelector('.relative');
+            if (imgWrap) {
+              const mark = imgWrap.querySelector('.bg-blue-500.bg-opacity-20');
+              if (checked && !mark) {
+                imgWrap.insertAdjacentHTML('beforeend', '<div class="absolute inset-0 bg-blue-500 bg-opacity-20 flex items-center justify-center"><span class="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center text-white text-xs">✓</span></div>');
+              } else if (!checked && mark) {
+                mark.remove();
+              }
+            }
+          } else {
+            card.classList.toggle('border-blue-400', checked);
+            card.classList.toggle('bg-blue-50', checked);
+            card.classList.toggle('border-gray-200', !checked);
+          }
+        }
+      }
+      updatePickerCount();
+    }
+
+    /**
+     * 整选/取消整选当前目录
+     */
+    function toggleSelectDir(checked) {
+      if (!pickerCurrentDir) return;
+      if (checked) {
+        pickerChecked.add(pickerCurrentDir);
+      } else {
+        pickerChecked.delete(pickerCurrentDir);
+      }
+      updatePickerCount();
+    }
+
+    /**
+     * 更新底栏计数
+     */
+    function updatePickerCount() {
+      const el = document.getElementById('picker-selected-count');
+      if (el) el.textContent = `已选 ${pickerChecked.size} 项`;
+    }
+
+    /**
+     * 确认选择
+     */
+    function confirmMaterialPicker() {
+      selectedMaterialPaths = Array.from(pickerChecked);
+      closeMaterialPicker();
+      updateSelectedMaterialsDisplay();
+    }
+
+    /**
+     * 关闭弹窗
+     */
+    function closeMaterialPicker() {
+      const overlay = document.getElementById('material-picker-overlay');
+      if (overlay) overlay.remove();
+    }
+
+    /**
+     * 更新已选素材展示区（缩略图网格，包括展开文件夹内的图片）
+     */
+    async function updateSelectedMaterialsDisplay() {
+      const display = document.getElementById('selected-materials-display');
+      if (!display) return;
+
+      if (selectedMaterialPaths.length === 0) {
+        display.innerHTML = '<span class="text-xs text-gray-400">未选择素材</span>';
+        return;
+      }
+
+      // 先渲染加载中状态
+      display.innerHTML = '<span class="text-xs text-gray-400">加载缩略图...</span>';
+
+      // 收集所有需要展示的图片（文件直接展示，目录展开直属图片）
+      const previewItems = []; // { path, name, isFromDir, dirName }
+
+      for (const p of selectedMaterialPaths) {
+        const name = p.split('/').pop() || p;
+        const hasExt = /\.\w+$/.test(name);
+
+        if (hasExt) {
+          // 单文件
+          previewItems.push({ path: p, name, isFromDir: false, dirName: '' });
+        } else {
+          // 目录：请求其直属图片
+          try {
+            const resp = await fetch(`/api/materials/browser?dir=${encodeURIComponent(p)}`);
+            if (resp.ok) {
+              const data = await resp.json();
+              const files = (data.entries || []).filter(e => e.type === 'file');
+              if (files.length === 0) {
+                previewItems.push({ path: null, name, isFromDir: true, dirName: name, placeholder: true });
+              } else {
+                for (const f of files) {
+                  previewItems.push({ path: f.path, name: f.name, isFromDir: true, dirName: name });
+                }
+              }
+            }
+          } catch {
+            previewItems.push({ path: null, name, isFromDir: true, dirName: name, placeholder: true });
+          }
+        }
+      }
+
+      if (previewItems.length === 0) {
+        display.innerHTML = '<span class="text-xs text-gray-400">选中的目录下暂无图片</span>';
+        return;
+      }
+
+      // 分组渲染：先展示单文件，再按目录分组
+      const singles = previewItems.filter(i => !i.isFromDir);
+      const dirGroups = {};
+      for (const item of previewItems.filter(i => i.isFromDir)) {
+        if (!dirGroups[item.dirName]) dirGroups[item.dirName] = [];
+        dirGroups[item.dirName].push(item);
+      }
+
+      let html = '<div class="w-full">';
+
+      // 单文件
+      if (singles.length > 0) {
+        html += '<div class="grid grid-cols-5 gap-2 mb-2">';
+        for (const item of singles) {
+          html += renderPreviewThumb(item);
+        }
+        html += '</div>';
+      }
+
+      // 目录分组
+      for (const [dirName, items] of Object.entries(dirGroups)) {
+        const dirPath = selectedMaterialPaths.find(p => (p.split('/').pop() || p) === dirName && !/\.\w+$/.test(p.split('/').pop() || p));
+        html += `<div class="mb-2">
+          <div class="flex items-center gap-1 mb-1">
+            <span class="text-xs text-gray-500 font-medium">📁 ${escapeHtml(dirName)}</span>
+            <span class="text-xs text-gray-400">(${items.length} 张)</span>
+            <button type="button" onclick="removeMaterialPath('${escapeHtml(dirPath || dirName)}')" class="text-xs text-red-400 hover:text-red-600 ml-1">移除</button>
+          </div>`;
+        html += '<div class="grid grid-cols-5 gap-2">';
+        for (const item of items) {
+          html += renderPreviewThumb(item);
+        }
+        html += '</div></div>';
+      }
+
+      // 单文件移除按钮在每张图上
+      html += '</div>';
+      display.innerHTML = html;
+    }
+
+    /**
+     * 渲染单张缩略图
+     */
+    function renderPreviewThumb(item) {
+      if (item.placeholder) {
+        return `<div class="w-full h-14 rounded border border-dashed border-gray-300 flex items-center justify-center text-xs text-gray-400">空目录</div>`;
+      }
+
+      const removeBtn = !item.isFromDir
+        ? `<button type="button" onclick="event.stopPropagation();removeMaterialPath('${escapeHtml(item.path)}')"
+             class="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity leading-none">&times;</button>`
+        : '';
+
+      return `<div class="relative group">
+        <img src="/api/materials/file/${item.path}" alt="${escapeHtml(item.name)}"
+          class="w-full h-14 object-cover rounded border border-gray-200 bg-gray-100"
+          loading="lazy"
+          onerror="this.src='';this.className='w-full h-14 rounded border border-gray-200 bg-gray-100 flex items-center justify-center';this.outerHTML='<div class=\\'w-full h-14 rounded border border-gray-200 bg-gray-100 flex items-center justify-center text-lg\\'>🖼</div>'" />
+        ${removeBtn}
+        <p class="text-xs text-gray-500 truncate mt-0.5 text-center" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</p>
+      </div>`;
+    }
+
+    /**
+     * 从已选列表移除单项
+     */
+    function removeMaterialPath(filePath) {
+      selectedMaterialPaths = selectedMaterialPaths.filter(p => p !== filePath);
+      updateSelectedMaterialsDisplay();
+    }
+
+    // ========== 登录功能 ==========
+
+    /**
+     * 格式化时间戳为 YYYY-MM-DD HH:mm:ss
+     */
+    function formatTokenExpiresAt(timestamp) {
+      if (!timestamp) return '--';
+      const d = new Date(timestamp);
+      const pad = (n) => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    }
+
+    /**
+     * 确定 Token 状态颜色编码
+     * green: valid=true, remainingHours > 24
+     * yellow: valid=true, 6 <= remainingHours < 24
+     * red: valid=true, remainingHours < 6 OR valid=false
+     */
+    function getTokenColorConfig(tokenStatus) {
+      if (!tokenStatus || !tokenStatus.valid) {
+        return { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-800', subtext: 'text-red-600', indicator: 'bg-red-500', icon: '❌' };
+      }
+      const hours = tokenStatus.remainingHours || 0;
+      if (hours > 24) {
+        return { bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-800', subtext: 'text-green-600', indicator: 'bg-green-500', icon: '✅' };
+      }
+      if (hours >= 6) {
+        return { bg: 'bg-yellow-50', border: 'border-yellow-200', text: 'text-yellow-800', subtext: 'text-yellow-600', indicator: 'bg-yellow-500', icon: '⚠️' };
+      }
+      return { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-800', subtext: 'text-red-600', indicator: 'bg-red-500', icon: '🔴' };
+    }
+
+    /**
+     * 构建 Token 状态区 HTML
+     */
+    function buildTokenStatusSection(tokenStatus, error) {
+      // Error state with retry button
+      if (error) {
+        return `<div id="token-status-section" class="mb-6 p-4 bg-gray-50 border border-gray-300 rounded-lg">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="text-lg">⚠️</span>
+              <p class="font-medium text-gray-700">Token 状态获取失败</p>
+            </div>
+            <button onclick="refreshTokenStatus()" class="px-3 py-1.5 bg-gray-600 text-white text-sm rounded-md hover:bg-gray-700">🔄 重试</button>
+          </div>
+          <p class="text-sm text-gray-500 mt-1">${escapeHtml(error)}</p>
+        </div>`;
+      }
+
+      // Loading state
+      if (!tokenStatus) {
+        return `<div id="token-status-section" class="mb-6 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+          <div class="flex items-center gap-2">
+            <span class="text-lg">⏳</span>
+            <p class="font-medium text-gray-500">加载 Token 状态...</p>
+          </div>
+        </div>`;
+      }
+
+      const c = getTokenColorConfig(tokenStatus);
+
+      // Valid token state
+      if (tokenStatus.valid) {
+        const expiresAtStr = formatTokenExpiresAt(tokenStatus.expiresAt);
+        const remainingHours = tokenStatus.remainingHours || 0;
+        return `<div id="token-status-section" class="mb-6 p-4 ${c.bg} border ${c.border} rounded-lg">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="w-3 h-3 rounded-full ${c.indicator} inline-block"></span>
+              <span class="text-lg">${c.icon}</span>
+              <p class="font-medium ${c.text}">Token 有效</p>
+            </div>
+            <div class="flex gap-2">
+              <button onclick="refreshTokenStatus()" class="px-3 py-1.5 bg-white border border-gray-300 text-gray-700 text-sm rounded-md hover:bg-gray-100">🔄 刷新</button>
+              <button onclick="verifyTokenOnline()" id="verify-online-btn" class="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700">在线验证</button>
+            </div>
+          </div>
+          <div class="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
+            <div>
+              <span class="text-gray-500">状态：</span>
+              <span class="${c.text} font-medium">有效</span>
+            </div>
+            <div>
+              <span class="text-gray-500">剩余：</span>
+              <span class="${c.text} font-medium">${remainingHours} 小时</span>
+            </div>
+            <div>
+              <span class="text-gray-500">过期时间：</span>
+              <span class="${c.subtext}">${expiresAtStr}</span>
+            </div>
+          </div>
+          <div id="verify-result" class="mt-2 hidden"></div>
+        </div>`;
+      }
+
+      // Invalid/expired token state
+      return `<div id="token-status-section" class="mb-6 p-4 ${c.bg} border ${c.border} rounded-lg">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="w-3 h-3 rounded-full ${c.indicator} inline-block"></span>
+            <span class="text-lg">${c.icon}</span>
+            <p class="font-medium ${c.text}">Token 已过期或不存在，请重新登录</p>
+          </div>
+          <div class="flex gap-2">
+            <button onclick="refreshTokenStatus()" class="px-3 py-1.5 bg-white border border-gray-300 text-gray-700 text-sm rounded-md hover:bg-gray-100">🔄 刷新</button>
+            <button onclick="verifyTokenOnline()" id="verify-online-btn" class="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700">在线验证</button>
+          </div>
+        </div>
+        <div id="verify-result" class="mt-2 hidden"></div>
+      </div>`;
+    }
+
+    /**
+     * 刷新 Token 状态区（不重渲染整个 Login Tab）
+     */
+    async function refreshTokenStatus() {
+      const container = document.getElementById('token-status-section');
+      if (container) {
+        container.outerHTML = buildTokenStatusSection(null, null);
+      }
+
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        // 获取 APP Token 状态（用于调用一汽奥迪 API）
+        const resp = await fetch('/api/auth/token-status', {
+          signal: controller.signal,
+          credentials: 'include',  // 携带 Cookie
+        });
+        clearTimeout(timeoutId);
+        const result = await resp.json();
+        
+        // 转换为 buildTokenStatusSection 期望的格式
+        let tokenStatus = null;
+        if (result.code === 'SUCCESS' && result.data) {
+          const tokenData = result.data;
+          tokenStatus = {
+            valid: tokenData.valid,
+            expiresAt: tokenData.expiresAt || null,
+            remainingHours: tokenData.remainingHours || 0,
+          };
+        } else {
+          tokenStatus = { valid: false };
+        }
+        
+        const el = document.getElementById('token-status-section');
+        if (el) el.outerHTML = buildTokenStatusSection(tokenStatus, null);
+      } catch (e) {
+        const errMsg = e.name === 'AbortError' ? '请求超时' : (e.message || '网络错误');
+        const el = document.getElementById('token-status-section');
+        if (el) el.outerHTML = buildTokenStatusSection(null, errMsg);
+      }
+    }
+
+    // ========== AI 模型管理 ==========
+    let aiFallbackFollowsProviderOrder;
+
+    function arrayEquals(a, b) {
+      if (a === b) return true;
+      if (!Array.isArray(a) || !Array.isArray(b)) return false;
+      if (a.length !== b.length) return false;
+      for (let i = 0; i < a.length; i++) {
+        if (a[i] !== b[i]) return false;
+      }
+      return true;
+    }
+
+    function dedupeArray(arr) {
+      const seen = new Set();
+      const out = [];
+      for (const x of (arr || [])) {
+        if (!seen.has(x)) {
+          seen.add(x);
+          out.push(x);
+        }
+      }
+      return out;
+    }
+
+    function normalizeOrder(order, providerNames) {
+      const names = providerNames || [];
+      const nameSet = new Set(names);
+      const out = [];
+      const seen = new Set();
+      for (const n of (order || [])) {
+        if (nameSet.has(n) && !seen.has(n)) {
+          seen.add(n);
+          out.push(n);
+        }
+      }
+      for (const n of names) {
+        if (!seen.has(n)) {
+          seen.add(n);
+          out.push(n);
+        }
+      }
+      return out;
+    }
+
+    function filterOrder(order, providerNames) {
+      const names = providerNames || [];
+      const nameSet = new Set(names);
+      const out = [];
+      const seen = new Set();
+      for (const n of (order || [])) {
+        if (nameSet.has(n) && !seen.has(n)) {
+          seen.add(n);
+          out.push(n);
+        }
+      }
+      return out;
+    }
+
+    function ensureAiFallbackObject() {
+      if (!configData.ai) configData.ai = {};
+      if (!configData.ai.fallback) configData.ai.fallback = {};
+    }
+
+    function getAiProviderNames() {
+      const providers = (configData.ai && configData.ai.providers) ? configData.ai.providers : [];
+      return providers.map(p => p.name);
+    }
+
+    function computeAiFallbackFollowsProviderOrder(providerOrder, providerNames) {
+      const fp = configData.ai && configData.ai.fallback ? configData.ai.fallback.providerOrder : undefined;
+      if (!fp || fp.length === 0) return true;
+      const nameSet = new Set(providerNames || []);
+      for (const n of fp) {
+        if (!nameSet.has(n)) return true;
+      }
+      return arrayEquals(dedupeArray(fp), dedupeArray(providerOrder));
+    }
+
+    function syncFallbackOrderIfFollowing() {
+      if (!aiFallbackFollowsProviderOrder) return;
+      ensureAiFallbackObject();
+      const order = configData.ai.providerOrder || getAiProviderNames();
+      configData.ai.fallback.providerOrder = [...order];
+    }
+
+    function ensureAiConfigConsistency() {
+      if (!configData.ai) configData.ai = {};
+      const providerNames = getAiProviderNames();
+      configData.ai.providerOrder = normalizeOrder(configData.ai.providerOrder || [], providerNames);
+      aiFallbackFollowsProviderOrder = computeAiFallbackFollowsProviderOrder(configData.ai.providerOrder, providerNames);
+      if (aiFallbackFollowsProviderOrder) {
+        syncFallbackOrderIfFollowing();
+      } else if (configData.ai.fallback && Array.isArray(configData.ai.fallback.providerOrder)) {
+        configData.ai.fallback.providerOrder = filterOrder(configData.ai.fallback.providerOrder, providerNames);
+      }
+    }
+
+    function renderAITab() {
+      const container = document.getElementById('form-container');
+      const aiConfig = configData.ai || {};
+      const providers = aiConfig.providers || [];
+      const providerOrder = normalizeOrder(aiConfig.providerOrder || [], providers.map(p => p.name));
+      if (!configData.ai) configData.ai = {};
+      configData.ai.providerOrder = providerOrder;
+      aiFallbackFollowsProviderOrder = computeAiFallbackFollowsProviderOrder(providerOrder, providers.map(p => p.name));
+      syncFallbackOrderIfFollowing();
+
+      let html = '';
+
+      // 说明
+      html += `<div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 text-sm text-blue-700">
+        💡 拖拽模型卡片可调整调用优先级（从上到下依次尝试）。每个模型可独立配置超时时间。
+      </div>`;
+
+      // 模型列表
+      html += `<div class="flex items-center justify-between mb-3">
+        <h3 class="font-semibold text-gray-800">🤖 模型列表 <span class="text-xs text-gray-400 font-normal">（拖拽排序）</span></h3>
+        <button onclick="addAIProvider()" class="px-3 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">+ 添加模型</button>
+      </div>`;
+
+      html += '<div id="ai-provider-form-area"></div>';
+
+      if (providers.length === 0) {
+        html += '<p class="text-gray-500 text-center py-8">暂无模型配置，请点击"添加模型"。</p>';
+      } else {
+        // 按 providerOrder 排序显示
+        const sortedProviders = sortProvidersByOrder(providers, providerOrder);
+
+        html += '<div class="space-y-2" id="ai-providers-list">';
+        sortedProviders.forEach((provider, displayIdx) => {
+          const originalIdx = providers.indexOf(provider);
+          const timeout = provider.requestTimeout || aiConfig.requestTimeout || 30000;
+
+          html += `<div class="border rounded-lg p-4 bg-white cursor-move ai-provider-card" draggable="true" data-provider-name="${escapeHtml(provider.name)}" data-idx="${originalIdx}">
+            <div class="flex items-start justify-between mb-2">
+              <div class="flex items-center gap-2">
+                <span class="text-gray-400 cursor-grab text-lg" title="拖拽排序">⠿</span>
+                <h4 class="font-medium text-gray-800">${escapeHtml(provider.name)}</h4>
+                <span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">#${displayIdx + 1}</span>
+              </div>
+              <div class="flex gap-1">
+                <button onclick="editAIProvider(${originalIdx})" class="px-2 py-1 text-xs bg-white border rounded hover:bg-gray-50">编辑</button>
+                <button onclick="deleteAIProvider(${originalIdx})" class="px-2 py-1 text-xs bg-white border border-red-200 text-red-600 rounded hover:bg-red-50">删除</button>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-1 text-sm text-gray-600">
+              <p>模型: <span class="text-gray-800">${escapeHtml(provider.model)}</span></p>
+              <p>温度: <span class="text-gray-800">${provider.temperature ?? 0.7}</span></p>
+              <p>Max Tokens: <span class="text-gray-800">${provider.maxTokens || '默认'}</span></p>
+              <p>超时: <span class="text-gray-800">${(timeout / 1000).toFixed(0)}s</span></p>
+            </div>
+            <p class="text-xs text-gray-400 mt-1">URL: ${escapeHtml(provider.baseUrl)}</p>
+            <div id="ai-edit-form-${originalIdx}" class="hidden mt-3 border-t pt-3"></div>
+          </div>`;
+        });
+        html += '</div>';
+      }
+
+      // 保存按钮
+      html += `<div class="mt-4 flex justify-end">
+        <button onclick="saveAIConfig()" class="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">保存 AI 配置</button>
+      </div>`;
+
+      container.innerHTML = html;
+
+      // 绑定拖拽事件
+      initDragSort();
+    }
+
+    function sortProvidersByOrder(providers, order) {
+      if (!order || order.length === 0) return [...providers];
+      const sorted = [];
+      for (const name of order) {
+        const found = providers.find(p => p.name === name);
+        if (found) sorted.push(found);
+      }
+      // 未在 order 中的追加末尾
+      for (const p of providers) {
+        if (!sorted.includes(p)) sorted.push(p);
+      }
+      return sorted;
+    }
+
+    // ========== 拖拽排序 ==========
+    let dragSrcEl = null;
+
+    function initDragSort() {
+      const list = document.getElementById('ai-providers-list');
+      if (!list) return;
+
+      const cards = list.querySelectorAll('.ai-provider-card');
+      cards.forEach(card => {
+        card.addEventListener('dragstart', handleDragStart);
+        card.addEventListener('dragover', handleDragOver);
+        card.addEventListener('dragenter', handleDragEnter);
+        card.addEventListener('dragleave', handleDragLeave);
+        card.addEventListener('drop', handleDrop);
+        card.addEventListener('dragend', handleDragEnd);
+      });
+    }
+
+    function handleDragStart(e) {
+      dragSrcEl = this;
+      this.style.opacity = '0.4';
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', this.dataset.providerName);
+    }
+
+    function handleDragOver(e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      return false;
+    }
+
+    function handleDragEnter(e) {
+      this.classList.add('border-blue-400', 'bg-blue-50');
+    }
+
+    function handleDragLeave(e) {
+      this.classList.remove('border-blue-400', 'bg-blue-50');
+    }
+
+    function handleDrop(e) {
+      e.stopPropagation();
+      e.preventDefault();
+
+      this.classList.remove('border-blue-400', 'bg-blue-50');
+
+      if (dragSrcEl === this) return;
+
+      const srcName = dragSrcEl.dataset.providerName;
+      const targetName = this.dataset.providerName;
+
+      // 更新 providerOrder
+      const order = configData.ai.providerOrder || configData.ai.providers.map(p => p.name);
+      const srcIdx = order.indexOf(srcName);
+      const targetIdx = order.indexOf(targetName);
+
+      if (srcIdx >= 0 && targetIdx >= 0) {
+        order.splice(srcIdx, 1);
+        const newTargetIdx = order.indexOf(targetName);
+        order.splice(newTargetIdx, 0, srcName);
+        configData.ai.providerOrder = order;
+        syncFallbackOrderIfFollowing();
+      }
+
+      renderAITab();
+      showToast('调用顺序已更新（记得保存）', 'success');
+
+      return false;
+    }
+
+    function handleDragEnd(e) {
+      this.style.opacity = '1';
+      document.querySelectorAll('.ai-provider-card').forEach(card => {
+        card.classList.remove('border-blue-400', 'bg-blue-50');
+      });
+    }
+
+    function addAIProvider() {
+      const area = document.getElementById('ai-provider-form-area');
+      if (!area) return;
+      area.innerHTML = `<div class="border rounded-lg p-4 mb-3 bg-white">
+        <h4 class="font-medium mb-3">添加新模型</h4>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-gray-600 mb-1">名称 *</label>
+            <input id="new-ai-name" type="text" class="w-full px-2 py-1.5 border rounded text-sm" placeholder="如: claude" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-600 mb-1">模型 *</label>
+            <input id="new-ai-model" type="text" class="w-full px-2 py-1.5 border rounded text-sm" placeholder="如: claude-3-sonnet" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-600 mb-1">Base URL *</label>
+            <input id="new-ai-baseUrl" type="text" class="w-full px-2 py-1.5 border rounded text-sm" placeholder="https://api.example.com/v1" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-600 mb-1">API Key *</label>
+            <input id="new-ai-apiKey" type="text" class="w-full px-2 py-1.5 border rounded text-sm" placeholder="sk-..." />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-600 mb-1">温度</label>
+            <input id="new-ai-temperature" type="number" step="0.1" min="0" max="2" value="0.7" class="w-full px-2 py-1.5 border rounded text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-600 mb-1">Max Tokens</label>
+            <input id="new-ai-maxTokens" type="number" min="100" max="100000" value="4000" class="w-full px-2 py-1.5 border rounded text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-600 mb-1">请求超时 (毫秒)</label>
+            <input id="new-ai-requestTimeout" type="number" min="5000" max="120000" value="30000" class="w-full px-2 py-1.5 border rounded text-sm" />
+          </div>
+        </div>
+        <div class="flex gap-2 mt-3">
+          <button onclick="submitNewAIProvider()" class="px-4 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">添加</button>
+          <button onclick="cancelNewAIProvider()" class="px-4 py-1.5 bg-white border rounded text-sm hover:bg-gray-50">取消</button>
+        </div>
+      </div>`;
+    }
+
+    function cancelNewAIProvider() {
+      const area = document.getElementById('ai-provider-form-area');
+      if (area) area.innerHTML = '';
+    }
+
+    function submitNewAIProvider() {
+      const name = document.getElementById('new-ai-name').value.trim();
+      const model = document.getElementById('new-ai-model').value.trim();
+      const baseUrl = document.getElementById('new-ai-baseUrl').value.trim();
+      const apiKey = document.getElementById('new-ai-apiKey').value.trim();
+      const temperature = parseFloat(document.getElementById('new-ai-temperature').value) || 0.7;
+      const maxTokens = parseInt(document.getElementById('new-ai-maxTokens').value) || 4000;
+      const requestTimeout = parseInt(document.getElementById('new-ai-requestTimeout').value) || 30000;
+
+      if (!name || !model || !baseUrl || !apiKey) {
+        showToast('名称、模型、Base URL、API Key 为必填', 'error');
+        return;
+      }
+
+      if (!configData.ai) configData.ai = {};
+      if (!configData.ai.providers) configData.ai.providers = [];
+
+      configData.ai.providers.push({ name, model, baseUrl, apiKey, temperature, maxTokens, requestTimeout });
+
+      // 自动加入调用顺序末尾
+      if (!configData.ai.providerOrder) configData.ai.providerOrder = [];
+      if (!configData.ai.providerOrder.includes(name)) {
+        configData.ai.providerOrder.push(name);
+      }
+      syncFallbackOrderIfFollowing();
+
+      cancelNewAIProvider();
+      renderAITab();
+      showToast(`模型 "${name}" 已添加（记得保存）`, 'success');
+    }
+
+    function deleteAIProvider(idx) {
+      const providers = configData.ai.providers || [];
+      if (idx < 0 || idx >= providers.length) return;
+      const name = providers[idx].name;
+      if (!confirm(`确定要删除模型 "${name}" 吗？`)) return;
+
+      providers.splice(idx, 1);
+
+      // 从调用顺序中移除
+      if (configData.ai.providerOrder) {
+        configData.ai.providerOrder = configData.ai.providerOrder.filter(n => n !== name);
+      }
+      if (configData.ai.fallback && Array.isArray(configData.ai.fallback.providerOrder)) {
+        configData.ai.fallback.providerOrder = configData.ai.fallback.providerOrder.filter(n => n !== name);
+      }
+      syncFallbackOrderIfFollowing();
+
+      renderAITab();
+      showToast(`模型 "${name}" 已移除（记得保存）`, 'success');
+    }
+
+    function editAIProvider(idx) {
+      const providers = configData.ai.providers || [];
+      const provider = providers[idx];
+      if (!provider) return;
+
+      const container = document.getElementById('ai-edit-form-' + idx);
+      if (!container) return;
+
+      if (!container.classList.contains('hidden')) {
+        container.classList.add('hidden');
+        container.innerHTML = '';
+        return;
+      }
+
+      container.classList.remove('hidden');
+      container.innerHTML = `<div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs text-gray-600 mb-1">名称</label>
+          <input id="edit-ai-name-${idx}" type="text" value="${escapeHtml(provider.name)}" class="w-full px-2 py-1.5 border rounded text-sm" />
+        </div>
+        <div>
+          <label class="block text-xs text-gray-600 mb-1">模型</label>
+          <input id="edit-ai-model-${idx}" type="text" value="${escapeHtml(provider.model)}" class="w-full px-2 py-1.5 border rounded text-sm" />
+        </div>
+        <div>
+          <label class="block text-xs text-gray-600 mb-1">Base URL</label>
+          <input id="edit-ai-baseUrl-${idx}" type="text" value="${escapeHtml(provider.baseUrl)}" class="w-full px-2 py-1.5 border rounded text-sm" />
+        </div>
+        <div>
+          <label class="block text-xs text-gray-600 mb-1">API Key</label>
+          <input id="edit-ai-apiKey-${idx}" type="text" value="${escapeHtml(provider.apiKey)}" class="w-full px-2 py-1.5 border rounded text-sm" />
+        </div>
+        <div>
+          <label class="block text-xs text-gray-600 mb-1">温度</label>
+          <input id="edit-ai-temperature-${idx}" type="number" step="0.1" min="0" max="2" value="${provider.temperature ?? 0.7}" class="w-full px-2 py-1.5 border rounded text-sm" />
+        </div>
+        <div>
+          <label class="block text-xs text-gray-600 mb-1">Max Tokens</label>
+          <input id="edit-ai-maxTokens-${idx}" type="number" min="100" max="100000" value="${provider.maxTokens || 4000}" class="w-full px-2 py-1.5 border rounded text-sm" />
+        </div>
+        <div>
+          <label class="block text-xs text-gray-600 mb-1">请求超时 (毫秒)</label>
+          <input id="edit-ai-requestTimeout-${idx}" type="number" min="5000" max="120000" value="${provider.requestTimeout || 30000}" class="w-full px-2 py-1.5 border rounded text-sm" />
+        </div>
+      </div>
+      <div class="flex gap-2 mt-2">
+        <button onclick="saveEditAIProvider(${idx})" class="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">确认修改</button>
+        <button onclick="editAIProvider(${idx})" class="px-3 py-1 bg-white border rounded text-xs hover:bg-gray-50">取消</button>
+      </div>`;
+    }
+
+    function saveEditAIProvider(idx) {
+      const providers = configData.ai.providers || [];
+      const oldName = providers[idx].name;
+
+      const name = document.getElementById('edit-ai-name-' + idx).value.trim();
+      const model = document.getElementById('edit-ai-model-' + idx).value.trim();
+      const baseUrl = document.getElementById('edit-ai-baseUrl-' + idx).value.trim();
+      const apiKey = document.getElementById('edit-ai-apiKey-' + idx).value.trim();
+      const temperature = parseFloat(document.getElementById('edit-ai-temperature-' + idx).value) || 0.7;
+      const maxTokens = parseInt(document.getElementById('edit-ai-maxTokens-' + idx).value) || 4000;
+      const requestTimeout = parseInt(document.getElementById('edit-ai-requestTimeout-' + idx).value) || 30000;
+
+      if (!name || !model || !baseUrl || !apiKey) {
+        showToast('名称、模型、Base URL、API Key 为必填', 'error');
+        return;
+      }
+
+      providers[idx] = { name, model, baseUrl, apiKey, temperature, maxTokens, requestTimeout };
+
+      // 更新调用顺序中的名称
+      if (configData.ai.providerOrder && oldName !== name) {
+        const orderIdx = configData.ai.providerOrder.indexOf(oldName);
+        if (orderIdx >= 0) configData.ai.providerOrder[orderIdx] = name;
+      }
+      if (configData.ai.fallback && Array.isArray(configData.ai.fallback.providerOrder) && oldName !== name) {
+        configData.ai.fallback.providerOrder = configData.ai.fallback.providerOrder.map(n => n === oldName ? name : n);
+      }
+      syncFallbackOrderIfFollowing();
+
+      renderAITab();
+      showToast(`模型 "${name}" 已更新（记得保存）`, 'success');
+    }
+
+    async function saveAIConfig() {
+      ensureAiConfigConsistency();
+      try {
+        const resp = await fetch('/api/config/ai', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(configData.ai),
+        });
+        const result = await resp.json();
+        if (resp.ok) {
+          showToast('AI 配置保存成功', 'success');
+        } else {
+          showToast('保存失败: ' + (result.error || '未知错误'), 'error');
+        }
+      } catch (e) {
+        showToast('保存失败: ' + e.message, 'error');
+      }
+    }
+
+    async function renderLoginTab() {
+      const container = document.getElementById('form-container');
+
+      container.innerHTML = `
+        ${buildTokenStatusSection(null, null)}
+
+        <!-- Token 管理卡片 -->
+        <div class="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+          <h3 class="text-sm font-semibold text-blue-800 mb-3">🔑 Token 管理</h3>
+          <div class="flex flex-wrap gap-2">
+            <button onclick="copyToken()" id="copy-token-btn" class="px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm flex items-center gap-1">
+              📋 复制 Token
+            </button>
+            <button onclick="showSetTokenModal()" id="set-token-btn" class="px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm flex items-center gap-1">
+              ✏️ 设置 Token
+            </button>
+          </div>
+          <p class="text-xs text-blue-600 mt-2">💡 可从其他环境复制 Token 后粘贴到本系统</p>
+        </div>
+        <!-- 会员信息区 -->
+        <div class="mb-6" id="member-info-section">
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-sm font-semibold text-gray-700">👤 会员信息</h3>
+            <button onclick="fetchMemberInfo()" id="member-info-refresh-btn" class="px-2 py-1 text-xs bg-gray-100 border rounded hover:bg-gray-200">🔄 刷新</button>
+          </div>
+          <div id="member-info-content">
+            <p class="text-gray-400 text-sm">加载中...</p>
+          </div>
+        </div>
+
+        <div class="max-w-md">
+          <h3 class="text-lg font-medium text-gray-800 mb-4">手机号登录</h3>
+          <p class="text-sm text-gray-500 mb-4">通过短信验证码登录获取 Token（需先完成腾讯滑块验证）</p>
+
+          <div id="login-step1">
+            <div class="mb-3">
+              <label class="block text-sm font-medium text-gray-700 mb-1">手机号</label>
+              <input type="tel" id="login-phone" maxlength="11" placeholder="11位手机号" class="w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <button onclick="loginSendCode()" id="login-send-btn" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm">
+              发送验证码
+            </button>
+            <p class="text-xs text-gray-400 mt-2">点击后会弹出腾讯滑块验证</p>
+          </div>
+
+          <div id="login-step2" class="hidden">
+            <div class="mb-3">
+              <label class="block text-sm font-medium text-gray-700 mb-1">短信验证码</label>
+              <input type="text" id="login-code" maxlength="6" placeholder="6位验证码" class="w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <button onclick="loginSubmit()" id="login-submit-btn" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm">
+              登录
+            </button>
+            <p class="text-xs text-gray-500 mt-2" id="login-msg"></p>
+          </div>
+
+          <div id="login-step3" class="hidden">
+            <div class="p-4 bg-green-50 border border-green-200 rounded-lg">
+              <p class="text-green-800 font-medium">✅ 登录成功！Token 已保存。</p>
+              <p class="text-sm text-green-600 mt-1">系统将自动续期，无需重复登录。</p>
+            </div>
+          </div>
+
+          <div id="login-error" class="hidden mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700"></div>
+        </div>
+
+      `;
+
+      // 自动获取 Token 状态
+      refreshTokenStatus();
+      // 自动获取会员信息
+      fetchMemberInfo();
+    }
+
+    // ========== API Token 管理 ==========
+    
+    /**
+     * 渲染 API Token 管理 Tab
+     */
+    async function renderApiTokenTab() {
+      const container = document.getElementById('form-container');
+      
+      // 加载 Token 状态
+      let tokenStatus = { configured: false };
+      try {
+        const resp = await fetch('/api/posts/token');
+        const result = await resp.json();
+        if (result.success) {
+          tokenStatus = result.data;
+        }
+      } catch (e) {
+        console.error('加载 API Token 状态失败:', e);
+      }
+      
+      container.innerHTML = `
+        <div class="max-w-2xl">
+          <h3 class="text-lg font-medium text-gray-800 mb-4">🔑 API Token 管理</h3>
+          <p class="text-sm text-gray-500 mb-6">
+            API Token 用于远程发帖 API 的鉴权，与登录 Token 分离，长期有效，不受登录 Token 刷新影响。
+          </p>
+          
+          <!-- Token 状态显示 -->
+          <div class="mb-6 p-4 ${tokenStatus.configured ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'} border rounded-lg">
+            <div class="flex items-center gap-2 mb-3">
+              <span class="w-3 h-3 rounded-full ${tokenStatus.configured ? 'bg-green-500' : 'bg-yellow-500'}"></span>
+              <span class="font-medium ${tokenStatus.configured ? 'text-green-800' : 'text-yellow-800'}">
+                ${tokenStatus.configured ? '已配置 API Token' : '未配置 API Token'}
+              </span>
+            </div>
+            ${tokenStatus.configured ? `
+              <div class="text-sm ${tokenStatus.configured ? 'text-green-700' : 'text-yellow-700'} space-y-1">
+                <div><span class="font-medium">Token 前缀：</span>${escapeHtml(tokenStatus.tokenPrefix || 'N/A')}</div>
+                <div><span class="font-medium">创建时间：</span>${tokenStatus.createdAt ? new Date(tokenStatus.createdAt).toLocaleString('zh-CN') : 'N/A'}</div>
+                ${tokenStatus.lastUsedAt ? `<div><span class="font-medium">最后使用：</span>${new Date(tokenStatus.lastUsedAt).toLocaleString('zh-CN')}</div>` : ''}
+              </div>
+            ` : `
+              <div class="text-sm text-yellow-700">
+                <p>请点击下方按钮生成新的 API Token</p>
+              </div>
+            `}
+          </div>
+          
+          <!-- 操作按钮 -->
+          <div class="space-y-3">
+            ${tokenStatus.configured ? `
+              <button type="button" onclick="resetApiToken()" id="reset-token-btn" class="w-full px-4 py-3 bg-red-600 text-white rounded-md hover:bg-red-700 font-medium">
+                🔄 重置 Token
+              </button>
+              <p class="text-xs text-gray-500 text-center">
+                重置后将生成新的 Token，旧 Token 立即失效。请确保已更新所有使用该 Token 的客户端。
+              </p>
+            ` : `
+              <button type="button" onclick="generateApiToken()" id="generate-token-btn" class="w-full px-4 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 font-medium">
+                ✨ 生成 Token
+              </button>
+            `}
+          </div>
+          
+          <!-- Token 显示区（仅生成时显示一次） -->
+          <div id="token-display" class="hidden mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <div class="flex items-start gap-3">
+              <span class="text-2xl">⚠️</span>
+              <div class="flex-1">
+                <p class="font-medium text-blue-800 mb-2">请妥善保管此 Token：</p>
+                <div class="flex gap-2 mb-3">
+                  <input type="text" id="new-token-input" readonly 
+                    class="flex-1 px-3 py-2 bg-white border border-blue-300 rounded-md font-mono text-sm text-blue-900"
+                    value="" />
+                  <button onclick="copyToken()" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm whitespace-nowrap">
+                    📋 复制
+                  </button>
+                </div>
+                <p class="text-xs text-blue-700">
+                  <strong>重要提示：</strong>此 Token 仅显示一次，刷新页面后将无法再次查看。请立即保存到安全位置。
+                </p>
+              </div>
+            </div>
+          </div>
+          
+          <!-- 使用说明 -->
+          <div class="mt-8 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+            <h4 class="font-medium text-gray-800 mb-2">📖 使用说明</h4>
+            <ul class="text-sm text-gray-600 space-y-1 list-disc list-inside">
+              <li>API Token 用于远程发帖 API 的鉴权</li>
+              <li>在请求头中使用：<code class="px-2 py-1 bg-gray-200 rounded text-xs">Authorization: Bearer &lt;token&gt;</code></li>
+              <li>Token 长期有效，除非手动重置</li>
+              <li>不要将 Token 泄露给他人</li>
+            </ul>
+          </div>
+        </div>
+      `;
+    }
+    
+    /**
+     * 生成 API Token
+     */
+    async function generateApiToken() {
+      const btn = document.getElementById('generate-token-btn');
+      if (btn) btn.disabled = true;
+      
+      try {
+        const resp = await fetch('/api/posts/token/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reset: false }),
+        });
+        
+        const result = await resp.json();
+        
+        if (result.success) {
+          // 显示 Token - 不重新渲染，保持 Token 可见
+          const display = document.getElementById('token-display');
+          const input = document.getElementById('new-token-input');
+          if (display && input) {
+            input.value = result.data.token;
+            display.classList.remove('hidden');
+            // 自动选中文本以便复制
+            input.select();
+          } else {
+            // 如果元素不存在，弹出提示
+            alert('Token 生成成功：\n\n' + result.data.token + '\n\n请立即复制到安全位置！');
+          }
+          
+          // 更新状态显示（不重新渲染整个 Tab）
+          const statusSection = document.querySelector('.mb-6.p-4');
+          if (statusSection) {
+            statusSection.className = 'mb-6 p-4 bg-green-50 border-green-200 border rounded-lg';
+          }
+        } else {
+          alert('生成失败：' + (result.error || '未知错误'));
+        }
+      } catch (e) {
+        alert('生成失败：' + e.message);
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+    
+    /**
+     * 重置 API Token
+     */
+    async function resetApiToken() {
+      const btn = document.getElementById('reset-token-btn');
+      if (btn) btn.disabled = true;
+      
+      try {
+        const resp = await fetch('/api/posts/token/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reset: true }),
+        });
+        
+        const result = await resp.json();
+        
+        if (result.success) {
+          // 显示 Token - 不重新渲染，保持 Token 可见
+          const display = document.getElementById('token-display');
+          const input = document.getElementById('new-token-input');
+          if (display && input) {
+            input.value = result.data.token;
+            display.classList.remove('hidden');
+            // 自动选中文本以便复制
+            input.select();
+          } else {
+            // 如果元素不存在，弹出提示
+            alert('Token 重置成功：\n\n' + result.data.token + '\n\n请立即复制到安全位置！');
+          }
+          
+          // 更新状态显示（不重新渲染整个 Tab）
+          const statusSection = document.querySelector('.mb-6.p-4');
+          if (statusSection) {
+            statusSection.className = 'mb-6 p-4 bg-green-50 border-green-200 border rounded-lg';
+          }
+        } else {
+          alert('重置失败：' + (result.error || '未知错误'));
+        }
+      } catch (e) {
+        alert('重置失败：' + e.message);
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+    
+    /**
+     * 复制 Token 到剪贴板
+     */
+    function copyToken() {
+      const input = document.getElementById('new-token-input');
+      if (input) {
+        input.select();
+        document.execCommand('copy');
+        const token = input.value;
+        // 保存到 sessionStorage，供立即评论等功能使用
+        if (token) {
+          sessionStorage.setItem('api_token', token);
+        }
+        alert('Token 已复制到剪贴板！\n\n已自动保存，当前页面可直接使用。');
+      }
+    }
+
+    // ========== 会员信息获取 ==========
+    let memberInfoAbortController = null;
+
+    /**
+     * 获取并展示会员信息
+     * - 10s 超时 (AbortController)
+     * - 401 错误: 显示 "请先登录" 无重试按钮
+     * - 非 401 错误: 显示错误信息 + 重试按钮
+     */
+    async function fetchMemberInfo() {
+      const contentEl = document.getElementById('member-info-content');
+      if (!contentEl) return;
+
+      // 取消之前的请求
+      if (memberInfoAbortController) {
+        memberInfoAbortController.abort();
+      }
+      memberInfoAbortController = new AbortController();
+      const signal = memberInfoAbortController.signal;
+
+      // 显示加载状态
+      contentEl.innerHTML = `<div class="p-3 bg-gray-50 border border-gray-200 rounded-lg">
+        <div class="flex items-center gap-2">
+          <svg class="animate-spin h-4 w-4 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+          </svg>
+          <span class="text-sm text-gray-500">正在获取会员信息...</span>
+        </div>
+      </div>`;
+
+      // 10 秒超时
+      const timeoutId = setTimeout(() => memberInfoAbortController.abort(), 10000);
+
+      try {
+        const resp = await fetch('/api/member/info', { 
+          signal,
+          credentials: 'include',  // 携带 Cookie
+        });
+        clearTimeout(timeoutId);
+
+        if (resp.ok) {
+          const result = await resp.json();
+          const data = result.data || result;
+          renderMemberInfoSuccess(contentEl, data);
+        } else if (resp.status === 401) {
+          renderMemberInfo401(contentEl);
+        } else {
+          const errData = await resp.json().catch(() => ({}));
+          const errMsg = errData.error || `请求失败 (HTTP ${resp.status})`;
+          renderMemberInfoError(contentEl, errMsg);
+        }
+      } catch (e) {
+        clearTimeout(timeoutId);
+        if (e.name === 'AbortError') {
+          renderMemberInfoError(contentEl, '请求超时，请稍后重试');
+        } else {
+          renderMemberInfoError(contentEl, '网络错误: ' + (e.message || '无法连接服务器'));
+        }
+      }
+    }
+
+    function renderMemberInfoSuccess(el, data) {
+      el.innerHTML = `<div class="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+        <div class="grid grid-cols-3 gap-3 text-center">
+          <div>
+            <p class="text-xs text-gray-500 mb-1">会员等级</p>
+            <p class="text-sm font-semibold text-blue-700">${escapeHtml(data.memberLevel || '-')}</p>
+          </div>
+          <div>
+            <p class="text-xs text-gray-500 mb-1">会员积分</p>
+            <p class="text-sm font-semibold text-blue-700">${escapeHtml(data.memberScore || '-')}</p>
+          </div>
+          <div>
+            <p class="text-xs text-gray-500 mb-1">成长值</p>
+            <p class="text-sm font-semibold text-blue-700">${escapeHtml(data.growthScore || '-')}</p>
+          </div>
+        </div>
+      </div>`;
+    }
+
+    function renderMemberInfo401(el) {
+      el.innerHTML = `<div class="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+        <div class="flex items-center gap-2">
+          <span class="text-lg">🔒</span>
+          <p class="text-sm text-yellow-800">请先登录</p>
+        </div>
+      </div>`;
+    }
+
+    function renderMemberInfoError(el, message) {
+      el.innerHTML = `<div class="p-3 bg-red-50 border border-red-200 rounded-lg">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="text-lg">⚠️</span>
+            <p class="text-sm text-red-700">${escapeHtml(message)}</p>
+          </div>
+          <button onclick="fetchMemberInfo()" class="px-2 py-1 text-xs bg-white border border-red-200 text-red-600 rounded hover:bg-red-50">重试</button>
+        </div>
+      </div>`;
+    }
+
+    async function loginSendCode() {
+      const phone = document.getElementById('login-phone').value.trim();
+      if (!phone || phone.length !== 11) {
+        showLoginError('请输入11位手机号');
+        return;
+      }
+
+      // 检查腾讯验证码 SDK
+      if (typeof TencentCaptcha === 'undefined') {
+        showLoginError('腾讯验证码 SDK 未加载，请确保页面可访问 turing.captcha.qcloud.com');
+        return;
+      }
+
+      const btn = document.getElementById('login-send-btn');
+      btn.disabled = true;
+      btn.textContent = '验证中...';
+      hideLoginError();
+
+      try {
+        // 触发滑块验证
+        const ticket = await new Promise((resolve, reject) => {
+          const captcha = new TencentCaptcha('198705236', (res) => {
+            if (res.ret === 0) resolve(res.ticket);
+            else reject(new Error('滑块验证未完成'));
+          }, { needFeedBack: false });
+          captcha.show();
+        });
+
+        btn.textContent = '发送中...';
+
+        // 调用后端 API 发送验证码
+        const resp = await fetch('/api/auth/send-code', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone, ticket }),
+        });
+        const data = await resp.json();
+
+        if (data.code === 0) {
+          document.getElementById('login-step1').classList.add('hidden');
+          document.getElementById('login-step2').classList.remove('hidden');
+          document.getElementById('login-msg').textContent = `验证码已发送到 ${phone}`;
+        } else {
+          showLoginError(data.message || '发送失败');
+        }
+      } catch (e) {
+        showLoginError(e.message || '操作取消');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '发送验证码';
+      }
+    }
+
+    async function loginSubmit() {
+      const phone = document.getElementById('login-phone').value.trim();
+      const code = document.getElementById('login-code').value.trim();
+      if (!code || code.length !== 6) {
+        showLoginError('请输入6位验证码');
+        return;
+      }
+
+      const btn = document.getElementById('login-submit-btn');
+      btn.disabled = true;
+      btn.textContent = '登录中...';
+      hideLoginError();
+
+      try {
+        const resp = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone, code }),
+        });
+        const data = await resp.json();
+
+        if (data.code === 0) {
+          document.getElementById('login-step2').classList.add('hidden');
+          document.getElementById('login-step3').classList.remove('hidden');
+          showToast('登录成功！Token 已保存', 'success');
+          // 刷新 Token 状态和会员信息
+          refreshTokenStatus();
+          fetchMemberInfo();
+        } else {
+          showLoginError(data.message || '登录失败');
+        }
+      } catch (e) {
+        showLoginError(e.message || '请求失败');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '登录';
+      }
+    }
+
+    function showLoginError(msg) {
+      const el = document.getElementById('login-error');
+      if (el) { el.textContent = msg; el.classList.remove('hidden'); }
+    }
+    function hideLoginError() {
+      const el = document.getElementById('login-error');
+      if (el) el.classList.add('hidden');
+    }
+
+    // 保存 tokenStorePath 配置
+
+    // ========== Token 在线验证 ==========
+    async function verifyTokenOnline() {
+      const btn = document.getElementById('verify-online-btn');
+      const resultDiv = document.getElementById('verify-result');
+      if (!btn || !resultDiv) return;
+
+      btn.disabled = true;
+      btn.textContent = '验证中...';
+      resultDiv.classList.remove('hidden');
+      resultDiv.innerHTML = '<p class="text-sm text-gray-500">正在远端验证...</p>';
+
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+        const resp = await fetch('/api/auth/verify', {
+          method: 'POST',
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+
+        const data = await resp.json();
+
+        if (resp.status === 401) {
+          resultDiv.innerHTML = `<p class="text-sm text-red-600">❌ ${escapeHtml(data.message || '无可用Token进行验证')}</p>`;
+        } else if (data.data && data.data.remoteValid) {
+          resultDiv.innerHTML = `<p class="text-sm text-green-700">✅ 远端验证通过，会员等级: ${escapeHtml(data.data.memberLevel || '未知')}</p>`;
+        } else if (data.data && !data.data.remoteValid) {
+          resultDiv.innerHTML = `<p class="text-sm text-red-600">❌ ${escapeHtml(data.data.message || '远端验证失败')}</p>`;
+        } else {
+          resultDiv.innerHTML = `<p class="text-sm text-red-600">❌ 验证响应异常</p>`;
+        }
+      } catch (e) {
+        if (e.name === 'AbortError') {
+          resultDiv.innerHTML = `<p class="text-sm text-red-600">❌ 验证超时，请稍后重试</p>`;
+        } else {
+          resultDiv.innerHTML = `<p class="text-sm text-red-600">❌ 验证失败: ${escapeHtml(e.message)}</p>`;
+        }
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '在线验证';
+      }
+    }
+
+    // 启动
+    init();
+    
+    // ========== Token 管理功能 ==========
+    
+    /**
+     * 复制 Token 到剪贴板
+     */
+    async function copyToken() {
+      try {
+        const resp = await fetch('/api/token');
+        const result = await resp.json();
+        
+        if (!result.success || !result.data.token) {
+          alert('当前没有 Token，请先设置 Token 或登录');
+          return;
+        }
+        
+        const token = result.data.token;
+        await navigator.clipboard.writeText(token);
+        alert('✅ Token 已复制到剪贴板！');
+      } catch (error) {
+        console.error('复制 Token 失败:', error);
+        alert('复制失败：' + error.message);
+      }
+    }
+    
+    /**
+     * 显示设置 Token 弹窗
+     */
+    function showSetTokenModal() {
+      const modal = document.getElementById('set-token-modal');
+      if (modal) {
+        modal.classList.remove('hidden');
+      }
+    }
+    
+    /**
+     * 隐藏设置 Token 弹窗
+     */
+    function hideSetTokenModal() {
+      const modal = document.getElementById('set-token-modal');
+      if (modal) {
+        modal.classList.add('hidden');
+      }
+    }
+    
+    /**
+     * 保存 Token
+     */
+    async function saveToken() {
+      const input = document.getElementById('set-token-input');
+      if (!input) return;
+      
+      const token = input.value.trim();
+      if (!token) {
+        alert('Token 不能为空');
+        return;
+      }
+      
+      // 验证 Token 格式
+      if (!token.startsWith('eyJ')) {
+        alert('Token 格式不正确，JWT Token 通常以 eyJ 开头');
+        return;
+      }
+      
+      try {
+        const resp = await fetch('/api/token', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ token }),
+        });
+        
+        const result = await resp.json();
+        
+        if (result.success) {
+          alert('✅ Token 已保存！');
+          hideSetTokenModal();
+          // 刷新 Token 状态
+          if (typeof refreshTokenStatus === 'function') {
+            refreshTokenStatus();
+          }
+        } else {
+          alert('保存失败：' + result.error);
+        }
+      } catch (error) {
+        console.error('保存 Token 失败:', error);
+        alert('保存失败：' + error.message);
+      }
+    }
+  </script>
+  <script src="https://turing.captcha.qcloud.com/TJCaptcha.js" async></script>
+  
+  <!-- 设置 Token 弹窗 -->
+  <div id="set-token-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-lg font-semibold text-gray-800">✏️ 设置 Token</h3>
+        <button onclick="hideSetTokenModal()" class="text-gray-400 hover:text-gray-600">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+          </svg>
+        </button>
+      </div>
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-gray-700 mb-2">从其他环境复制的 Token</label>
+        <textarea id="set-token-input" rows="4" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm" placeholder="请粘贴从其他环境复制的 Token..."></textarea>
+        <p class="text-xs text-gray-500 mt-1">💡 JWT Token 通常以 eyJ 开头</p>
+      </div>
+      <div class="flex gap-2">
+        <button onclick="hideSetTokenModal()" class="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200">
+          取消
+        </button>
+        <button onclick="saveToken()" class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+          保存
+        </button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+

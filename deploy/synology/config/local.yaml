@@ -1,0 +1,25 @@
+# 本地覆盖配置 - real 模式验证
+api:
+  mode: real
+  nickName: "王大锤"
+  ipRegion: "山东省"
+
+# AI 服务超时时间调整（互联网参考查询需要生成多篇内容）
+ai:
+  requestTimeout: 120000  # 增加到 120 秒，支持互联网参考查询
+
+# 立即执行发帖测试
+comment:
+  enabled: false
+post:
+  enabled: true
+  dailyLimit: 1
+
+# Web 认证配置
+web:
+  auth:
+    enabled: true
+    username: "wangfuwei"
+    passwordHash: "$2b$10$42eI1fWkAc70iI2tfa1dV.zIqJdWOePgIVnwkHZmBIbm/JZaIwex6"
+    sessionSecret: "random-secret-key-yqad-auto-tasks"
+    sessionMaxAge: 86400000

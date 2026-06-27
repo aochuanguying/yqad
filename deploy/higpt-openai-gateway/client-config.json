@@ -1,0 +1,212 @@
+{
+  "log": {
+    "loglevel": "warning"
+  },
+  "dns": {
+    "servers": [
+      {
+        "address": "https://8.8.8.8/dns-query",
+        "domains": ["geosite:geolocation-!cn"],
+        "outbound": "dmtoutbound"
+      },
+      {
+        "address": "223.5.5.5",
+        "domains": ["geosite:cn"]
+      },
+      {
+        "address": "10.19.34.1",
+        "domains": ["domain:hisense.com"],
+        "outbound": "officeoutbound"
+      },
+      "localhost"
+    ],
+    "hosts": {
+      "domain:hisense.com": "10.19.34.1"
+    }
+  },
+  "inbounds": [
+    {
+      "tag": "vless-in",
+      "port": 16825,
+      "protocol": "vless",
+      "settings": {
+        "clients": [
+          {
+            "id": "219eb005-4294-4e78-5514-088d907657e6",
+            "level": 0
+          }
+        ],
+        "decryption": "none"
+      }
+    },
+    {
+      "tag": "socks-in",
+      "port": 1080,
+      "listen": "0.0.0.0",
+      "protocol": "socks",
+      "settings": {
+        "auth": "noauth",
+        "udp": true
+      },
+      "sniffing": {
+        "enabled": true,
+        "destOverride": ["http", "tls"]
+      }
+    },
+    {
+      "tag": "http-in",
+      "port": 10800,
+      "listen": "0.0.0.0",
+      "protocol": "http",
+      "settings": {
+        "timeout": 360
+      },
+      "sniffing": {
+        "enabled": true,
+        "destOverride": ["http", "tls"]
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "dmtoutbound",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "154.26.187.89",
+            "port": 443,
+            "users": [
+              {
+                "id": "879fc4cf-28d8-4bb3-8b88-6e0dd53cb940",
+                "encryption": "none",
+                "flow": "xtls-rprx-vision"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "tls",
+        "tlsSettings": {
+          "allowInsecure": false,
+          "serverName": "cxl.fssc.top",
+          "fingerprint": "chrome"
+        }
+      }
+    },
+    {
+      "tag": "officeoutbound",
+      "protocol": "vmess",
+      "settings": {
+        "vnext": [
+          {
+            "address": "ws.fssc.top",
+            "port": 443,
+            "users": [
+              {
+                "id": "0244b6a5-2b80-4ef5-bdba-ef81024e875f",
+                "level": 0
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "ws",
+        "security": "tls",
+        "tlsSettings": {
+          "allowInsecure": false,
+          "serverName": "ws.fssc.top",
+          "fingerprint": "chrome"
+        },
+        "wsSettings": {
+          "path": "/"
+        }
+      }
+    },
+    {
+      "tag": "direct",
+      "protocol": "freedom"
+    },
+    {
+      "tag": "reject",
+      "protocol": "blackhole",
+      "settings": {
+        "response": {
+          "type": "http"
+        }
+      }
+    }
+  ],
+  "routing": {
+    "domainStrategy": "AsIs",
+    "rules": [
+      {
+        "type": "field",
+        "outboundTag": "reject",
+        "domain": ["geosite:category-ads-all"]
+      },
+      {
+        "type": "field",
+        "outboundTag": "direct",
+        "protocol": ["bittorrent"]
+      },
+      {
+        "type": "field",
+        "outboundTag": "officeoutbound",
+        "domain": ["domain:hisense.com", "domain:ssl.hisense.com"]
+      },
+      {
+        "type": "field",
+        "outboundTag": "direct",
+        "ip": ["10.30.5.33"]
+      },
+      {
+        "type": "field",
+        "outboundTag": "officeoutbound",
+        "ip": ["10.19.0.0/16", "172.16.0.0/16", "10.30.0.0/16"]
+      },
+      {
+        "type": "field",
+        "outboundTag": "dmtoutbound",
+        "domain": [
+          "domain:zerotier.com",
+          "domain:paypal.com",
+          "domain:nintendo.com",
+          "domain:store.nintendo.com",
+          "geosite:google",
+          "geosite:telegram",
+          "geosite:geolocation-!cn"
+        ]
+      },
+      {
+        "type": "field",
+        "outboundTag": "dmtoutbound",
+        "ip": ["geoip:telegram", "geoip:!cn"]
+      },
+      {
+        "type": "field",
+        "outboundTag": "direct",
+        "domain": [
+          "domain:itunes.apple.com",
+          "domain:appldnld.apple.com",
+          "domain:mzstatic.com",
+          "domain:apple.com",
+          "geosite:cn"
+        ]
+      },
+      {
+        "type": "field",
+        "outboundTag": "direct",
+        "ip": ["geoip:private", "geoip:cn"]
+      },
+      {
+        "type": "field",
+        "outboundTag": "direct",
+        "network": "tcp,udp"
+      }
+    ]
+  }
+}
