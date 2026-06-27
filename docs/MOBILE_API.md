@@ -6,7 +6,7 @@
 
 **基础路径**: `/api/posts/mobile`
 
-**认证方式**: Session 会话认证（需要先登录 Web 管理界面）
+**认证方式**: 无（无需鉴权，可直接调用）
 
 ---
 
@@ -120,7 +120,6 @@ Content-Type: application/json
 |--------|------|
 | 200 | 成功 |
 | 400 | 缺少必填字段 |
-| 401 | 未登录或会话过期 |
 | 500 | 服务器内部错误 |
 
 ---
@@ -134,7 +133,7 @@ Content-Type: application/json
 **请求**
 
 ```http
-GET /api/posts/mobile/calls/missed
+GET /api/posts/mobile/missed-calls
 ```
 
 **查询参数**
@@ -181,7 +180,6 @@ GET /api/posts/mobile/calls/missed
 | 状态码 | 说明 |
 |--------|------|
 | 200 | 成功 |
-| 401 | 未登录或会话过期 |
 | 500 | 服务器内部错误 |
 
 ---
@@ -193,7 +191,7 @@ GET /api/posts/mobile/calls/missed
 **请求**
 
 ```http
-POST /api/posts/mobile/calls/missed
+POST /api/posts/mobile/missed-calls
 Content-Type: application/json
 ```
 
@@ -363,13 +361,11 @@ add_sms('13800138000', '这是一条测试短信')
 
 ```bash
 # 查询短信列表
-curl -X GET "http://localhost:3001/api/posts/mobile/sms?limit=50" \
-  -H "Cookie: session=your_session_id"
+curl -X GET "http://localhost:3001/api/posts/mobile/sms?limit=50"
 
 # 添加短信记录
 curl -X POST "http://localhost:3001/api/posts/mobile/sms" \
   -H "Content-Type: application/json" \
-  -H "Cookie: session=your_session_id" \
   -d '{
     "phone_number": "13800138000",
     "content": "这是一条测试短信",
@@ -377,13 +373,11 @@ curl -X POST "http://localhost:3001/api/posts/mobile/sms" \
   }'
 
 # 查询未接电话列表
-curl -X GET "http://localhost:3001/api/posts/mobile/calls/missed?limit=50" \
-  -H "Cookie: session=your_session_id"
+curl -X GET "http://localhost:3001/api/posts/mobile/missed-calls?limit=50"
 
 # 添加未接电话记录
-curl -X POST "http://localhost:3001/api/posts/mobile/calls/missed" \
+curl -X POST "http://localhost:3001/api/posts/mobile/missed-calls" \
   -H "Content-Type: application/json" \
-  -H "Cookie: session=your_session_id" \
   -d '{
     "phone_number": "13800138000",
     "received_at": "2024-06-27T10:30:00.000Z"
@@ -394,7 +388,7 @@ curl -X POST "http://localhost:3001/api/posts/mobile/calls/missed" \
 
 ## 5. 注意事项
 
-1. **认证要求**: 所有 API 都需要先登录 Web 管理界面，使用 Session Cookie 进行认证
+1. **认证要求**: 所有 API 无需鉴权，可直接调用
 2. **时间格式**: 时间字段使用 ISO 8601 格式 (如：`2024-06-27T10:30:00.000Z`)
 3. **字符编码**: 请求和响应都使用 UTF-8 编码
 4. **分页查询**: 建议使用 `limit` 和 `offset` 参数进行分页查询
@@ -406,7 +400,6 @@ curl -X POST "http://localhost:3001/api/posts/mobile/calls/missed" \
 
 | 错误码 | HTTP 状态码 | 说明 |
 |--------|------------|------|
-| UNAUTHORIZED | 401 | 未登录或会话过期 |
 | MISSING_FIELDS | 400 | 缺少必填字段 |
 | INTERNAL_ERROR | 500 | 服务器内部错误 |
 
