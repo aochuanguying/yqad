@@ -1,4 +1,4 @@
-import { createApiClient } from '../../api';
+import { createApiClientAsync } from '../../api';
 import { RealAudiApi } from '../../api/real-client';
 import { AuthService } from '../../services/auth';
 import { IAudiApi } from '../../api/types';
@@ -14,7 +14,7 @@ let apiInstance: IAudiApi | null = null;
 
 export async function getAuthService(): Promise<{ authService: AuthService; api: IAudiApi | null }> {
   if (!authServiceInstance) {
-    const api = createApiClient();
+    const api = await createApiClientAsync();
     authServiceInstance = await AuthService.create(api);
     apiInstance = api;
   }

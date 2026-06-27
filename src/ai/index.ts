@@ -6,11 +6,6 @@
 
 export {
   generateContent,
-  resetAIClient,
-  initFallbackMechanism,
-  getFallbackHealthStatus,
-  getProviderMetrics,
-  getAllHealthStatus,
 } from './client';
 
 export {

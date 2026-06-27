@@ -166,6 +166,22 @@ export class CommentHistoryStorage extends BaseDAO {
     const sql = `SELECT * FROM comment_history ORDER BY publish_time DESC`;
     return await this.queryMany<CommentHistory>(sql, []);
   }
+
+  /**
+   * 记录审核历史
+   */
+  async logModeration(
+    commentId: string,
+    status: 'pending' | 'approved' | 'rejected',
+    moderatedBy: string
+  ): Promise<void> {
+    const id = uuidv4();
+    const sql = `
+      INSERT INTO comment_moderation_logs (id, comment_id, status, moderated_by)
+      VALUES (?, ?, ?, ?)
+    `;
+    await this.insert(sql, [id, commentId, status, moderatedBy]);
+  }
 }
 
 // 导出单例

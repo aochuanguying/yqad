@@ -29,14 +29,8 @@ export function createSessionMiddleware() {
   const config = loadConfig();
   const authConfig = config.web.auth;
   
-  // 如果没有配置认证，返回一个空的中间件
-  if (!authConfig || !authConfig.enabled) {
-    logger.debug('Web 认证未启用，跳过 Session 中间件配置');
-    return (req: any, res: any, next: () => void) => next();
-  }
-  
   // 使用配置的 Session Secret，如果为空则使用默认值（仅开发环境）
-  let sessionSecret = authConfig.sessionSecret;
+  let sessionSecret = authConfig?.sessionSecret;
   if (!sessionSecret) {
     if (process.env.NODE_ENV === 'production') {
       throw new Error('生产环境必须配置 sessionSecret！请在 config/local.yaml 中设置 web.auth.sessionSecret');
@@ -54,7 +48,7 @@ export function createSessionMiddleware() {
     cookie: {
       httpOnly: true,         // 防止 XSS 攻击
       secure: false,          // 生产环境应设为 true（HTTPS）
-      maxAge: authConfig.sessionMaxAge || 86400000, // 默认 24 小时
+      maxAge: authConfig?.sessionMaxAge || 86400000, // 默认 24 小时
       sameSite: 'lax',        // 防止 CSRF
       path: '/',              // Cookie 路径为根路径
     },

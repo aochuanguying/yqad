@@ -3,11 +3,10 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { loadConfig } from '../../utils/config';
 import { getLogger } from '../../utils/logger';
 import { alertService } from '../../services/alert-service';
 import { telecomClient } from '../../services/telecom-client';
-import * as fs from 'fs';
+import { telecomApiStorage } from '../../storage/mysql/telecom-api-storage';
 import * as yaml from 'js-yaml';
 
 const logger = getLogger('telecom-routes');
@@ -32,13 +31,22 @@ interface TelecomConfigRequest {
  */
 router.get('/telecom-config', async (req: Request, res: Response) => {
   try {
-    const config = loadConfig();
-    const telecomConfig = (config as any).telecomApi || {
-      enabled: false,
-      apiUrl: '',
-      apiToken: '',
-      alertPhone: '',
-    };
+    // 从数据库读取配置
+    const telecomConfig = await telecomApiStorage.getConfig();
+
+    if (!telecomConfig) {
+      res.json({
+        success: true,
+        config: {
+          enabled: false,
+          apiUrl: '',
+          apiToken: '',
+          apiTokenRaw: '',
+          alertPhone: '',
+        },
+      });
+      return;
+    }
 
     // Token 掩码处理（显示前 8 位和后 4 位）
     const maskedToken = maskToken(telecomConfig.apiToken || '');
@@ -86,31 +94,20 @@ router.post('/telecom-config', async (req: Request, res: Response) => {
       });
     }
 
-    // 读取配置文件
-    const configFileContent = fs.readFileSync(CONFIG_FILE_PATH, 'utf8');
-    const configData: any = yaml.load(configFileContent) || {};
-
-    // 更新配置
-    if (!configData.telecomApi) {
-      configData.telecomApi = {};
-    }
-    configData.telecomApi.enabled = enabled;
-    configData.telecomApi.apiUrl = apiUrl;
-    configData.telecomApi.apiToken = apiToken;
-    configData.telecomApi.alertPhone = alertPhone;
-
-    // 写回配置文件
-    const newYamlContent = yaml.dump(configData, {
-      indent: 2,
-      lineWidth: -1, // 不限制行宽
-      noRefs: true,  // 不使用引用
+    // 保存到数据库
+    await telecomApiStorage.saveConfig({
+      enabled,
+      apiUrl,
+      apiToken,
+      alertPhone,
     });
-    fs.writeFileSync(CONFIG_FILE_PATH, newYamlContent, 'utf8');
 
-    logger.info('Telecom 配置已保存', { enabled, apiUrl, alertPhone });
+    logger.info('Telecom 配置已保存到数据库', { enabled, apiUrl, alertPhone });
 
     // 重新加载告警服务配置
-    alertService.reloadConfig();
+    alertService.reloadConfig().catch(error => {
+      logger.error('重新加载告警服务配置失败:', error instanceof Error ? error.message : String(error));
+    });
 
     res.json({
       success: true,

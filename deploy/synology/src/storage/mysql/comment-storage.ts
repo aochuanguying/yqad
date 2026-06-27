@@ -35,6 +35,7 @@ export interface CreateCommentInput {
 
 export interface UpdateCommentInput {
   content?: string;
+  status?: 'pending' | 'approved' | 'rejected' | 'deleted';
 }
 
 export class CommentStorage extends BaseDAO {

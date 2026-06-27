@@ -218,10 +218,10 @@ export class AutoCommentService {
         title: parsed.title,
         content: parsed.fullText,
         images: parsed.originalImages,
-        author: parsed.author,
-        publishTime: parsed.publishTime,
-        likeCount: parsed.likeCount,
-        commentCount: parsed.commentCount,
+        author: parsed.author || '',
+        publishTime: parsed.publishTime || '',
+        likeCount: parsed.likeCount || 0,
+        commentCount: parsed.commentCount || 0,
         contentType: (postsToComment.find(p => p.id === parsed.id) as any)?.contentType,
       }));
     }

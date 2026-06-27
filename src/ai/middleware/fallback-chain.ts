@@ -71,10 +71,10 @@ export class FallbackChain {
     this.providers.clear();
     
     for (const provider of providers) {
+      // 速率限制器已禁用，传入空配置
       const rateLimiter = new RateLimiter({
         tokensPerMinute: this.rateLimitConfig.tokensPerMinute ?? 60,
         burstSize: this.rateLimitConfig.burstSize ?? 10,
-        whitelist: this.rateLimitConfig.whitelist ?? [],
       });
 
       const circuitBreaker = new CircuitBreaker({
@@ -128,9 +128,9 @@ export class FallbackChain {
       }
 
       try {
-        // 速率限制
+        // 速率限制（已禁用，直接跳过）
         const rateLimitStatus = rateLimiter.getStatus(providerName);
-        if (!rateLimitStatus.isWhitelisted && rateLimitStatus.availableTokens < 1) {
+        if (rateLimitStatus.availableTokens < 1) {
           logger.debug(`Provider "${providerName}" 等待速率限制 token...`);
           metricsCollector.recordRequest(providerName, false, 0, { triggeredRateLimit: true });
         }

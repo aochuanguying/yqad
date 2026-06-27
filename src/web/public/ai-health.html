@@ -81,7 +81,9 @@
     const REFRESH_INTERVAL = 30000; // 30 秒
 
     // 初始化
-    document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('DOMContentLoaded', async () => {
+      // 检查登录状态
+      await checkLoginStatus();
       loadHealthData();
       startAutoRefresh();
       
@@ -89,6 +91,29 @@
         loadHealthData();
       });
     });
+
+    // 检查登录状态
+    async function checkLoginStatus() {
+      try {
+        const response = await fetch('/api/auth/status');
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const result = await response.json();
+        
+        if (!result.data || !result.data.authenticated) {
+          // 未登录，重定向到登录页
+          const redirectPath = encodeURIComponent(window.location.pathname);
+          window.location.href = `/login.html?redirect=${redirectPath}`;
+          return;
+        }
+      } catch (error) {
+        console.error('检查登录状态失败:', error);
+        // 重定向到登录页
+        const redirectPath = encodeURIComponent(window.location.pathname);
+        window.location.href = `/login.html?redirect=${redirectPath}`;
+      }
+    }
 
     // 开始自动刷新
     function startAutoRefresh() {

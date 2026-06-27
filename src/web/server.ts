@@ -167,8 +167,24 @@ export function createWebApp(params?: { includeApiRoutes?: boolean }): express.E
     app.use('/api', authMiddleware, telecomRoutes);
   }
 
-  // 静态文件中间件放在 API 路由之后
-  app.use(express.static(path.join(__dirname, 'public')));
+  // 静态文件中间件放在 API 路由之后（禁用缓存，确保实时更新）
+  app.use(express.static(path.join(__dirname, 'public'), {
+    etag: true,
+    lastModified: true,
+    maxAge: 0,  // 不缓存 HTML 文件
+    setHeaders: (res, filePath) => {
+      // 对 HTML 文件设置不缓存
+      if (filePath.endsWith('.html')) {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+      }
+      // 对 JS/CSS 文件设置短期缓存
+      else if (filePath.endsWith('.js') || filePath.endsWith('.css')) {
+        res.setHeader('Cache-Control', 'public, max-age=300'); // 5 分钟
+      }
+    },
+  }));
 
   const materialsPath = config.materials.processedPath || './data/materials/processed';
   app.use('/images', imageAccessMiddleware, express.static(materialsPath));

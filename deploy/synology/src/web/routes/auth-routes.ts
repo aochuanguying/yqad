@@ -11,9 +11,11 @@ import { loadConfig } from '../../utils/config';
 import { getLogger } from '../../utils/logger';
 import { logLoginSuccess, logLoginFailed } from '../middleware/auth-middleware';
 import { getAuthService } from '../services/auth-instance';
+import { getMemberService } from '../../services/member-service';
 
 const logger = getLogger('auth-routes');
 const router = Router();
+const memberService = getMemberService();
 
 /**
  * POST /api/auth/send-code
@@ -130,15 +132,6 @@ router.post('/login', async (req: Request, res: Response) => {
     }
     
     // 用户名密码登录（Web 管理界面登录）
-    if (!authConfig || !authConfig.enabled) {
-      logger.warn('登录请求被拒绝：Web 认证未启用');
-      res.status(400).json({
-        code: 'AUTH_NOT_ENABLED',
-        message: 'Web 认证功能未启用',
-      });
-      return;
-    }
-    
     // 验证必填字段
     if (!username || !password) {
       logger.warn('登录失败：用户名或密码为空');
@@ -149,31 +142,12 @@ router.post('/login', async (req: Request, res: Response) => {
       return;
     }
     
-    // 验证用户名
-    if (username !== authConfig.username) {
-      logLoginFailed(req, username, '用户名错误');
-      res.status(401).json({
-        code: 'INVALID_CREDENTIALS',
-        message: '用户名或密码错误',
-      });
-      return;
-    }
+    // 使用数据库认证
+    logger.info(`尝试验证用户：${username}`);
+    const member = await memberService.authenticate(username, password);
     
-    // 验证密码（使用 bcrypt 比较哈希）
-    const passwordHash = authConfig.passwordHash;
-    if (!passwordHash) {
-      logger.error('登录失败：未配置密码哈希');
-      res.status(500).json({
-        code: 'CONFIG_ERROR',
-        message: '服务器配置错误，请联系管理员',
-      });
-      return;
-    }
-    
-    const isMatch = await bcrypt.compare(password, passwordHash);
-    
-    if (!isMatch) {
-      logLoginFailed(req, username, '密码错误');
+    if (!member) {
+      logLoginFailed(req, username, '用户名或密码错误');
       res.status(401).json({
         code: 'INVALID_CREDENTIALS',
         message: '用户名或密码错误',
@@ -184,12 +158,13 @@ router.post('/login', async (req: Request, res: Response) => {
     // 登录成功，设置 Session
     const session = req.session as any;
     session.authenticated = true;
-    session.username = username;
+    session.username = member.username;
+    session.userId = member.id;
     session.loginTime = new Date().toISOString();
     
-    logLoginSuccess(req, username);
+    logLoginSuccess(req, member.username);
     
-    logger.info(`Session 已创建：${session.id}`);
+    logger.info(`Session 已创建：${session.id} - 用户：${member.username}`);
     
     // 使用 Promise 包装 session.save，确保在响应之前完成保存
     await new Promise<void>((resolve, reject) => {

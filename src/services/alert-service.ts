@@ -8,7 +8,6 @@
  */
 
 import { telecomClient, TelecomConfig } from './telecom-client';
-import { loadConfig } from '../utils/config';
 import { getLogger } from '../utils/logger';
 
 const logger = getLogger('alert-service');
@@ -56,41 +55,49 @@ class AlertService {
   /**
    * 初始化告警服务
    */
-  init(): void {
-    const config = loadConfig();
-    const telecomConfig = (config as any).telecomApi;
-    
-    if (telecomConfig && telecomConfig.enabled && telecomConfig.apiUrl && telecomConfig.apiToken) {
-      this.config = telecomConfig;
-      telecomClient.init(telecomConfig);
-      logger.info('告警服务已初始化', { 
-        apiUrl: telecomConfig.apiUrl,
-        alertPhone: telecomConfig.alertPhone 
-      });
-    } else {
-      logger.warn('告警服务未启用或配置不完整');
+  async init(): Promise<void> {
+    try {
+      const { telecomApiStorage } = await import('../storage/mysql/telecom-api-storage');
+      const telecomConfig = await telecomApiStorage.getConfig();
+      
+      if (telecomConfig && telecomConfig.enabled && telecomConfig.apiUrl && telecomConfig.apiToken) {
+        this.config = telecomConfig;
+        telecomClient.init(telecomConfig);
+        logger.info('告警服务已初始化', { 
+          apiUrl: telecomConfig.apiUrl,
+          alertPhone: telecomConfig.alertPhone 
+        });
+      } else {
+        logger.warn('告警服务未启用或配置不完整');
+      }
+    } catch (error) {
+      logger.error('初始化告警服务失败:', error instanceof Error ? error.message : String(error));
     }
   }
 
   /**
    * 重新加载配置（支持热重载）
    */
-  reloadConfig(): void {
-    const config = loadConfig();
-    const telecomConfig = (config as any).telecomApi;
-    
-    if (telecomConfig && telecomConfig.enabled && telecomConfig.apiUrl && telecomConfig.apiToken) {
-      const oldConfig = this.config;
-      this.config = telecomConfig;
+  async reloadConfig(): Promise<void> {
+    try {
+      const { telecomApiStorage } = await import('../storage/mysql/telecom-api-storage');
+      const telecomConfig = await telecomApiStorage.getConfig();
       
-      // 如果配置发生变化，重新初始化客户端
-      if (!oldConfig || oldConfig.apiUrl !== telecomConfig.apiUrl || oldConfig.apiToken !== telecomConfig.apiToken) {
-        telecomClient.init(telecomConfig);
-        logger.info('告警服务配置已更新');
+      if (telecomConfig && telecomConfig.enabled && telecomConfig.apiUrl && telecomConfig.apiToken) {
+        const oldConfig = this.config;
+        this.config = telecomConfig;
+        
+        // 如果配置发生变化，重新初始化客户端
+        if (!oldConfig || oldConfig.apiUrl !== telecomConfig.apiUrl || oldConfig.apiToken !== telecomConfig.apiToken) {
+          telecomClient.init(telecomConfig);
+          logger.info('告警服务配置已更新');
+        }
+      } else {
+        this.config = null;
+        logger.warn('告警服务配置已禁用或不完整');
       }
-    } else {
-      this.config = null;
-      logger.warn('告警服务配置已禁用或不完整');
+    } catch (error) {
+      logger.error('重新加载告警服务配置失败:', error instanceof Error ? error.message : String(error));
     }
   }
 

@@ -147,9 +147,9 @@ export function createWebApp(params?: { includeApiRoutes?: boolean }): express.E
     app.use('/api/comment', commentRoutes);
     // vehicle-token-routes 使用独立的 API Token 鉴权
     app.use('/api/vehicle-token', vehicleTokenRoutes);
-    // materials-routes 定义的是 /，所以挂载在 /api/materials 下
+    // 素材库路由（需要认证）
     app.use('/api/materials', authMiddleware, materialsRoutes);
-    // topics-routes 定义的是 /，所以挂载在 /api/topics 下
+    // 发帖主题路由（需要认证）
     app.use('/api/topics', authMiddleware, topicsRoutes);
     app.use('/api/auth', authRoutes);  // 认证路由不需要中间件（内部处理）
     // member-routes 定义的是 /info，所以挂载在 /api/member 下

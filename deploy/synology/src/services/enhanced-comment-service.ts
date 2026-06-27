@@ -346,7 +346,7 @@ class EnhancedCommentService {
     return await this.baseService.updateComment(id, input);
   }
 
-  async moderateComment(id: string, status: string) {
+  async moderateComment(id: string, status: 'pending' | 'approved' | 'rejected') {
     return await this.baseService.moderateComment(id, status);
   }
 

@@ -5,7 +5,7 @@
 
 import { RateLimiter } from './rate-limiter';
 import { CircuitBreaker } from './circuit-breaker';
-import { ErrorClassifier, ClassifiedError } from './error-classifier';
+import { ErrorClassifier, ClassifiedError, ErrorType } from './error-classifier';
 import { TimeoutController } from './timeout-controller';
 import { metricsCollector } from './metrics';
 import { AIProviderConfig } from '../../utils/config';
@@ -175,14 +175,15 @@ export class FallbackChain {
           fallbacks,
           errors,
         };
-      } catch (error) {
-        const classifiedError = this.errorClassifier.classify(error);
+      } catch (error: any) {
+        const errorType = this.errorClassifier.classify(error);
+        const classifiedError = new ClassifiedError(error?.message || 'Unknown error', errorType, error);
         errors.push(classifiedError);
         circuitBreaker.onFailure();
         metricsCollector.updateCircuitState(providerName, circuitBreaker.getStatus().state);
 
         logger.warn(
-          `Provider "${providerName}" 失败：${classifiedError.type} - ${classifiedError.message}`
+          `Provider "${providerName}" 失败：${errorType} - ${error?.message || 'Unknown error'}`
         );
 
         // 记录 fallback
@@ -191,24 +192,19 @@ export class FallbackChain {
         }
 
         // 判断是否切换到下一个 provider
-        // 只有当错误既不可重试 且 不应 fallback 时，才停止
-        if (!classifiedError.isRetryable && !classifiedError.shouldFallback) {
+        // 简单策略：所有错误都 fallback 到下一个 provider
+        const isRetryable = errorType === ErrorType.NETWORK || errorType === ErrorType.TIMEOUT;
+        const shouldFallback = true;
+        
+        if (!isRetryable && !shouldFallback) {
           logger.warn(`Provider "${providerName}" 错误不可重试且不 fallback，停止`);
           break;
         }
         
         // 如果是认证错误（401/403），虽然不可重试，但应该切换到下一个 provider
-        if (classifiedError.type === 'AuthError') {
+        if (errorType === ErrorType.API) {
           logger.warn(`Provider "${providerName}" 认证失败，切换到下一个 provider`);
           // 继续循环，尝试下一个 provider
-        }
-
-        // 限流错误特殊处理
-        if (classifiedError.type === 'RateLimitError' && classifiedError.waitBeforeRetry) {
-          logger.debug(`Provider "${providerName}" 限流，等待 ${classifiedError.waitBeforeRetry}ms 后重试`);
-          await this.sleep(classifiedError.waitBeforeRetry);
-          // 重试当前 provider，不切换到下一个
-          continue;
         }
       }
     }
@@ -304,7 +300,7 @@ export class FallbackChain {
       const circuitStatus = instance.circuitBreaker.getStatus();
       const rateLimitStatus = instance.rateLimiter.getStatus(name);
       const metrics = metricsCollector.getMetrics(name);
-      const health = metricsCollector.getHealthStatus(name);
+      const health = metricsCollector.getHealthStatus();
       
       result.set(name, {
         ...health,

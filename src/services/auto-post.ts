@@ -3,7 +3,6 @@ import * as path from 'path';
 import { IAudiApi } from '../api/types';
 import { AuthService } from './auth';
 import { generatePost, GeneratedPost } from '../ai/content-generator';
-import { loadConfig } from '../utils/config';
 import { getLogger } from '../utils/logger';
 import { Topic } from '../web/services/topics-service';
 import { load as loadGlobalPrompt } from './global-prompt-service';
@@ -18,6 +17,9 @@ import { pendingPostService } from './pending-post-service';
 import { recommendSimilarTopics, getAllTopics, incrementTopicUseCount } from '../web/services/topics-service';
 import { postLoggingService } from './post-logging-service';
 import { postHistoryStorage, CreatePostHistoryInput } from '../storage/mysql/post-history-storage';
+import { getPostConfigStorage } from '../storage/mysql/post-config-storage';
+import { getFeaturedPostingStorage } from '../storage/mysql/featured-posting-storage';
+import { getSchedulerConfigStorage } from '../storage/mysql/scheduler-config-storage';
 
 // CommonJS 模块导入（用于编译后的 JS 文件）
 let internetReferenceService: any;
@@ -121,12 +123,15 @@ export class AutoPostService {
     logger.info('自动发帖服务已初始化（发帖历史使用 MySQL 存储）');
     
     // 【第三步优化】初始化混合素材服务
-    const config = loadConfig();
-    if (config.hybridMaterial?.enabled) {
-      hybridMaterialService.initialize().catch((err: any) => {
-        logger.warn(`初始化混合素材服务失败：${err.message}`);
-      });
-    }
+    // 异步读取配置初始化混合素材服务
+    (async () => {
+      const postConfig = await getPostConfigStorage().getConfig();
+      if (postConfig && (postConfig as any).hybridMaterial?.enabled) {
+        hybridMaterialService.initialize().catch((err: any) => {
+          logger.warn(`初始化混合素材服务失败：${err.message}`);
+        });
+      }
+    })();
   }
 
   /**
@@ -136,10 +141,14 @@ export class AutoPostService {
    * @param isManual 是否手动触发（默认 false）
    */
   async performDailyPosts(count?: number, mode?: PostingMode, isManual: boolean = false): Promise<PostResult[]> {
-    const config = loadConfig();
     const results: PostResult[] = [];
-    const postCount = count ?? config.post.dailyLimit;
-    const postMode = mode ?? (config.featuredPosting.enabled ? 'featured' : 'normal');
+    // 从数据库读取配置
+    const [postConfig, featuredConfig] = await Promise.all([
+      getPostConfigStorage().getConfig(),
+      getFeaturedPostingStorage().getConfig(),
+    ]);
+    const postCount = count ?? (postConfig?.dailyLimit || 10);
+    const postMode = mode ?? (featuredConfig?.enabled ? 'featured' : 'normal');
     const triggerType = isManual ? 'manual' : 'auto';
 
     // 获取所有主题并选择可用的
@@ -176,8 +185,9 @@ export class AutoPostService {
   private async postWithTopic(topic: Topic, mode?: PostingMode, triggerType: 'auto' | 'manual' = 'auto'): Promise<PostResult> {
     try {
       logger.info(`使用预配置主题发帖："${topic.title}"`);
-      const config = loadConfig();
-      const featuredEnabled = config.featuredPosting.enabled;
+      // 从数据库读取配置
+      const featuredConfig = await getFeaturedPostingStorage().getConfig();
+      const featuredEnabled = featuredConfig?.enabled ?? false;
 
       // 初始化 Pipeline 上下文
       const ctx: PostPipelineContext = {
@@ -185,7 +195,7 @@ export class AutoPostService {
         mode: mode ?? (featuredEnabled ? 'featured' : 'normal'),
         triggerType,
         featuredEnabled,
-        config,
+        config: null,
         imagePaths: [],
         imageUrls: [],
         matchedTopics: [],
@@ -290,7 +300,6 @@ export class AutoPostService {
    */
   private async generateContentWithDedup(ctx: PostPipelineContext): Promise<boolean> {
     const { topic, topicConstraint, mode, featuredEnabled } = ctx;
-    const config = loadConfig();
     
     // 获取最近发帖历史用于去重
     const recentTopics = await this.getRecentTopics(7);
@@ -342,8 +351,10 @@ export class AutoPostService {
    * 步骤 3：选择素材（本地优先或混合）
    */
   private async selectMaterials(ctx: PostPipelineContext): Promise<void> {
-    const { topic, subDirection, generated, featuredEnabled, config } = ctx;
-    const minImages = config.featuredPosting.minImages;
+    const { topic, subDirection, generated, featuredEnabled } = ctx;
+    // 从数据库读取配置
+    const featuredConfig = await getFeaturedPostingStorage().getConfig();
+    const minImages = featuredConfig?.minImages || 3;
     
     let imagePaths: string[] = [];
     let materialSelectionResult: MaterialSelectionResult | null = null;
@@ -394,7 +405,7 @@ export class AutoPostService {
    * 步骤 4：上传图片到 CDN
    */
   private async uploadImagesToCDN(ctx: PostPipelineContext): Promise<void> {
-    const { imagePaths, featuredEnabled, config } = ctx;
+    const { imagePaths, featuredEnabled } = ctx;
     
     if (imagePaths.length === 0) {
       ctx.imageUrls = [];
@@ -406,11 +417,13 @@ export class AutoPostService {
 
     try {
       if (featuredEnabled) {
+        // 从数据库读取配置
+        const featuredConfig = await getFeaturedPostingStorage().getConfig();
         imageUrls = await this.uploadImagesToMinCount(
           token, 
           imagePaths, 
-          config.featuredPosting.minImages,
-          config.featuredPosting.maxImageUploadRetries
+          featuredConfig?.minImages || 3,
+          featuredConfig?.maxImageUploadRetries || 3
         );
       } else {
         const uploadResult = await this.api.uploadImages(token, imagePaths);
@@ -504,9 +517,10 @@ export class AutoPostService {
    * 步骤 7：合规性检查
    */
   private async performComplianceCheck(ctx: PostPipelineContext): Promise<boolean> {
-    const { finalTitle, finalContent, imagePaths, topic, triggerType, config } = ctx;
+    const { finalTitle, finalContent, imagePaths, topic, triggerType } = ctx;
     
-    const complianceCheckEnabled = config.contentDeduplication?.enabled !== false;
+    // 合规性检查默认启用
+    const complianceCheckEnabled = true;
     if (!complianceCheckEnabled) {
       return true;
     }
@@ -551,7 +565,6 @@ export class AutoPostService {
    */
   private async publishAndRecord(ctx: PostPipelineContext): Promise<PostResult> {
     const { finalTitle, finalContent, imageUrls, matchedTopics, featuredEnabled, topic, triggerType } = ctx;
-    const config = loadConfig();
 
     // 构建发布选项
     const publishOptions: PublishOptions = {
@@ -719,12 +732,13 @@ export class AutoPostService {
     globalPrompt?: any,
     mode: PostingMode = 'normal'
   ): Promise<GeneratedPost | null> {
-    const config = loadConfig();
+    // 从数据库读取配置
+    const featuredConfig = await getFeaturedPostingStorage().getConfig();
     const maxRetries = mode === 'featured'
-      ? Math.max(2, config.featuredPosting.maxGenerateRetries)
+      ? Math.max(2, featuredConfig?.maxGenerateRetries || 2)
       : 2;
     const historyTitles = topic.postHistory.map((h: any) => h.title);
-    const minContentChars = mode === 'featured' ? config.featuredPosting.minContentChars : config.contentLimits.post.min;
+    const minContentChars = mode === 'featured' ? (featuredConfig?.minContentChars || 300) : 100;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       const generated = await generatePost(
@@ -846,9 +860,13 @@ export class AutoPostService {
    */
   private async tryInternetReferenceMode(mode?: PostingMode, triggerType: 'auto' | 'manual' = 'auto'): Promise<PostResult> {
     try {
-      const config = loadConfig();
-      const featuredEnabled = config.featuredPosting.enabled;
-      const minImages = config.featuredPosting.minImages;
+      // 从数据库读取配置
+      const [postConfig, featuredConfig] = await Promise.all([
+        getPostConfigStorage().getConfig(),
+        getFeaturedPostingStorage().getConfig(),
+      ]);
+      const featuredEnabled = featuredConfig?.enabled ?? false;
+      const minImages = featuredConfig?.minImages || 3;
 
       // 使用预加载的 CommonJS 模块
       const { canQuery, search } = internetReferenceService || require('./internet-reference-service');
@@ -873,7 +891,7 @@ export class AutoPostService {
       const globalPrompt = loadGlobalPrompt() ?? undefined;
 
       // 构建去重避免列表
-      const recentTopics = await this.getRecentTopics(config.post.avoidRepeatDays);
+      const recentTopics = await this.getRecentTopics(postConfig?.avoidRepeatDays || 7);
 
       // 使用第一篇参考帖子的标题作为主题方向
       const topic = references[0].title || '奥迪用车分享';
@@ -887,8 +905,8 @@ export class AutoPostService {
           referenceTexts: references,
           mode: featuredEnabled ? 'featured' : 'normal',
         },
-        featuredEnabled ? config.featuredPosting.minContentChars : config.contentLimits.post.min,
-        featuredEnabled ? config.featuredPosting.maxGenerateRetries : 0
+        featuredEnabled ? (featuredConfig?.minContentChars || 300) : 100,
+        featuredEnabled ? (featuredConfig?.maxGenerateRetries || 0) : 0
       );
 
       // 抄袭检测
@@ -921,16 +939,15 @@ export class AutoPostService {
       }
 
       // 【第三步优化】使用混合素材服务选择素材（按贴合度排序，不强制混合）
-      const hybridConfig = config.hybridMaterial;
-      if (hybridConfig?.enabled) {
-        try {
-          materialSelectionResult = await hybridMaterialService.selectHybridMaterials({
-            priorityMode: 'hybrid',  // 混合模式，但按质量排序
-            localRatio: hybridConfig.localRatio ?? 0.6,
-            title: generated.title,
-            internetReferences: internetReferences.length > 0 ? internetReferences : undefined,
-            neededCount: minImages,
-          });
+      // 混合素材配置从数据库读取（通过 hybridMaterialService 内部获取）
+      try {
+        materialSelectionResult = await hybridMaterialService.selectHybridMaterials({
+          priorityMode: 'hybrid',  // 混合模式，但按质量排序
+          localRatio: 0.6,  // 默认值
+          title: generated.title,
+          internetReferences: internetReferences.length > 0 ? internetReferences : undefined,
+          neededCount: minImages,
+        });
           
           // 提取素材路径（已经按贴合度排序）
           imagePaths = materialSelectionResult.selectedMaterials.map((m: any) => m.path);
@@ -940,10 +957,6 @@ export class AutoPostService {
           logger.warn(`混合素材选择失败，回退到原逻辑：${err instanceof Error ? (err as Error).message : String(err)}`);
           imagePaths = await this.selectImagesFallbackForFreeStyle(generated.title, generated.content, references, minImages);
         }
-      } else {
-        // 回退到原逻辑
-        imagePaths = await this.selectImagesFallbackForFreeStyle(generated.title, generated.content, references, minImages);
-      }
 
       // 话题匹配
       const token = await this.authService.getAccessToken();
@@ -967,7 +980,7 @@ export class AutoPostService {
               minCount: minImages,
             });
             const candidates = Array.from(new Set([...imagePaths, ...supplemental]));
-            imageUrls = await this.uploadImagesToMinCount(token, candidates, minImages, config.featuredPosting.maxImageUploadRetries);
+            imageUrls = await this.uploadImagesToMinCount(token, candidates, minImages, featuredConfig?.maxImageUploadRetries || 3);
           } else {
             const uploadResult = await this.api.uploadImages(token, imagePaths);
             imageUrls = uploadResult.urls;
@@ -1154,9 +1167,13 @@ export class AutoPostService {
     error?: string;
   }> {
     try {
-      const config = loadConfig();
+      // 从数据库读取配置
+      const [postConfig, featuredConfig] = await Promise.all([
+        getPostConfigStorage().getConfig(),
+        getFeaturedPostingStorage().getConfig(),
+      ]);
       const useTopic = options?.useTopic ?? true;
-      const featuredEnabled = options?.mode ? options.mode === 'featured' : config.featuredPosting.enabled;
+      const featuredEnabled = options?.mode ? options.mode === 'featured' : (featuredConfig?.enabled ?? false);
       const triggerType = 'auto';  // API 调用视为自动触发
 
       // 获取主题（如果启用）
@@ -1245,7 +1262,7 @@ export class AutoPostService {
         generated = dedupResult;
 
         // 3. 【第三步优化】选择素材（主题发帖优先使用本地素材）
-        const minImages = config.featuredPosting.minImages;
+        const minImages = featuredConfig?.minImages || 3;
         
         // ⭐ 主题发帖逻辑：优先使用本地素材，不足时才从网络获取
         const hasLocalMaterials = topic.materialPaths && topic.materialPaths.length > 0;
@@ -1318,7 +1335,7 @@ export class AutoPostService {
         }
 
         // 【第一步优化】合规性检查
-        const complianceCheckEnabled = config.contentDeduplication?.enabled !== false;
+        const complianceCheckEnabled = true;
         if (complianceCheckEnabled) {
           try {
             const complianceResult = await complianceCheckOrchestrator.performComplianceCheck({
@@ -1371,7 +1388,7 @@ export class AutoPostService {
           };
         }
 
-        const recentTopics = await this.getRecentTopics(config.post.avoidRepeatDays);
+        const recentTopics = await this.getRecentTopics(postConfig?.avoidRepeatDays || 7);
         const topic = references[0].title || '奥迪用车分享';
         const globalPrompt = loadGlobalPrompt() ?? undefined;
 
@@ -1384,8 +1401,8 @@ export class AutoPostService {
             referenceTexts: references,
             mode: featuredEnabled ? 'featured' : 'normal',
           },
-          featuredEnabled ? config.featuredPosting.minContentChars : config.contentLimits.post.min,
-          featuredEnabled ? config.featuredPosting.maxGenerateRetries : 0
+          featuredEnabled ? (featuredConfig?.minContentChars || 300) : 100,
+          featuredEnabled ? (featuredConfig?.maxGenerateRetries || 0) : 0
         );
 
         // 抄袭检测
@@ -1407,8 +1424,7 @@ export class AutoPostService {
         }
 
         // 【第三步优化】使用混合素材服务选择图片
-        const minImages = config.featuredPosting.minImages;
-        const hybridConfig = config.hybridMaterial;
+        const minImages = featuredConfig?.minImages || 3;
         
         // 收集互联网参考素材
         const internetReferences: InternetReference[] = [];
@@ -1429,11 +1445,11 @@ export class AutoPostService {
         }
 
         // 使用混合素材服务
-        if (hybridConfig?.enabled && internetReferences.length > 0) {
+        if (internetReferences.length > 0) {
           try {
             materialSelectionResult = await hybridMaterialService.selectHybridMaterials({
-              priorityMode: hybridConfig.priorityMode || 'hybrid',
-              localRatio: hybridConfig.localRatio ?? 0.6,
+              priorityMode: 'hybrid',
+              localRatio: 0.6,
               title: generated.title,
               internetReferences,
               neededCount: minImages,
@@ -1455,7 +1471,7 @@ export class AutoPostService {
         }
 
         // 【第一步优化】合规性检查（自由模式也需要）
-        const complianceCheckEnabled = config.contentDeduplication?.enabled !== false;
+        const complianceCheckEnabled = true;
         if (complianceCheckEnabled) {
           try {
             const complianceResult = await complianceCheckOrchestrator.performComplianceCheck({
@@ -1565,7 +1581,6 @@ export class AutoPostService {
     minImages: number,
     featuredEnabled: boolean
   ): string[] {
-    const config = loadConfig();
     const contentKeywords = `${title} ${content}`.substring(0, 500);
     
     const imageCandidates = featuredEnabled
@@ -1595,8 +1610,9 @@ export class AutoPostService {
     references: any[],
     minImages: number
   ): Promise<string[]> {
-    const config = loadConfig();
-    const featuredEnabled = config.featuredPosting.enabled;
+    // 从数据库读取配置
+    const featuredConfig = await getFeaturedPostingStorage().getConfig();
+    const featuredEnabled = featuredConfig?.enabled ?? false;
     let imagePaths: string[] = [];
 
     // 1. 优先收集去水印后的图片 URL（processedImageUrls）
@@ -1633,30 +1649,24 @@ export class AutoPostService {
     if (imagePaths.length === 0) {
       logger.info(`参考图片下载失败或没有参考图片，尝试使用混合素材服务匹配本地素材`);
       
-      const hybridConfig = config.hybridMaterial;
-      if (hybridConfig?.enabled) {
-        try {
-          // 即使没有互联网参考素材，也调用混合素材服务来匹配本地素材
-          const materialSelectionResult = await hybridMaterialService.selectHybridMaterials({
-            priorityMode: hybridConfig.priorityMode || 'local-first',  // 改为本地优先
-            localRatio: hybridConfig.localRatio ?? 0.6,
-            title: title,
-            internetReferences: [],  // 空的互联网参考
-            neededCount: minImages,
-          });
-          
-          if (materialSelectionResult && materialSelectionResult.selectedMaterials.length > 0) {
-            imagePaths = materialSelectionResult.selectedMaterials.map((m: any) => m.path);
-            logger.info(`【混合素材回退】${materialSelectionResult.strategy}，选中 ${imagePaths.length} 张图片`);
-          } else {
-            logger.warn(`混合素材服务未返回任何素材`);
-          }
-        } catch (err: any) {
-          logger.warn(`混合素材服务调用失败，回退到旧逻辑：${err.message}`);
-          imagePaths = selectImages(title + ' ' + content);
+      try {
+        // 即使没有互联网参考素材，也调用混合素材服务来匹配本地素材
+        const materialSelectionResult = await hybridMaterialService.selectHybridMaterials({
+          priorityMode: 'local-first',  // 本地优先
+          localRatio: 0.6,
+          title: title,
+          internetReferences: [],  // 空的互联网参考
+          neededCount: minImages,
+        });
+        
+        if (materialSelectionResult && materialSelectionResult.selectedMaterials.length > 0) {
+          imagePaths = materialSelectionResult.selectedMaterials.map((m: any) => m.path);
+          logger.info(`【混合素材回退】${materialSelectionResult.strategy}，选中 ${imagePaths.length} 张图片`);
+        } else {
+          logger.warn(`混合素材服务未返回任何素材`);
         }
-      } else {
-        // 混合素材服务未启用，使用旧逻辑
+      } catch (err: any) {
+        logger.warn(`混合素材服务调用失败，回退到旧逻辑：${err.message}`);
         imagePaths = selectImages(title + ' ' + content);
       }
     }

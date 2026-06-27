@@ -16,7 +16,7 @@ const logger = getLogger('comment-service');
 export interface CommentInput {
   post_id: string;
   content: string;
-  user_id?: string;
+  member_id?: string;
   parent_id?: string;
 }
 
@@ -40,9 +40,8 @@ class CommentService {
       const comment = await this.storage.createComment({
         post_id: input.post_id,
         content: input.content,
-        user_id: input.user_id || 'system',
+        member_id: input.member_id || 'system',
         parent_id: input.parent_id,
-        status: 'approved',
       });
       
       logger.info(`评论创建成功：${comment.id}`);
@@ -64,7 +63,7 @@ class CommentService {
    * 获取帖子的评论列表
    */
   async getCommentsByPostId(postId: string, page: number = 1, pageSize: number = 20) {
-    return await this.storage.getCommentsByPostId(postId, page, pageSize);
+    return await this.storage.getCommentsByPostId(postId, { page, pageSize });
   }
 
   /**
@@ -97,7 +96,8 @@ class CommentService {
    * 获取评论树（嵌套结构）
    */
   async getCommentTree(postId: string) {
-    const comments = await this.storage.getCommentsByPostId(postId, 1, 1000);
+    const result = await this.storage.getCommentsByPostId(postId, { pageSize: 1000 });
+    const comments = result.data;
     
     // 构建评论树
     const commentMap = new Map();

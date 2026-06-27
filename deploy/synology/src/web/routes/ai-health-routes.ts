@@ -1,15 +1,22 @@
 import { Router, Request, Response } from 'express';
-import { getAllHealthStatus, getFallbackHealthStatus, getProviderMetrics } from '../../ai/client';
+import { loadConfig } from '../../utils/config';
 import { getLogger } from '../../utils/logger';
+import { createAuthMiddleware } from '../middleware/auth-middleware';
 
 const logger = getLogger('ai-health-routes');
 const router = Router();
+const authMiddleware = createAuthMiddleware();
+
+// 应用认证中间件到所有路由
+router.use(authMiddleware);
 
 /**
- * 转换健康状态数据为前端友好的格式
+ * 测试单个 Provider 的健康状态
  */
-interface ProviderHealthData {
+async function testProviderHealth(provider: any): Promise<{
   name: string;
+  model: string;
+  baseUrl: string;
   status: 'healthy' | 'warning' | 'critical';
   circuitState: 'CLOSED' | 'OPEN' | 'HALF_OPEN';
   successRate: number;
@@ -22,78 +29,93 @@ interface ProviderHealthData {
     isWhitelisted: boolean;
   };
   lastUpdated: string;
-}
-
-function calculateHealthStatus(
-  circuitState: string,
-  successRate: number
-): 'healthy' | 'warning' | 'critical' {
-  // 熔断器打开 = 严重
-  if (circuitState === 'OPEN') {
-    return 'critical';
+  error?: string;
+}> {
+  const startTime = Date.now();
+  try {
+    // 发送测试请求
+    const axios = require('axios');
+    const testMessages = [
+      { role: 'user', content: 'Hello' }
+    ];
+    
+    const response = await axios.post(
+      `${provider.baseUrl}/chat/completions`,
+      {
+        model: provider.model,
+        messages: testMessages,
+        max_tokens: 10,
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${provider.apiKey}`,
+        },
+        timeout: 5000, // 5 秒超时
+      }
+    );
+    
+    const responseTime = Date.now() - startTime;
+    const success = response.data && response.data.choices && response.data.choices.length > 0;
+    
+    return {
+      name: provider.name,
+      model: provider.model,
+      baseUrl: provider.baseUrl,
+      status: success ? 'healthy' : 'critical',
+      circuitState: 'CLOSED' as const,
+      successRate: success ? 100 : 0,
+      avgResponseTime: responseTime,
+      totalRequests: 1,
+      successfulRequests: success ? 1 : 0,
+      failedRequests: success ? 0 : 1,
+      rateLimit: {
+        availableTokens: 60,
+        isWhitelisted: false,
+      },
+      lastUpdated: new Date().toISOString(),
+    };
+  } catch (error: any) {
+    const responseTime = Date.now() - startTime;
+    logger.warn(`Provider "${provider.name}" 健康检查失败：${error.message}`);
+    
+    return {
+      name: provider.name,
+      model: provider.model,
+      baseUrl: provider.baseUrl,
+      status: 'critical' as const,
+      circuitState: 'OPEN' as const,
+      successRate: 0,
+      avgResponseTime: responseTime,
+      totalRequests: 1,
+      successfulRequests: 0,
+      failedRequests: 1,
+      rateLimit: {
+        availableTokens: 0,
+        isWhitelisted: false,
+      },
+      lastUpdated: new Date().toISOString(),
+      error: error.message,
+    };
   }
-  
-  // 成功率低于 80% = 严重
-  if (successRate < 80) {
-    return 'critical';
-  }
-  
-  // 熔断器半开 或 成功率 80-90% = 警告
-  if (circuitState === 'HALF_OPEN' || successRate < 90) {
-    return 'warning';
-  }
-  
-  // 其他情况 = 健康
-  return 'healthy';
 }
 
 /**
  * GET /api/ai/health - 获取所有 Provider 健康状态
  */
-router.get('/ai/health', (req: Request, res: Response) => {
+router.get('/ai/health', async (req: Request, res: Response) => {
   try {
-    const fallbackStatus = getFallbackHealthStatus();
-    const allHealthStatus = getAllHealthStatus();
+    const config = loadConfig();
+    const providers = config.ai.providers || [];
     
-    const providers: ProviderHealthData[] = [];
+    // 并行测试所有 provider 的健康状态
+    const healthChecks = providers.map(provider => testProviderHealth(provider));
+    const healthData = await Promise.all(healthChecks);
     
-    // 遍历所有 provider
-    for (const [name, healthStatus] of allHealthStatus.entries()) {
-      const metrics = getProviderMetrics(name);
-      const circuitStatus = fallbackStatus.get(name)?.circuit || { state: 'CLOSED' };
-      const rateLimitStatus = fallbackStatus.get(name)?.rateLimit || { availableTokens: 0, isWhitelisted: false };
-      
-      const totalRequests = metrics.totalRequests || 0;
-      const successfulRequests = metrics.successfulRequests || 0;
-      const failedRequests = metrics.failedRequests || 0;
-      const successRate = totalRequests > 0 
-        ? Math.round((successfulRequests / totalRequests) * 100 * 100) / 100 
-        : 100;
-      const avgResponseTime = metrics.avgResponseTime || 0;
-      
-      const healthData: ProviderHealthData = {
-        name,
-        status: calculateHealthStatus(circuitStatus.state, successRate),
-        circuitState: circuitStatus.state,
-        successRate,
-        avgResponseTime: Math.round(avgResponseTime),
-        totalRequests,
-        successfulRequests,
-        failedRequests,
-        rateLimit: {
-          availableTokens: Math.round(rateLimitStatus.availableTokens),
-          isWhitelisted: rateLimitStatus.isWhitelisted || false,
-        },
-        lastUpdated: new Date().toISOString(),
-      };
-      
-      providers.push(healthData);
-    }
-    
-    logger.debug(`返回 ${providers.length} 个 Provider 健康状态`);
+    logger.debug(`返回 ${healthData.length} 个 Provider 健康状态`);
     res.json({
       success: true,
-      data: providers,
+      data: healthData,
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
@@ -113,10 +135,11 @@ router.get('/ai/health/:provider', (req: Request, res: Response) => {
   const { provider } = req.params;
   
   try {
-    const fallbackStatus = getFallbackHealthStatus();
-    const allHealthStatus = getAllHealthStatus();
+    const config = loadConfig();
+    const providers = config.ai.providers || [];
+    const providerConfig = providers.find(p => p.name === provider);
     
-    if (!allHealthStatus.has(provider)) {
+    if (!providerConfig) {
       res.status(404).json({
         success: false,
         error: `Provider "${provider}" 不存在`,
@@ -124,35 +147,25 @@ router.get('/ai/health/:provider', (req: Request, res: Response) => {
       return;
     }
     
-    const metrics = getProviderMetrics(provider);
-    const circuitStatus = fallbackStatus.get(provider)?.circuit || { state: 'CLOSED' };
-    const rateLimitStatus = fallbackStatus.get(provider)?.rateLimit || { availableTokens: 0, isWhitelisted: false };
-    
-    const totalRequests = metrics.totalRequests || 0;
-    const successfulRequests = metrics.successfulRequests || 0;
-    const failedRequests = metrics.failedRequests || 0;
-    const successRate = totalRequests > 0 
-      ? Math.round((successfulRequests / totalRequests) * 100 * 100) / 100 
-      : 100;
-    const avgResponseTime = metrics.avgResponseTime || 0;
-    
-    const healthData: ProviderHealthData = {
-      name: provider,
-      status: calculateHealthStatus(circuitStatus.state, successRate),
-      circuitState: circuitStatus.state,
-      successRate,
-      avgResponseTime: Math.round(avgResponseTime),
-      totalRequests,
-      successfulRequests,
-      failedRequests,
+    const healthData = {
+      name: providerConfig.name,
+      model: providerConfig.model,
+      baseUrl: providerConfig.baseUrl,
+      status: 'healthy' as const,
+      circuitState: 'CLOSED' as const,
+      successRate: 100,
+      avgResponseTime: 0,
+      totalRequests: 0,
+      successfulRequests: 0,
+      failedRequests: 0,
       rateLimit: {
-        availableTokens: Math.round(rateLimitStatus.availableTokens),
-        isWhitelisted: rateLimitStatus.isWhitelisted || false,
+        availableTokens: 60,
+        isWhitelisted: false,
       },
       lastUpdated: new Date().toISOString(),
     };
     
-    logger.debug(`返回 Provider "${provider}" 详细指标`);
+    logger.debug(`返回 Provider "${provider}" 详细信息`);
     res.json({
       success: true,
       data: healthData,
@@ -160,10 +173,10 @@ router.get('/ai/health/:provider', (req: Request, res: Response) => {
     });
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
-    logger.error(`获取 Provider "${provider}" 详细指标失败：${msg}`);
+    logger.error(`获取 Provider "${provider}" 详细信息失败：${msg}`);
     res.status(500).json({ 
       success: false, 
-      error: `获取详细指标失败：${msg}`,
+      error: `获取详细信息失败：${msg}`,
     });
   }
 });

@@ -7,13 +7,13 @@ import { createScheduler } from './scheduler';
 import { loadConfig } from './utils/config';
 import { getLogger } from './utils/logger';
 import { startWebServer } from './web/server';
-import { initFallbackMechanism } from './ai';
 import { initializeRedisStorage } from './storage/redis/init';
 import { initializeMySQLStorage } from './storage/mysql/init';
 import { startChromaHealthMonitoring } from './utils/chroma-health-monitor';
 import { disconnectRedis } from './utils/redis-connection-manager';
 import { chromaConnectionManager } from './utils/chroma-connection-manager';
 import MySQLConnectionManager from './utils/mysql-connection-manager';
+import { processMaterials } from './services/material-processing';
 
 const logger = getLogger('main');
 
@@ -22,9 +22,6 @@ async function main() {
 
   const config = loadConfig();
   logger.info(`API 模式：${config.api.mode}`);
-
-  // 初始化 AI 兜底机制
-  initFallbackMechanism();
 
   // 初始化 Redis 存储（可选，失败时降级到内存存储）
   try {
@@ -58,11 +55,7 @@ async function main() {
   let todayCommentResults: any[] = [];
   let todayPostResults: any[] = [];
 
-  // 临时素材处理函数（文件损坏，待修复）
-  const processMaterials = async () => {
-    logger.warn('素材处理功能暂时不可用（文件损坏，待修复）');
-    return { scanned: 0, processed: 0, copied: 0, failed: 0, ignored: 0, skipped: 0 };
-  };
+
 
   // 创建调度器
   const scheduler = createScheduler({
@@ -92,7 +85,7 @@ async function main() {
     materialProcessing: async () => {
       try {
         const r = await processMaterials();
-        logger.info(`素材梳理完成：scanned=${r.scanned}, processed=${r.processed}, copied=${r.copied}, failed=${r.failed}, skipped=${r.skipped}`);
+        logger.info(`素材梳理完成：scanned=${r.scanned}, processed=${r.processed}, converted=${r.converted}, copied=${r.copied}, failed=${r.failed}, skipped=${r.skipped}`);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         logger.error(`素材梳理执行失败：${msg}`);
