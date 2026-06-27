@@ -22,7 +22,11 @@ export interface MySQLGlobalPrompt {
  * 保存全局人设输入
  */
 export interface CreateGlobalPromptInput {
-  personalInfo: string;  // JSON 字符串
+  personalInfo: {
+    carModel: string;
+    gender: string;
+    ageGroup: string;
+  };
   styleDescription: string | null;
 }
 

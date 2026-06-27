@@ -76,7 +76,14 @@ export async function load(): Promise<GlobalPrompt | null> {
       return null;
     }
     
-    const personalInfo = JSON.parse(mysqlPrompt.personal_info);
+    // MySQL JSON 字段返回的可能是对象或字符串，需要兼容处理
+    let personalInfo: any;
+    if (typeof mysqlPrompt.personal_info === 'string') {
+      personalInfo = JSON.parse(mysqlPrompt.personal_info);
+    } else {
+      personalInfo = mysqlPrompt.personal_info;
+    }
+    
     const styleDescription = mysqlPrompt.style_description || '';
     
     return {
@@ -100,7 +107,7 @@ export async function save(prompt: GlobalPrompt): Promise<SaveResult> {
   
   try {
     const input: CreateGlobalPromptInput = {
-      personalInfo: JSON.stringify(prompt.personalInfo),
+      personalInfo: prompt.personalInfo,
       styleDescription: prompt.styleDescription || null,
     };
     
