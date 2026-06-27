@@ -815,7 +815,7 @@ router.post('/autojs/callback', apiTokenMiddleware, async (req, res) => {
     }
     
     // 查找对应的日志记录
-    const log = await (postLoggingService as any).findByTaskId(taskId);
+    const log = await postLoggingService.findByTaskId(taskId);
     
     if (!log) {
       logger.warn(`日志记录不存在：${taskId}`);
@@ -829,12 +829,37 @@ router.post('/autojs/callback', apiTokenMiddleware, async (req, res) => {
     // 更新日志记录
     if (success) {
       logger.info(`AutoJS 回调发帖成功：${title || log.title}`);
+      
+      // 清理内容，防止特殊字符导致乱码
+      const cleanTitle = title ? String(title).trim() : log.title;
+      const cleanContent = content ? String(content).trim() : log.content;
+      const cleanImageUrls = Array.isArray(imageUrls) ? imageUrls.map(url => String(url).trim()) : log.imageUrls;
+      
+      await postLoggingService.update(log.id, {
+        status: 'success',
+        title: cleanTitle,
+        content: cleanContent,
+        imageUrls: cleanImageUrls,
+        topicId: topicId || undefined,
+        topicName: topicName || undefined,
+      });
+      
+      logger.info(`已更新日志状态为成功：${log.id}`);
+      
       res.json({
         success: true,
         message: '回调成功',
       });
     } else {
       logger.warn(`AutoJS 回调发帖失败：${errorMessage || '未知错误'}`);
+      
+      await postLoggingService.update(log.id, {
+        status: 'failed',
+        errorMessage: errorMessage || 'AutoJS 脚本执行失败',
+      });
+      
+      logger.info(`已更新日志状态为失败：${log.id}`);
+      
       res.json({
         success: true,
         message: '已记录失败状态',
