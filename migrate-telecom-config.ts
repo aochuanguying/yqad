@@ -9,7 +9,7 @@ async function migrateData() {
     host: '192.168.50.50',
     port: 3306,
     user: 'root',
-    password: '123456',
+    password: 'Wfw7539148@',
     database: 'yqad_db',
     waitForConnections: true,
     connectionLimit: 5,
