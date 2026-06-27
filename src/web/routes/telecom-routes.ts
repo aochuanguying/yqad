@@ -7,6 +7,7 @@ import { getLogger } from '../../utils/logger';
 import { alertService } from '../../services/alert-service';
 import { telecomClient } from '../../services/telecom-client';
 import { telecomApiStorage } from '../../storage/mysql/telecom-api-storage';
+import { mobileServiceConfigStorage } from '../../storage/mysql/mobile-service-config-storage';
 import * as yaml from 'js-yaml';
 
 const logger = getLogger('telecom-routes');
@@ -18,16 +19,19 @@ const CONFIG_FILE_PATH = './config/default.yaml';
 
 interface TelecomConfigRequest {
   enabled: boolean;
+  alertPhone: string;
+}
+
+interface MobileServiceConfigRequest {
   apiUrl: string;
   apiToken: string;
-  alertPhone: string;
 }
 
 // ===================== 路由实现 =====================
 
 /**
  * GET /api/telecom-config
- * 获取当前 Telecom API 配置
+ * 获取当前 Telecom API 配置（仅告警电话）
  */
 router.get('/telecom-config', async (req: Request, res: Response) => {
   try {
@@ -39,25 +43,16 @@ router.get('/telecom-config', async (req: Request, res: Response) => {
         success: true,
         config: {
           enabled: false,
-          apiUrl: '',
-          apiToken: '',
-          apiTokenRaw: '',
           alertPhone: '',
         },
       });
       return;
     }
 
-    // Token 掩码处理（显示前 8 位和后 4 位）
-    const maskedToken = maskToken(telecomConfig.apiToken || '');
-
     res.json({
       success: true,
       config: {
         enabled: telecomConfig.enabled,
-        apiUrl: telecomConfig.apiUrl,
-        apiToken: maskedToken,
-        apiTokenRaw: telecomConfig.apiToken || '', // 用于编辑时显示完整 Token
         alertPhone: telecomConfig.alertPhone,
       },
     });
@@ -72,17 +67,17 @@ router.get('/telecom-config', async (req: Request, res: Response) => {
 
 /**
  * POST /api/telecom-config
- * 保存 Telecom API 配置
+ * 保存 Telecom API 配置（仅告警电话）
  */
 router.post('/telecom-config', async (req: Request, res: Response) => {
   try {
-    const { enabled, apiUrl, apiToken, alertPhone }: TelecomConfigRequest = req.body;
+    const { enabled, alertPhone }: TelecomConfigRequest = req.body;
 
     // 验证必填字段
-    if (enabled && (!apiUrl || !apiToken || !alertPhone)) {
+    if (enabled && !alertPhone) {
       return res.status(400).json({
         success: false,
-        error: '启用时必须提供 API 地址、Token 和告警手机号',
+        error: '启用时必须提供告警手机号',
       });
     }
 
@@ -97,12 +92,10 @@ router.post('/telecom-config', async (req: Request, res: Response) => {
     // 保存到数据库
     await telecomApiStorage.saveConfig({
       enabled,
-      apiUrl,
-      apiToken,
       alertPhone,
     });
 
-    logger.info('Telecom 配置已保存到数据库', { enabled, apiUrl, alertPhone });
+    logger.info('Telecom 配置已保存到数据库', { enabled, alertPhone });
 
     // 重新加载告警服务配置
     alertService.reloadConfig().catch(error => {
@@ -118,6 +111,127 @@ router.post('/telecom-config', async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: '保存配置失败',
+    });
+  }
+});
+
+/**
+ * GET /api/mobile-service-config
+ * 获取当前手机服务配置（API 地址和 Token）
+ */
+router.get('/mobile-service-config', async (req: Request, res: Response) => {
+  try {
+    // 从数据库读取配置
+    const serviceConfig = await mobileServiceConfigStorage.getConfig();
+
+    if (!serviceConfig) {
+      res.json({
+        success: true,
+        config: {
+          apiUrl: '',
+          apiToken: '',
+          apiTokenRaw: '',
+        },
+      });
+      return;
+    }
+
+    // Token 掩码处理（显示前 8 位和后 4 位）
+    const maskedToken = maskToken(serviceConfig.apiToken || '');
+
+    res.json({
+      success: true,
+      config: {
+        apiUrl: serviceConfig.apiUrl || '',
+        apiToken: maskedToken,
+        apiTokenRaw: serviceConfig.apiToken || '', // 用于编辑时显示完整 Token
+      },
+    });
+  } catch (error) {
+    logger.error('获取手机服务配置失败', error);
+    res.status(500).json({
+      success: false,
+      error: '获取配置失败',
+    });
+  }
+});
+
+/**
+ * POST /api/mobile-service-config
+ * 保存手机服务配置（API 地址和 Token）
+ */
+router.post('/mobile-service-config', async (req: Request, res: Response) => {
+  try {
+    const { apiUrl, apiToken }: MobileServiceConfigRequest = req.body;
+
+    // 验证必填字段
+    if (!apiUrl || !apiToken) {
+      return res.status(400).json({
+        success: false,
+        error: 'API 地址和 Token 不能为空',
+      });
+    }
+
+    // 保存到数据库
+    await mobileServiceConfigStorage.saveConfig({
+      apiUrl,
+      apiToken,
+    });
+
+    logger.info('手机服务配置已保存到数据库', { apiUrl });
+
+    // 重新加载告警服务配置
+    alertService.reloadConfig().catch(error => {
+      logger.error('重新加载告警服务配置失败:', error instanceof Error ? error.message : String(error));
+    });
+
+    res.json({
+      success: true,
+      message: '配置已保存',
+    });
+  } catch (error) {
+    logger.error('保存手机服务配置失败', error);
+    res.status(500).json({
+      success: false,
+      error: '保存配置失败',
+    });
+  }
+});
+
+/**
+ * POST /api/mobile-service-test
+ * 测试手机服务 API 连接
+ */
+router.post('/mobile-service-test', async (req: Request, res: Response) => {
+  try {
+    const { apiUrl, apiToken }: { apiUrl: string; apiToken: string } = req.body;
+
+    if (!apiUrl || !apiToken) {
+      return res.status(400).json({
+        success: false,
+        error: 'API 地址和 Token 不能为空',
+      });
+    }
+
+    logger.info('测试手机服务 API 连接', { apiUrl });
+    const result = await telecomClient.testConnection(apiUrl, apiToken);
+
+    if (result.success) {
+      res.json({
+        success: true,
+        message: result.message || 'API 连接正常',
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        error: result.error || '连接失败',
+      });
+    }
+  } catch (error) {
+    logger.error('测试手机服务 API 连接失败', error);
+    res.status(500).json({
+      success: false,
+      error: '测试连接失败',
     });
   }
 });

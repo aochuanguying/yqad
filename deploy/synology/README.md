@@ -9,15 +9,15 @@
 ```
 synology/
 ├── README.md                     # 本文件
-├── DEPLOYMENT.md                 # 详细部署文档（⚠️ 部署前必读）
-├── DATA_MIGRATION.md             # 数据迁移说明（基于现有生产数据）
+├── DEPLOY.md                     # 详细部署指南（⚠️ 部署前必读）
+├── STRUCTURE.md                  # 目录结构说明
 ├── docker-compose.yml            # Docker 编排文件
+├── Dockerfile                    # 应用镜像构建文件
 ├── .env.example                  # 环境变量模板
 ├── config/
 │   └── default.yaml              # 应用默认配置
 ├── sql/
-│   ├── init.sql                  # MySQL 表结构初始化
-│   └── init-data.sql             # MySQL 数据初始化（基于现有数据）
+│   └── init-complete.sql         # MySQL 完整初始化脚本（表结构 + 默认数据）
 └── scripts/
     ├── init-redis.sh             # Redis 初始化脚本（包含现有 Token）
     └── init-chromadb.sh          # ChromaDB 初始化脚本
@@ -73,7 +73,7 @@ docker-compose logs -f
 
 ## 📚 详细文档
 
-请阅读 [DEPLOYMENT.md](./DEPLOYMENT.md) 获取完整的部署指南，包括：
+请阅读 [DEPLOY.md](./DEPLOY.md) 获取完整的部署指南，包括：
 
 - 系统架构说明
 - 详细部署步骤
@@ -81,6 +81,8 @@ docker-compose logs -f
 - 日常运维操作
 - 故障排查指南
 - 数据备份恢复
+
+请阅读 [STRUCTURE.md](./STRUCTURE.md) 了解目录结构和文件组织。
 
 ## ⚠️ 重要提醒
 
@@ -97,6 +99,7 @@ docker-compose logs -f
 
 ---
 
-**部署时间**：2026-06-25  
+**部署时间**：2026-06-27  
 **版本**：Production v1.0  
-**架构**：完全容器化（MySQL + Redis + ChromaDB + YQAD）
+**架构**：完全容器化（MySQL + Redis + ChromaDB + YQAD）  
+**表结构**：14 张表（与代码完全一致）

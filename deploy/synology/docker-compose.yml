@@ -5,31 +5,17 @@ services:
   # YQAD 应用服务
   # ============================================================
   yqad:
-    image: yqad-auto-tasks:latest
+    image: yqad:latest
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: yqad-auto-tasks
+    container_name: yqad
     restart: unless-stopped
     platform: linux/amd64
     environment:
-      NODE_ENV: production
       TZ: Asia/Shanghai
-      # MySQL 配置（使用容器名）
-      MYSQL_HOST: mysql
-      MYSQL_PORT: 3306
-      MYSQL_USER: root
-      MYSQL_PASSWORD: Wfw7539148@
-      MYSQL_DATABASE: yqad_db
-      # Redis 配置（使用容器名）
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_PREFIX: "prod:"
       # Web 配置
       PORT: 3000
-      SESSION_SECRET: ${SESSION_SECRET:-random-secret-key-yqad-auto-tasks}
-      # 日志配置
-      LOG_LEVEL: ${LOG_LEVEL:-info}
     volumes:
       - ./config:/app/config
       - ./data:/app/data

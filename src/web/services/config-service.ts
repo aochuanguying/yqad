@@ -233,9 +233,16 @@ export async function getAllConfig(): Promise<AppConfig> {
   try {
     const dbTelecomApiConfig = await telecomApiStorage.getConfig();
     if (dbTelecomApiConfig) {
+      // 合并文件配置和数据库配置（保留文件配置中的 apiUrl 和 apiToken）
+      const mergedTelecomApi = {
+        ...config.telecomApi,
+        enabled: dbTelecomApiConfig.enabled,
+        alertPhone: dbTelecomApiConfig.alertPhone,
+      } as { enabled: boolean; apiUrl: string; apiToken: string; alertPhone: string };
+      
       config = {
         ...config,
-        telecomApi: dbTelecomApiConfig,
+        telecomApi: mergedTelecomApi,
       };
     }
   } catch (error) {

@@ -179,4 +179,5 @@ services:
 
 **更新时间**: 2026-06-27  
 **参考路径**: `/Volumes/docker/yqad`  
-**部署目标**: Synology NAS Docker
+**部署目标**: Synology NAS Docker  
+**数据库表**: 14 张（与代码完全一致）

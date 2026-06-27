@@ -10,6 +10,7 @@
 synology/
 ├── DEPLOY.md                     # 本文件（部署指南）
 ├── README.md                     # 项目说明
+├── STRUCTURE.md                  # 目录结构说明
 ├── docker-compose.yml            # Docker 编排文件
 ├── Dockerfile                    # 应用镜像构建文件
 ├── package.json                  # Node.js 项目配置
@@ -17,20 +18,10 @@ synology/
 ├── tsconfig.json                 # TypeScript 配置
 ├── .env.example                  # 环境变量模板
 ├── config/                       # 应用配置（挂载到容器 /app/config）
-│   └── default.yaml              # 应用配置文件
-├── data/                         # 应用数据（挂载到容器 /app/data）
-│   ├── materials/                # 素材目录
-│   └── ...                       # 其他数据文件
-├── logs/                         # 应用日志（挂载到容器 /app/logs）
-│   └── *.log                     # 日志文件
-├── src/                          # TypeScript 源码
-│   ├── index.ts                  # 入口文件
-│   ├── services/                 # 业务服务
-│   ├── controllers/              # Web 控制器
-│   ├── utils/                    # 工具函数
-│   └── ...
+│   ├── default.yaml              # 应用配置文件（生产环境核心配置）
+│   └── local.yaml                # 本地覆盖配置（可选，生产环境通常不需要）
 ├── sql/
-│   └── init-complete.sql         # 数据库初始化脚本
+│   └── init-complete.sql         # MySQL 完整初始化脚本（表结构 + 默认数据）
 └── scripts/
     ├── init-redis.sh             # Redis 初始化脚本
     └── init-chromadb.sh          # ChromaDB 初始化脚本
@@ -135,8 +126,25 @@ yqad-chromadb        Up (healthy)
 yqad-auto-tasks      Up (healthy)
 ```
 
-### 步骤 5：验证数据库初始化
+### 步骤 5：初始化数据库（仅首次部署）
 
+**⚠️ 重要**：此步骤**仅在首次部署时执行**！日常发版**严禁执行**，否则会清空所有业务数据！
+
+#### 首次部署时执行：
+
+```bash
+# 方式 1：使用 docker exec 执行（推荐）
+docker exec -i yqad-mysql mysql -u root -p${MYSQL_ROOT_PASSWORD} yqad_prod_db < sql/init-complete.sql
+
+# 方式 2：进入 MySQL 容器手动执行
+docker exec -it yqad-mysql mysql -u root -p
+# 输入密码后执行：
+mysql> USE yqad_prod_db;
+mysql> SOURCE /docker-entrypoint-initdb.d/init-complete.sql;
+mysql> EXIT;
+```
+
+**验证数据库初始化**：
 ```bash
 # 进入 MySQL 容器
 docker exec -it yqad-mysql mysql -u root -p
@@ -147,14 +155,18 @@ docker exec -it yqad-mysql mysql -u root -p
 mysql> USE yqad_prod_db;
 mysql> SHOW TABLES;
 mysql> SELECT COUNT(*) FROM topics;
-mysql> SELECT name FROM global_prompts;
+mysql> SELECT personal_info FROM global_prompts;
 mysql> EXIT;
 ```
 
 **预期结果**：
 - 显示 14 张表
 - 主题数量：4
-- 全局人设名称：默认人设
+- 全局人设：包含车型、性别、年龄段等信息
+
+#### 日常发版时：
+
+**跳过此步骤！** 直接执行步骤 6 即可。
 
 ### 步骤 6：访问应用
 
@@ -168,6 +180,61 @@ http://<NAS-IP>:3000
 - 密码：`admin123`
 
 **⚠️ 请立即修改密码！**
+
+---
+
+## 🔄 日常发版流程
+
+**适用场景**：代码更新后的常规发版（非首次部署）
+
+### 发版前检查
+
+1. **确认数据库已初始化**
+   ```bash
+   # 检查表是否已存在
+   docker exec -it yqad-mysql mysql -u root -p -e "USE yqad_prod_db; SHOW TABLES;"
+   ```
+   - ✅ 如果显示 14 张表 → 跳过初始化步骤
+   - ❌ 如果无表或表不全 → 需要执行首次部署的初始化步骤
+
+2. **备份当前数据**（推荐）
+   ```bash
+   # 备份 MySQL
+   docker exec yqad-mysql mysqldump -u root -p<密码> yqad_prod_db > backup_$(date +%Y%m%d_%H%M%S).sql
+   
+   # 备份 Redis
+   docker cp yqad-redis:/data/dump.rdb redis_backup_$(date +%Y%m%d_%H%M%S).rdb
+   ```
+
+### 发版步骤
+
+```bash
+# 1. 进入部署目录
+cd /volume1/docker/yqad-prod/synology
+
+# 2. 停止应用服务（不影响数据库）
+docker-compose stop yqad
+
+# 3. 更新代码
+# 方式 1：使用 rsync 同步新代码
+rsync -av --delete /path/to/new/code/ ./
+
+# 方式 2：重新上传部署包并覆盖
+
+# 4. 重新构建并启动
+docker-compose up -d --build yqad
+
+# 5. 查看启动日志
+docker-compose logs -f yqad
+
+# 6. 验证服务状态
+docker-compose ps
+```
+
+**⚠️ 注意事项**：
+- ❌ **不要执行** `sql/init-complete.sql`（会清空业务数据）
+- ✅ **只重启应用服务**，数据库服务保持运行
+- ✅ 发版前务必备份重要数据
 
 ---
 
@@ -359,8 +426,9 @@ cat /app/config/default.yaml
 
 ---
 
-**部署时间**: 2026-06-26  
+**部署时间**: 2026-06-27  
 **版本**: Production v1.0 (源码构建版)  
 **构建方式**: Docker Compose 本地构建  
 **数据来源**: `/Volumes/docker/yqad/data/`  
-**数据库**: yqad_prod_db（与测试环境隔离）
+**数据库**: yqad_prod_db（与测试环境 yqad_db 隔离）  
+**表结构**: 14 张表（与代码完全一致）

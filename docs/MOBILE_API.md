@@ -132,6 +132,12 @@ Content-Type: application/json
 | 401 | 未登录或 Token 无效 |
 | 500 | 服务器内部错误 |
 
+**说明**
+
+- 此接口用于从外部设备（如 Android 手机）上报短信记录
+- 前端页面提供"发短信"按钮，但实际仅保存记录，不通过 Telecom API 发送
+- 如需实际发送短信，需配置 Android Telecom API
+
 ---
 
 ## 2. 未接电话 API
@@ -248,6 +254,62 @@ Content-Type: application/json
 | 400 | 缺少必填字段 |
 | 401 | 未登录或会话过期 |
 | 500 | 服务器内部错误 |
+
+---
+
+### 2.3 拨打电话
+
+拨打电话并记录通话记录。如果配置了 Android Telecom API，将实际拨打电话。
+
+**请求**
+
+```http
+POST /api/posts/mobile/call
+Content-Type: application/json
+```
+
+**请求体**
+
+```json
+{
+  "phone_number": "13800138000",
+  "received_at": "2024-06-27T10:30:00.000Z"
+}
+```
+
+**字段说明**
+
+| 字段名 | 类型 | 必填 | 说明 |
+|--------|------|------|------|
+| phone_number | string | 是 | 要拨打的电话号码 |
+| received_at | string (ISO 8601) | 否 | 通话时间，默认当前时间 |
+
+**响应示例**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 3
+  },
+  "message": "电话拨打成功"
+}
+```
+
+**状态码**
+
+| 状态码 | 说明 |
+|--------|------|
+| 200 | 成功 |
+| 400 | 缺少必填字段 |
+| 401 | 未登录或 Token 无效 |
+| 500 | 服务器内部错误 |
+
+**说明**
+
+- 此接口会保存通话记录到数据库
+- 如果配置了 Android Telecom API（`telecom-api-storage`），将调用实际拨打电话功能
+- 如果未配置 Telecom API，仅保存通话记录
 
 ---
 

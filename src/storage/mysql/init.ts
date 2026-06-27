@@ -16,6 +16,9 @@ import { vehicleMonitorStorage } from './vehicle-monitor-storage';
 import { telecomApiStorage } from './telecom-api-storage';
 import { autojsApiStorage } from './autojs-api-storage';
 import { complianceReportConfigStorage } from './compliance-report-config-storage';
+import { mobileSmsStorage } from './mobile-sms-storage';
+import { missedCallStorage } from './missed-call-storage';
+import { mobileServiceConfigStorage } from './mobile-service-config-storage';
 
 const logger = getLogger('mysql-init');
 
@@ -133,6 +136,27 @@ export async function initializeMySQLStorage(): Promise<void> {
       await complianceReportConfigStorage.initialize();
     } catch (error) {
       logger.warn('合规性检查报告配置存储初始化失败，将使用文件配置:', error instanceof Error ? error.message : String(error));
+    }
+    
+    // 初始化手机短信记录存储
+    try {
+      await mobileSmsStorage.initialize();
+    } catch (error) {
+      logger.warn('手机短信记录存储初始化失败:', error instanceof Error ? error.message : String(error));
+    }
+    
+    // 初始化未接电话记录存储
+    try {
+      await missedCallStorage.initialize();
+    } catch (error) {
+      logger.warn('未接电话记录存储初始化失败:', error instanceof Error ? error.message : String(error));
+    }
+    
+    // 初始化手机服务配置存储
+    try {
+      await mobileServiceConfigStorage.initialize();
+    } catch (error) {
+      logger.warn('手机服务配置存储初始化失败:', error instanceof Error ? error.message : String(error));
     }
     
     logger.info('✅ MySQL 存储系统初始化完成');

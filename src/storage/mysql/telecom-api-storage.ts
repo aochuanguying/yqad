@@ -5,8 +5,6 @@ const logger = getLogger('telecom-api-storage');
 
 export interface TelecomApiConfig {
   enabled: boolean;
-  apiUrl: string;
-  apiToken: string;
   alertPhone: string;
 }
 
@@ -34,8 +32,6 @@ class TelecomApiStorage extends BaseDAO {
       CREATE TABLE IF NOT EXISTS telecom_api_config (
         id INT AUTO_INCREMENT PRIMARY KEY,
         enabled TINYINT(1) DEFAULT 1,
-        api_url VARCHAR(500) DEFAULT NULL,
-        api_token VARCHAR(500) DEFAULT NULL,
         alert_phone VARCHAR(20) DEFAULT NULL,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -43,8 +39,8 @@ class TelecomApiStorage extends BaseDAO {
     `);
     logger.info('✅ telecom_api_config 表创建成功');
     await this.query(`
-      INSERT INTO telecom_api_config (enabled, api_url, api_token, alert_phone)
-      SELECT 1, 'http://10.6.0.2:5000', 'rDmpsGmKhmeGCt86h_Ovhxxtp1Mt2CxOu7p3Xac6xPg', '18953272532'
+      INSERT INTO telecom_api_config (enabled, alert_phone)
+      SELECT 1, '18953272532'
       WHERE NOT EXISTS (SELECT 1 FROM telecom_api_config)
     `);
     logger.info('✅ 默认电信 API 配置数据插入成功');
@@ -53,14 +49,12 @@ class TelecomApiStorage extends BaseDAO {
   async getConfig(): Promise<TelecomApiConfig | null> {
     try {
       const rows = await this.query<any[]>(
-        'SELECT enabled, api_url, api_token, alert_phone FROM telecom_api_config LIMIT 1'
+        'SELECT enabled, alert_phone FROM telecom_api_config LIMIT 1'
       );
       if (rows.length === 0) return null;
       const row = rows[0];
       return {
         enabled: row.enabled === 1,
-        apiUrl: row.api_url,
-        apiToken: row.api_token,
         alertPhone: row.alert_phone,
       };
     } catch (error) {
@@ -74,14 +68,14 @@ class TelecomApiStorage extends BaseDAO {
       const rows = await this.query<any[]>('SELECT id FROM telecom_api_config LIMIT 1');
       if (rows.length === 0) {
         await this.query(
-          `INSERT INTO telecom_api_config (enabled, api_url, api_token, alert_phone) VALUES (?, ?, ?, ?)`,
-          [config.enabled ? 1 : 0, config.apiUrl, config.apiToken, config.alertPhone]
+          `INSERT INTO telecom_api_config (enabled, alert_phone) VALUES (?, ?)`,
+          [config.enabled ? 1 : 0, config.alertPhone]
         );
         logger.info('电信 API 配置已保存（新增）');
       } else {
         await this.query(
-          `UPDATE telecom_api_config SET enabled = ?, api_url = ?, api_token = ?, alert_phone = ? WHERE id = ?`,
-          [config.enabled ? 1 : 0, config.apiUrl, config.apiToken, config.alertPhone, rows[0].id]
+          `UPDATE telecom_api_config SET enabled = ?, alert_phone = ? WHERE id = ?`,
+          [config.enabled ? 1 : 0, config.alertPhone, rows[0].id]
         );
         logger.info('电信 API 配置已保存（更新）');
       }
