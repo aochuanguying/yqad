@@ -60,26 +60,14 @@ export function createSessionMiddleware() {
   // 生产环境使用 Redis 存储 Session
   if (process.env.NODE_ENV === 'production') {
     try {
-      // 动态导入 connect-redis，避免 TypeScript 类型检查问题
-      const createRedisStore = Function(`
-        const { RedisStore } = require('connect-redis');
-        return function(opts) { return new RedisStore(opts); };
-      `)();
+      // 动态导入 connect-redis 和 redis-client，避免初始化时序问题
+      const { RedisStore } = require('connect-redis');
+      const { redisConnectionManager } = require('../../utils/redis-connection-manager');
       
-      // 获取 Redis 客户端（可能抛出异常）
-      let redisClient;
-      try {
-        redisClient = getRedisClient();
-      } catch (e) {
-        throw new Error('Redis 客户端未初始化：' + (e instanceof Error ? e.message : String(e)));
-      }
+      // 从单例获取已经初始化的 Redis 客户端
+      const redisClient = redisConnectionManager.getClient();
       
-      logger.debug('Redis 客户端状态:', {
-        hasClient: !!redisClient,
-        clientType: typeof redisClient,
-      });
-      
-      const store = createRedisStore({
+      const store = new RedisStore({
         client: redisClient,
         prefix: 'prod:sess:',  // Session key 前缀（使用 prod: 区分）
         ttl: authConfig?.sessionMaxAge ? Math.floor(authConfig.sessionMaxAge / 1000) : 86400, // 默认 24 小时
