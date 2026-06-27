@@ -55,13 +55,8 @@ export function createSessionMiddleware() {
     name: 'audi_app_sid',     // Session Cookie 名称
   };
   
-  // 生产环境使用 HTTP（群晖 NAS 环境）
-  if (process.env.NODE_ENV === 'production') {
-    if (typeof sessionOptions.cookie !== 'function' && sessionOptions.cookie !== undefined) {
-      sessionOptions.cookie.secure = false;  // NAS 环境使用 HTTP
-    }
-    logger.info('生产环境 Cookie Secure 已禁用（HTTP 访问）');
-  }
+  logger.info('Session 中间件已配置（使用 MemoryStore）');
+  logger.info('生产环境 Cookie Secure 已禁用（HTTP 访问）');
   
   logger.info('Session 中间件已配置');
   if (typeof sessionOptions.cookie !== 'function' && sessionOptions.cookie) {
