@@ -636,7 +636,9 @@ function checkAnomalies(state: VehicleState, config: VehicleConfig): string[] {
 import { alertService } from './alert-service';
 
 // 初始化告警服务（在模块加载时）
-alertService.init();
+alertService.init().catch(error => {
+  logger.error('初始化告警服务失败:', error instanceof Error ? error.message : String(error));
+});
 
 async function triggerAlert(config: VehicleConfig, anomalies: string[], location?: { lat: number; lng: number; address?: string }): Promise<void> {
   const reason = `车辆异常：${anomalies.join(', ')}`;
@@ -660,29 +662,32 @@ let lastVehicleState: VehicleState | null = null;
 
 export async function runVehicleMonitor(): Promise<void> {
   try {
-    const config = loadConfig();
+    // 从数据库读取配置
+    const { vehicleMonitorStorage } = await import('../storage/mysql/vehicle-monitor-storage');
+    const vehicleConfig = await vehicleMonitorStorage.getConfig();
+    
+    logger.debug('车辆监控配置:', JSON.stringify(vehicleConfig, null, 2));
     
     // 检查是否启用
-    const vehicleConfig = (config as any).vehicleMonitor as VehicleConfig | undefined;
-    if (!vehicleConfig || !vehicleConfig.enabled) {
-      logger.debug('车辆监控未启用，跳过');
+    if (!vehicleConfig || vehicleConfig.enabled === false) {
+      logger.warn('车辆监控未启用，跳过', { hasConfig: !!vehicleConfig, enabled: vehicleConfig?.enabled });
       return;
     }
 
     logger.info('开始车辆监控...');
 
-    // 1. 从配置加载 Token（如果内存和 Redis 中都没有）
+    // 1. 从数据库/Redis 加载 Token（如果内存和 Redis 中都没有）
     const currentToken = await getToken();
     logger.debug('当前 Token 状态:', {
       hasInMemory: !!_tokenInMemory,
       hasInRedis: !!(await loadVehicleToken())?.token,
-      hasInConfig: !!vehicleConfig.token,
+      hasInDb: !!vehicleConfig.token,
       currentTokenLength: currentToken?.length || 0,
-      configTokenLength: vehicleConfig.token?.length || 0,
+      dbTokenLength: vehicleConfig.token?.length || 0,
     });
     
     if (!currentToken && vehicleConfig.token) {
-      logger.info('从配置加载 Token');
+      logger.info('从数据库加载 Token');
       await setToken(vehicleConfig.token);
     }
 
@@ -838,14 +843,16 @@ export class VehicleMonitorServiceClass {
    * 获取手机设备位置（通过 Home Assistant）
    */
   async getDeviceLocation(): Promise<{ lat: number; lng: number } | null> {
-    const config = loadConfig();
+    // 从数据库读取配置
+    const { vehicleMonitorStorage } = await import('../storage/mysql/vehicle-monitor-storage');
+    const vehicleConfig = await vehicleMonitorStorage.getConfig();
     
-    if (!config.vehicleMonitor?.haBaseUrl || !config.vehicleMonitor?.haToken || !config.vehicleMonitor?.deviceTrackerEntity) {
+    if (!vehicleConfig?.haBaseUrl || !vehicleConfig?.haToken || !vehicleConfig?.deviceTrackerEntity) {
       logger.warn('Home Assistant 设备追踪未配置');
       return null;
     }
     
-    return await getHADevicePosition(config.vehicleMonitor);
+    return await getHADevicePosition(vehicleConfig);
   }
 }
 

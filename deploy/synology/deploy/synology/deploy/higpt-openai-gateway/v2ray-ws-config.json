@@ -1,0 +1,81 @@
+{
+    "log": {
+        "loglevel": "warning",
+        "access": "/var/log/v2ray/access.log",
+        "error": "/var/log/v2ray/error.log"
+    },
+    "inbounds": [{
+        "port": 10000,
+        "protocol": "vmess",
+        "settings": {
+            "clients": [{
+                "id": "0244b6a5-2b80-4ef5-bdba-ef81024e875f",
+                "alterId": 0
+            }]
+        },
+        "streamSettings": {
+            "network": "ws",
+            "wsSettings": {
+                "path": "/v2ray/"
+            }
+        }
+    }],
+    "outbounds": [{
+        "protocol": "freedom",
+        "tag": "direct"
+    },{
+        "protocol": "vless",
+        "settings": {
+            "vnext": [{
+                "address": "10.19.34.236",
+                "port": 9087,
+                "users": [{
+                    "id": "afba5a71-512e-484f-8459-07da248baafb",
+                    "level": 0,
+                    "encryption": "none"
+                }]
+            }]
+        },
+        "tag": "officebound"
+    },{
+        "protocol": "vless",
+        "settings": {
+            "vnext": [{
+                "address": "www.hxfssc.com",
+                "port": 16825,
+                "users": [{
+                    "id": "219eb005-4294-4e78-5514-088d907657e6",
+                    "level": 0,
+                    "encryption": "none"
+                }]
+            }]
+        },
+        "tag": "nasbound"
+    }],
+    "routing": {
+        "domainStrategy": "IPIfNonMatch",
+        "rules": [
+            {
+                "type":"field",
+                "outboundTag": "officebound",
+                "domain": [
+                    "domain:hisense.com"
+                ]
+            },
+            {
+                "type": "field",
+                "outboundTag": "officebound",
+                "ip": [
+                    "10.19.0.0/16",
+                    "172.16.0.0/16",
+                    "10.30.0.0/16"
+                ]
+            },
+            {
+                "type": "field",
+                "outboundTag": "nasbound",
+                "network": "tcp,udp"
+            }
+        ]
+    }
+}

@@ -1,0 +1,72 @@
+mysql:
+  test:
+    host: "192.168.50.50"
+    port: 3306
+    user: "root"
+    password: "Wfw7539148@"
+    database: "yqad_db"
+    connectionLimit: 5
+  production:
+    host: "192.168.50.50"
+    port: 3306
+    user: "root"
+    password: "Wfw7539148@"
+    database: "yqad_prod_db"
+    connectionLimit: 10
+  connectTimeout: 10000
+  acquireTimeout: 30000
+  timeout: 30000
+web:
+  enabled: true
+  port: 3000
+  baseUrl: "https://yqad.hxfssc.com:8088"
+  auth:
+    sessionSecret: "random-secret-key-yqad-auto-tasks"
+    sessionMaxAge: 86400000
+    publicRoutes:
+      - "/api/auth/login"
+      - "/api/auth/status"
+      - "/api/auth/token-status"
+      - "/api/auth/verify"
+      - "/api/member/info"
+      - "/api/posts/token"
+      - "/api/posts/token/*"
+      - "/api/posts/generate"
+      - "/api/posts/batch"
+      - "/api/posts/confirm"
+      - "/api/posts/tasks/*"
+materials:
+  basePath: "./data/materials/processed"
+  rawPath: "./data/materials/raw"
+  processedPath: "./data/materials/processed"
+  processing:
+    enabled: true
+    outputFormat: "jpeg"
+    jpegQuality: 82
+    enableVision: true
+    maxFilesPerRun: 1000
+    heicFallback:
+      enabled: true
+      command: "auto"
+      timeoutMs: 30000
+redis:
+  test:
+    host: "192.168.50.50"
+    port: 6379
+    db: 0
+    keyPrefix: "test:"
+  production:
+    host: "192.168.50.50"
+    port: 6379
+    db: 1
+    keyPrefix: "prod:"
+hybridMaterial:
+  enabled: true
+  priorityMode: "hybrid"
+  localRatio: 0.6
+  internetRatio: 0.4
+enhancedCommentService:
+  enabled: true
+  enableSentimentAnalysis: true
+  enableSuspiciousDetection: true
+  logOnly: true

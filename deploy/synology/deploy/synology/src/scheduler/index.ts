@@ -1,9 +1,10 @@
 import * as cron from 'node-cron';
-import { loadConfig, resetConfigCache } from '../utils/config';
+import { resetConfigCache } from '../utils/config';
 import { getLogger } from '../utils/logger';
 import { sleep, randomDelay } from '../utils/retry';
 import { configEvents, ConfigChangeEvent } from '../web/services/config-events';
 import { runVehicleMonitor } from '../services/vehicle-monitor-service';
+import { getSchedulerConfigStorage, SchedulerConfig } from '../storage/mysql/scheduler-config-storage';
 
 const logger = getLogger('scheduler');
 
@@ -277,34 +278,39 @@ export class Scheduler {
 /**
  * 创建并配置调度器
  */
-export function createScheduler(handlers: {
+export async function createScheduler(handlers: {
   comment: TaskHandler;
   post: TaskHandler;
   materialProcessing: TaskHandler;
-}): Scheduler {
-  const config = loadConfig();
+}): Promise<Scheduler> {
+  const schedulerConfig = await getSchedulerConfigStorage().getConfig();
+  
   const scheduler = new Scheduler();
-  const mpCfg = (config.scheduler as any).materialProcessing;
+  const mpCfg = schedulerConfig?.materialProcessing;
   
   // 检查是否使用间隔模式（新配置）
   const useIntervalMode = mpCfg && typeof mpCfg.intervalMinutes === 'number';
 
-  scheduler.registerTask(
-    '自动评论',
-    config.scheduler.comment.cron,
-    config.scheduler.comment.randomOffsetMin,
-    config.scheduler.comment.randomOffsetMax,
-    handlers.comment
-  );
+  const commentCfg = schedulerConfig?.comment;
+  if (commentCfg) {
+    scheduler.registerTask(
+      '自动评论',
+      commentCfg.cron,
+      commentCfg.randomOffsetMin,
+      commentCfg.randomOffsetMax,
+      handlers.comment
+    );
+  }
 
   // 检查发帖模式：API 模式下不注册定时发帖任务
-  const postMode = config.post.mode || 'scheduled';
-  if (postMode === 'scheduled') {
+  const postMode = (schedulerConfig as any)?.post?.mode || 'scheduled';
+  const postSchedCfg = (schedulerConfig as any)?.post;
+  if (postMode === 'scheduled' && postSchedCfg) {
     scheduler.registerTask(
       '自动发帖',
-      config.scheduler.post.cron,
-      config.scheduler.post.randomOffsetMin,
-      config.scheduler.post.randomOffsetMax,
+      postSchedCfg.cron,
+      postSchedCfg.randomOffsetMin,
+      postSchedCfg.randomOffsetMax,
       handlers.post
     );
     logger.info('发帖模式：定时任务（已注册自动发帖）');
@@ -355,7 +361,7 @@ export function createScheduler(handlers: {
     }, intervalMs));
   } else {
     // 传统 Cron 模式（向后兼容）
-    const mpCfgLegacy = mpCfg || { cron: '0 7 * * *', randomOffsetMin: 0, randomOffsetMax: 30 };
+    const mpCfgLegacy = mpCfg || { cron: '0 7 * * *', randomOffsetMin: 0, randomOffsetMax: 30 } as any;
     scheduler.registerTask(
       '素材梳理',
       mpCfgLegacy.cron,
@@ -365,10 +371,11 @@ export function createScheduler(handlers: {
     );
   }
 
-  // 车辆监控任务：使用间隔模式
-  const vehicleCfg = (config as any).vehicleMonitor;
-  if (vehicleCfg && vehicleCfg.enabled !== false && typeof vehicleCfg.intervalMinutes === 'number') {
-    logger.info(`车辆监控使用间隔模式：每隔 ${vehicleCfg.intervalMinutes} 分钟执行一次`);
+  // 车辆监控任务：使用间隔模式（从数据库读取）
+  const { vehicleMonitorStorage } = await import('../storage/mysql/vehicle-monitor-storage');
+  const vehicleMonitorCfg = await vehicleMonitorStorage.getConfig().catch(() => null);
+  if (vehicleMonitorCfg && vehicleMonitorCfg.enabled !== false && typeof vehicleMonitorCfg.intervalMinutes === 'number') {
+    logger.info(`车辆监控使用间隔模式：每隔 ${vehicleMonitorCfg.intervalMinutes} 分钟执行一次`);
     
     // 启动时立即执行一次（可选）
     (async () => {
@@ -382,9 +389,9 @@ export function createScheduler(handlers: {
     })();
     
     // 设置间隔定时器（保存到 vehicleMonitorInterval，确保 stop() 时能清理）
-    const intervalMs = vehicleCfg.intervalMinutes * 60 * 1000;
+    const intervalMs = vehicleMonitorCfg.intervalMinutes * 60 * 1000;
     scheduler.setVehicleMonitorInterval(setInterval(async () => {
-      logger.info(`车辆监控：间隔执行（每隔 ${vehicleCfg.intervalMinutes} 分钟）`);
+      logger.info(`车辆监控：间隔执行（每隔 ${vehicleMonitorCfg.intervalMinutes} 分钟）`);
       try {
         await runVehicleMonitor();
       } catch (error) {

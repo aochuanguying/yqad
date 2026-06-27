@@ -2,9 +2,12 @@
  * Session 中间件配置
  * 
  * 使用 express-session 提供基于 Cookie 的 Session 支持
+ * 生产环境使用 Redis 存储 Session
  */
 
 import session from 'express-session';
+import RedisStore from 'connect-redis';
+import { getRedisClient } from '../../utils/redis-connection-manager';
 import { loadConfig } from '../../utils/config';
 import { getLogger } from '../../utils/logger';
 
@@ -55,12 +58,29 @@ export function createSessionMiddleware() {
     name: 'audi_app_sid',     // Session Cookie 名称
   };
   
-  // 生产环境使用 HTTP（群晖 NAS 环境）
+  // 生产环境使用 Redis 存储 Session
   if (process.env.NODE_ENV === 'production') {
-    if (typeof sessionOptions.cookie !== 'function' && sessionOptions.cookie !== undefined) {
+    try {
+      const redisClient = getRedisClient();
+      const store = new RedisStore({
+        client: redisClient,
+        prefix: 'sess:',  // Session key 前缀
+        ttl: authConfig?.sessionMaxAge ? Math.floor(authConfig.sessionMaxAge / 1000) : 86400, // 默认 24 小时
+      });
+      
+      sessionOptions.store = store;
       sessionOptions.cookie.secure = false;  // NAS 环境使用 HTTP
+      logger.info('✅ 生产环境 Session 已使用 Redis 存储');
+      logger.info('生产环境 Cookie Secure 已禁用（HTTP 访问）');
+    } catch (error) {
+      logger.error('⚠️  Redis Session 存储初始化失败，降级使用 MemoryStore:', error instanceof Error ? error.message : String(error));
+      logger.info('生产环境 Cookie Secure 已禁用（HTTP 访问）');
     }
-    logger.info('生产环境 Cookie Secure 已禁用（HTTP 访问）');
+  } else {
+    logger.info('开发环境使用 MemoryStore');
+    if (typeof sessionOptions.cookie !== 'function' && sessionOptions.cookie) {
+      sessionOptions.cookie.secure = false;
+    }
   }
   
   logger.info('Session 中间件已配置');

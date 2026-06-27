@@ -62,6 +62,7 @@ export class PostLoggingService {
     // 转换为 MySQL 存储格式
     const input: CreatePostLogInput = {
       post_id: (log as any).postId,
+      task_id: log.taskId,  // AutoJS 任务 ID
       title: log.title,
       topic_id: log.topicId,
       topic_name: log.topicName,
@@ -180,6 +181,51 @@ export class PostLoggingService {
       postType: 'topic' as any,
       createdAt: log.created_at.getTime(),
     };
+  }
+
+  /**
+   * 根据 taskId 查询日志
+   * @param taskId 任务 ID
+   * @returns 日志记录，不存在返回 null
+   */
+  async findByTaskId(taskId: string): Promise<PostLog | null> {
+    const log = await this.postLogStorage.getPostLogByTaskId(taskId);
+    if (!log) return null;
+
+    return {
+      id: log.id,
+      title: log.title,
+      topicId: log.topic_id,
+      topicName: log.topic_name,
+      content: log.content || '',
+      imageUrls: Array.isArray(log.image_urls) ? log.image_urls : [],
+      timestamp: log.created_at.getTime(),
+      status: log.status,
+      errorMessage: log.error_message,
+      mode: log.mode,
+      triggerType: log.trigger_type,
+      postType: 'topic' as any,
+      createdAt: log.created_at.getTime(),
+    };
+  }
+
+  /**
+   * 更新日志状态
+   * @param id 日志 ID
+   * @param updates 更新内容
+   */
+  async update(id: string, updates: {
+    status?: 'success' | 'failed' | 'pending';
+    postId?: string;
+    title?: string;
+    content?: string;
+    imageUrls?: string[];
+    topicId?: string;
+    topicName?: string;
+    errorMessage?: string;
+  }): Promise<void> {
+    await this.postLogStorage.updatePostLog(id, updates);
+    logger.debug(`更新日志 ${id}: ${JSON.stringify(updates)}`);
   }
 
   /**

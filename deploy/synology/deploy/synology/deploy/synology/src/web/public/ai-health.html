@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Provider 健康状态 - 一汽奥迪 APP</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .status-healthy { background-color: #dcfce7; border-color: #22c55e; }
+    .status-warning { background-color: #ffedd5; border-color: #f97316; }
+    .status-critical { background-color: #fee2e2; border-color: #ef4444; }
+    
+    .circuit-closed { color: #22c55e; }
+    .circuit-half-open { color: #f97316; }
+    .circuit-open { color: #ef4444; }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+  <!-- Header -->
+  <header class="bg-white shadow-sm border-b">
+    <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-4">
+        <a href="/" class="text-sm text-blue-600 hover:underline">← 返回配置管理</a>
+        <h1 class="text-xl font-bold text-gray-800">🏥 AI Provider 健康状态</h1>
+      </div>
+      <div class="flex items-center gap-4">
+        <span id="last-updated" class="text-sm text-gray-500">最后更新：--</span>
+        <button 
+          id="refresh-btn"
+          class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center gap-2"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+          </svg>
+          刷新
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main content -->
+  <main class="max-w-7xl mx-auto px-6 py-6">
+    <!-- Loading state -->
+    <div id="loading-state" class="text-center py-12">
+      <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <p class="mt-4 text-gray-600">加载健康状态...</p>
+    </div>
+
+    <!-- Error state -->
+    <div id="error-state" class="hidden">
+      <div class="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+        <svg class="w-12 h-12 text-red-500 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+        </svg>
+        <h3 class="text-lg font-semibold text-red-800 mb-2">加载失败</h3>
+        <p id="error-message" class="text-red-600 mb-4"></p>
+        <button onclick="loadHealthData()" class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700">
+          重试
+        </button>
+      </div>
+    </div>
+
+    <!-- Provider cards -->
+    <div id="provider-grid" class="hidden grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <!-- Cards will be inserted here by JavaScript -->
+    </div>
+
+    <!-- Info panel -->
+    <div class="mt-8 bg-blue-50 border border-blue-200 rounded-lg p-4">
+      <h3 class="text-sm font-semibold text-blue-900 mb-2">💡 状态说明</h3>
+      <ul class="text-sm text-blue-800 space-y-1">
+        <li><span class="inline-block w-3 h-3 bg-green-500 rounded-full mr-2"></span><strong>健康</strong>: 熔断器 CLOSED 且成功率 > 90%</li>
+        <li><span class="inline-block w-3 h-3 bg-orange-500 rounded-full mr-2"></span><strong>警告</strong>: 熔断器 HALF_OPEN 或 成功率 80-90%</li>
+        <li><span class="inline-block w-3 h-3 bg-red-500 rounded-full mr-2"></span><strong>异常</strong>: 熔断器 OPEN 或 成功率 < 80%</li>
+      </ul>
+    </div>
+  </main>
+
+  <script>
+    let refreshTimer = null;
+    const REFRESH_INTERVAL = 30000; // 30 秒
+
+    // 初始化
+    document.addEventListener('DOMContentLoaded', async () => {
+      // 检查登录状态
+      await checkLoginStatus();
+      loadHealthData();
+      startAutoRefresh();
+      
+      document.getElementById('refresh-btn').addEventListener('click', () => {
+        loadHealthData();
+      });
+    });
+
+    // 检查登录状态
+    async function checkLoginStatus() {
+      try {
+        const response = await fetch('/api/auth/status');
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const result = await response.json();
+        
+        if (!result.data || !result.data.authenticated) {
+          // 未登录，重定向到登录页
+          const redirectPath = encodeURIComponent(window.location.pathname);
+          window.location.href = `/login.html?redirect=${redirectPath}`;
+          return;
+        }
+      } catch (error) {
+        console.error('检查登录状态失败:', error);
+        // 重定向到登录页
+        const redirectPath = encodeURIComponent(window.location.pathname);
+        window.location.href = `/login.html?redirect=${redirectPath}`;
+      }
+    }
+
+    // 开始自动刷新
+    function startAutoRefresh() {
+      refreshTimer = setInterval(loadHealthData, REFRESH_INTERVAL);
+    }
+
+    // 停止自动刷新
+    function stopAutoRefresh() {
+      if (refreshTimer) {
+        clearInterval(refreshTimer);
+        refreshTimer = null;
+      }
+    }
+
+    // 加载健康数据
+    async function loadHealthData() {
+      const loadingState = document.getElementById('loading-state');
+      const errorState = document.getElementById('error-state');
+      const providerGrid = document.getElementById('provider-grid');
+      const refreshBtn = document.getElementById('refresh-btn');
+
+      try {
+        const response = await fetch('/api/ai/health');
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const result = await response.json();
+        
+        if (!result.success) {
+          throw new Error(result.error || '未知错误');
+        }
+
+        // 只在第一次加载时隐藏加载状态
+        if (providerGrid.classList.contains('hidden')) {
+          loadingState.classList.add('hidden');
+          providerGrid.classList.remove('hidden');
+        }
+
+        // 增量更新卡片
+        updateProviderCards(result.data);
+        
+        // 更新最后更新时间
+        document.getElementById('last-updated').textContent = 
+          `最后更新：${new Date(result.timestamp).toLocaleTimeString('zh-CN')}`;
+
+      } catch (error) {
+        console.error('加载健康状态失败:', error);
+        if (!providerGrid.classList.contains('hidden')) {
+          errorState.classList.remove('hidden');
+          document.getElementById('error-message').textContent = error.message;
+        }
+      } finally {
+        refreshBtn.disabled = false;
+        refreshBtn.classList.remove('opacity-50');
+      }
+    }
+
+    // 更新 Provider 卡片（增量更新，避免闪烁）
+    function updateProviderCards(providers) {
+      const grid = document.getElementById('provider-grid');
+      
+      if (!grid || providers.length === 0) return;
+
+      // 获取现有卡片
+      const existingCards = grid.querySelectorAll('.provider-card');
+      
+      // 如果卡片数量不匹配，重新渲染
+      if (existingCards.length !== providers.length) {
+        renderProviderCards(providers);
+        return;
+      }
+
+      // 增量更新现有卡片内容
+      providers.forEach((provider, index) => {
+        const card = existingCards[index];
+        if (!card) return;
+
+        // 更新状态类名
+        card.className = `bg-white rounded-lg border-2 p-6 shadow-sm ${getStatusClass(provider.status)}`;
+        
+        // 更新状态徽章
+        const badge = card.querySelector('.status-badge');
+        if (badge) {
+          badge.className = `px-3 py-1 rounded-full text-xs font-semibold ${getStatusBadgeClass(provider.status)}`;
+          badge.textContent = getStatusText(provider.status);
+        }
+
+        // 更新名称
+        const nameEl = card.querySelector('.provider-name');
+        if (nameEl) nameEl.textContent = provider.name;
+
+        // 更新时间
+        const timeEl = card.querySelector('.provider-time');
+        if (timeEl) timeEl.textContent = `更新于 ${new Date(provider.lastUpdated).toLocaleTimeString('zh-CN')}`;
+
+        // 更新熔断器状态
+        const circuitEl = card.querySelector('.circuit-state');
+        if (circuitEl) {
+          circuitEl.className = `text-sm font-semibold ${getCircuitClass(provider.circuitState)}`;
+          circuitEl.textContent = getCircuitText(provider.circuitState);
+        }
+
+        // 更新成功率
+        const rateEl = card.querySelector('.success-rate');
+        if (rateEl) {
+          rateEl.className = `text-sm font-semibold ${getSuccessRateClass(provider.successRate)}`;
+          rateEl.textContent = `${provider.successRate.toFixed(2)}%`;
+        }
+
+        // 更新响应时间
+        const timeEl2 = card.querySelector('.response-time');
+        if (timeEl2) timeEl2.textContent = `${provider.avgResponseTime} ms`;
+
+        // 更新请求统计
+        const stats = card.querySelectorAll('.stat-value');
+        if (stats.length >= 3) {
+          stats[0].textContent = provider.totalRequests;
+          stats[1].textContent = provider.successfulRequests;
+          stats[2].textContent = provider.failedRequests;
+        }
+
+        // 更新速率限制
+        const rateLimitEl = card.querySelector('.rate-limit-value');
+        if (rateLimitEl) {
+          if (provider.rateLimit.isWhitelisted) {
+            rateLimitEl.innerHTML = '<span class="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium">白名单</span>';
+          } else {
+            rateLimitEl.textContent = `${provider.rateLimit.availableTokens} tokens`;
+          }
+        }
+      });
+    }
+
+    // 渲染 Provider 卡片（初次渲染）
+    function renderProviderCards(providers) {
+      const grid = document.getElementById('provider-grid');
+      grid.innerHTML = '';
+
+      if (providers.length === 0) {
+        grid.innerHTML = '<p class="text-gray-500 col-span-full text-center">暂无 Provider 数据</p>';
+        return;
+      }
+
+      providers.forEach(provider => {
+        const card = document.createElement('div');
+        card.className = `bg-white rounded-lg border-2 p-6 shadow-sm ${getStatusClass(provider.status)}`;
+        card.className += ' provider-card';
+        
+        card.innerHTML = `
+          <div class="flex items-start justify-between mb-4">
+            <div>
+              <h3 class="text-lg font-bold text-gray-900 provider-name">${provider.name}</h3>
+              <p class="text-sm text-gray-500 mt-1 provider-time">更新于 ${new Date(provider.lastUpdated).toLocaleTimeString('zh-CN')}</p>
+            </div>
+            <span class="px-3 py-1 rounded-full text-xs font-semibold status-badge ${getStatusBadgeClass(provider.status)}">
+              ${getStatusText(provider.status)}
+            </span>
+          </div>
+
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-sm text-gray-600">熔断器状态</span>
+              <span class="text-sm font-semibold circuit-state ${getCircuitClass(provider.circuitState)}">
+                ${getCircuitText(provider.circuitState)}
+              </span>
+            </div>
+
+            <div class="flex items-center justify-between">
+              <span class="text-sm text-gray-600">成功率</span>
+              <span class="text-sm font-semibold success-rate ${getSuccessRateClass(provider.successRate)}">
+                ${provider.successRate.toFixed(2)}%
+              </span>
+            </div>
+
+            <div class="flex items-center justify-between">
+              <span class="text-sm text-gray-600">平均响应时间</span>
+              <span class="text-sm font-semibold text-gray-900 response-time">${provider.avgResponseTime} ms</span>
+            </div>
+
+            <div class="pt-3 border-t">
+              <div class="grid grid-cols-3 gap-2 text-center">
+                <div>
+                  <p class="text-xs text-gray-500">总请求</p>
+                  <p class="text-sm font-semibold text-gray-900 stat-value">${provider.totalRequests}</p>
+                </div>
+                <div>
+                  <p class="text-xs text-gray-500">成功</p>
+                  <p class="text-sm font-semibold text-green-600 stat-value">${provider.successfulRequests}</p>
+                </div>
+                <div>
+                  <p class="text-xs text-gray-500">失败</p>
+                  <p class="text-sm font-semibold text-red-600 stat-value">${provider.failedRequests}</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="pt-3 border-t">
+              <div class="flex items-center justify-between">
+                <span class="text-sm text-gray-600">速率限制</span>
+                <div class="flex items-center gap-2 rate-limit-value">
+                  ${provider.rateLimit.isWhitelisted 
+                    ? '<span class="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium">白名单</span>'
+                    : `<span class="text-sm font-semibold text-gray-900">${provider.rateLimit.availableTokens} tokens</span>`
+                  }
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+        
+        grid.appendChild(card);
+      });
+    }
+
+    // 辅助函数
+    function getStatusClass(status) {
+      switch (status) {
+        case 'healthy': return 'status-healthy';
+        case 'warning': return 'status-warning';
+        case 'critical': return 'status-critical';
+        default: return 'border-gray-200';
+      }
+    }
+
+    function getStatusBadgeClass(status) {
+      switch (status) {
+        case 'healthy': return 'bg-green-100 text-green-700';
+        case 'warning': return 'bg-orange-100 text-orange-700';
+        case 'critical': return 'bg-red-100 text-red-700';
+        default: return 'bg-gray-100 text-gray-700';
+      }
+    }
+
+    function getStatusText(status) {
+      switch (status) {
+        case 'healthy': return '✓ 健康';
+        case 'warning': return '⚠ 警告';
+        case 'critical': return '✗ 异常';
+        default: return '未知';
+      }
+    }
+
+    function getCircuitClass(state) {
+      switch (state) {
+        case 'CLOSED': return 'circuit-closed';
+        case 'HALF_OPEN': return 'circuit-half-open';
+        case 'OPEN': return 'circuit-open';
+        default: return 'text-gray-600';
+      }
+    }
+
+    function getCircuitText(state) {
+      switch (state) {
+        case 'CLOSED': return '正常';
+        case 'HALF_OPEN': return '半开';
+        case 'OPEN': return '熔断';
+        default: return state;
+      }
+    }
+
+    function getSuccessRateClass(rate) {
+      if (rate >= 90) return 'text-green-600';
+      if (rate >= 80) return 'text-orange-600';
+      return 'text-red-600';
+    }
+  </script>
+</body>
+</html>

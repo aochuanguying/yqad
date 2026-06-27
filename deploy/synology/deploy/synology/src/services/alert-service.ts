@@ -7,8 +7,7 @@
  * 3. 告警历史记录
  */
 
-import { telecomClient, TelecomConfig } from './telecom-client';
-import { loadConfig } from '../utils/config';
+import { telecomClient, TelecomConfig, MobileServiceConfig } from './telecom-client';
 import { getLogger } from '../utils/logger';
 
 const logger = getLogger('alert-service');
@@ -51,46 +50,64 @@ export interface TriggerAlertResult {
 class AlertService {
   private lastAlertTime: number = 0;
   private alertHistory: AlertRecord[] = [];
-  private config: TelecomConfig | null = null;
+  private telecomConfig: TelecomConfig | null = null;
+  private serviceConfig: MobileServiceConfig | null = null;
 
   /**
    * 初始化告警服务
    */
-  init(): void {
-    const config = loadConfig();
-    const telecomConfig = (config as any).telecomApi;
-    
-    if (telecomConfig && telecomConfig.enabled && telecomConfig.apiUrl && telecomConfig.apiToken) {
-      this.config = telecomConfig;
-      telecomClient.init(telecomConfig);
-      logger.info('告警服务已初始化', { 
-        apiUrl: telecomConfig.apiUrl,
-        alertPhone: telecomConfig.alertPhone 
-      });
-    } else {
-      logger.warn('告警服务未启用或配置不完整');
+  async init(): Promise<void> {
+    try {
+      const { telecomApiStorage } = await import('../storage/mysql/telecom-api-storage');
+      const { mobileServiceConfigStorage } = await import('../storage/mysql/mobile-service-config-storage');
+      
+      const telecomConfig = await telecomApiStorage.getConfig();
+      const serviceConfig = await mobileServiceConfigStorage.getConfig();
+      
+      if (telecomConfig && telecomConfig.enabled && serviceConfig && serviceConfig.apiUrl && serviceConfig.apiToken) {
+        this.telecomConfig = telecomConfig;
+        this.serviceConfig = serviceConfig;
+        telecomClient.init(telecomConfig, serviceConfig);
+        logger.info('告警服务已初始化', { 
+          apiUrl: serviceConfig.apiUrl,
+          alertPhone: telecomConfig.alertPhone 
+        });
+      } else {
+        logger.warn('告警服务未启用或配置不完整');
+      }
+    } catch (error) {
+      logger.error('初始化告警服务失败:', error instanceof Error ? error.message : String(error));
     }
   }
 
   /**
    * 重新加载配置（支持热重载）
    */
-  reloadConfig(): void {
-    const config = loadConfig();
-    const telecomConfig = (config as any).telecomApi;
-    
-    if (telecomConfig && telecomConfig.enabled && telecomConfig.apiUrl && telecomConfig.apiToken) {
-      const oldConfig = this.config;
-      this.config = telecomConfig;
+  async reloadConfig(): Promise<void> {
+    try {
+      const { telecomApiStorage } = await import('../storage/mysql/telecom-api-storage');
+      const { mobileServiceConfigStorage } = await import('../storage/mysql/mobile-service-config-storage');
       
-      // 如果配置发生变化，重新初始化客户端
-      if (!oldConfig || oldConfig.apiUrl !== telecomConfig.apiUrl || oldConfig.apiToken !== telecomConfig.apiToken) {
-        telecomClient.init(telecomConfig);
-        logger.info('告警服务配置已更新');
+      const telecomConfig = await telecomApiStorage.getConfig();
+      const serviceConfig = await mobileServiceConfigStorage.getConfig();
+      
+      if (telecomConfig && telecomConfig.enabled && serviceConfig && serviceConfig.apiUrl && serviceConfig.apiToken) {
+        const oldServiceConfig = this.serviceConfig;
+        this.telecomConfig = telecomConfig;
+        this.serviceConfig = serviceConfig;
+        
+        // 如果配置发生变化，重新初始化客户端
+        if (!oldServiceConfig || oldServiceConfig.apiUrl !== serviceConfig.apiUrl || oldServiceConfig.apiToken !== serviceConfig.apiToken) {
+          telecomClient.init(telecomConfig, serviceConfig);
+          logger.info('告警服务配置已更新');
+        }
+      } else {
+        this.telecomConfig = null;
+        this.serviceConfig = null;
+        logger.warn('告警服务配置已禁用或不完整');
       }
-    } else {
-      this.config = null;
-      logger.warn('告警服务配置已禁用或不完整');
+    } catch (error) {
+      logger.error('重新加载告警服务配置失败:', error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -108,7 +125,7 @@ class AlertService {
    */
   async triggerAlert(anomalies: string[], location?: { lat: number; lng: number; address?: string }): Promise<TriggerAlertResult> {
     // 检查配置
-    if (!this.isConfigured() || !this.config) {
+    if (!this.isConfigured() || !this.telecomConfig || !this.serviceConfig) {
       logger.warn('Telecom API 未配置，跳过告警通知');
       return { 
         success: false, 
@@ -140,7 +157,7 @@ class AlertService {
 
     // 1. 发送短信
     logger.info('开始发送告警短信');
-    const smsResult = await telecomClient.sendSms(this.config.alertPhone, smsContent);
+    const smsResult = await telecomClient.sendSms(this.telecomConfig.alertPhone, smsContent);
     result.smsResult = smsResult;
 
     // 记录短信状态
@@ -154,7 +171,7 @@ class AlertService {
 
     // 2. 拨打电话（无论短信是否成功都尝试）
     logger.info('开始拨打告警电话');
-    const callResult = await telecomClient.makePhoneCall(this.config.alertPhone);
+    const callResult = await telecomClient.makePhoneCall(this.telecomConfig.alertPhone);
     result.callResult = callResult;
 
     // 记录电话状态
@@ -254,7 +271,7 @@ class AlertService {
       notificationType,
       smsStatus,
       callStatus,
-      phone: this.maskPhone(this.config?.alertPhone || ''),
+      phone: this.maskPhone(this.telecomConfig?.alertPhone || ''),
     };
 
     this.alertHistory.push(record);

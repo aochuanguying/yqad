@@ -501,6 +501,65 @@ router.get('/token', async (req, res) => {
 });
 
 /**
+ * GET /api/token/full
+ * 获取完整的 API Token（用于复制）
+ */
+router.get('/token/full', async (req, res) => {
+  try {
+    const config = await import('../../utils/api-token');
+    const status = await config.getTokenStatus();
+    
+    if (!status.configured) {
+      return res.status(404).json({
+        success: false,
+        error: 'Token 未配置',
+        code: 'TOKEN_NOT_CONFIGURED',
+      });
+    }
+    
+    // 从 Redis 获取完整 Token
+    const { getRedisClient, formatKey } = await import('../../storage/redis/index');
+    const redis = getRedisClient();
+    const key = formatKey('api:token');
+    const encryptedToken = await redis.get(key);
+    
+    if (!encryptedToken) {
+      return res.status(404).json({
+        success: false,
+        error: 'Token 不存在',
+        code: 'TOKEN_NOT_FOUND',
+      });
+    }
+    
+    // 解密 Token
+    const { ApiTokenStorage } = await import('../../storage/redis/api-token-storage');
+    const storage = new ApiTokenStorage();
+    // 通过反射调用私有方法解密
+    const token = (storage as any).decryptToken(encryptedToken);
+    
+    if (!token) {
+      return res.status(404).json({
+        success: false,
+        error: 'Token 不存在',
+        code: 'TOKEN_NOT_FOUND',
+      });
+    }
+    
+    res.json({
+      success: true,
+      data: { token },
+    });
+  } catch (error: any) {
+    logger.error(`获取完整 Token 异常：${error.message}`);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      code: 'INTERNAL_ERROR',
+    });
+  }
+});
+
+/**
  * POST /api/token/generate
  * 生成或重置 API Token
  */
@@ -565,12 +624,19 @@ router.get('/autojs/config', async (req, res) => {
   try {
     logger.info('获取 AutoJS API 配置');
     
-    const config = loadConfig();
-    const autojsConfig = config.autojsApi || {
-      enabled: false,
-      baseUrl: '',
-      postScript: 'audi_post.js',
-    };
+    // 从数据库读取配置
+    const { autojsApiStorage } = await import('../../storage/mysql/autojs-api-storage');
+    let autojsConfig = await autojsApiStorage.getConfig();
+    
+    if (!autojsConfig) {
+      // 如果数据库中没有配置，使用默认值
+      autojsConfig = {
+        enabled: false,
+        baseUrl: '',
+        apiToken: '',
+        postScript: 'audi_post.js',
+      };
+    }
     
     // 获取本服务的 API Token 状态
     const { getTokenStatus } = await import('../../utils/api-token');
@@ -614,32 +680,22 @@ router.post('/autojs/config', async (req, res) => {
       });
     }
     
-    // 读取配置文件
-    const fs = await import('fs');
-    const yaml = await import('yaml');
-    const configPath = require('path').resolve(process.cwd(), 'config/default.yaml');
+    // 从数据库读取当前配置
+    const { autojsApiStorage } = await import('../../storage/mysql/autojs-api-storage');
+    const currentConfig = await autojsApiStorage.getConfig();
     
-    const configContent = fs.readFileSync(configPath, 'utf-8');
-    const config = yaml.parse(configContent);
+    // 构建新配置
+    const newConfig = {
+      enabled: enabled || false,
+      baseUrl: baseUrl || '',
+      apiToken: currentConfig?.apiToken || '', // 保持原有的 apiToken
+      postScript: postScript || 'audi_post.js',
+    };
     
-    // 更新配置
-    if (!config.autojsApi) {
-      config.autojsApi = {};
-    }
+    // 保存到数据库
+    await autojsApiStorage.saveConfig(newConfig);
     
-    config.autojsApi.enabled = enabled || false;
-    config.autojsApi.baseUrl = baseUrl || '';
-    config.autojsApi.postScript = postScript || 'audi_post.js';
-    // apiToken 使用本服务生成的，不从配置页面设置
-    
-    // 保存配置文件
-    fs.writeFileSync(configPath, yaml.stringify(config), 'utf-8');
-    
-    // 清除配置缓存，确保下次读取时使用新配置
-    const { resetConfigCache } = await import('../../utils/config');
-    resetConfigCache();
-    
-    logger.info('AutoJS API 配置已保存');
+    logger.info('AutoJS API 配置已保存到数据库');
     
     res.json({
       success: true,
@@ -818,7 +874,7 @@ router.post('/autojs/callback', apiTokenMiddleware, async (req, res) => {
     }
     
     // 查找对应的日志记录
-    const log = await (postLoggingService as any).findByTaskId(taskId);
+    const log = await postLoggingService.findByTaskId(taskId);
     
     if (!log) {
       logger.warn(`日志记录不存在：${taskId}`);
@@ -832,12 +888,37 @@ router.post('/autojs/callback', apiTokenMiddleware, async (req, res) => {
     // 更新日志记录
     if (success) {
       logger.info(`AutoJS 回调发帖成功：${title || log.title}`);
+      
+      // 清理内容，防止特殊字符导致乱码
+      const cleanTitle = title ? String(title).trim() : log.title;
+      const cleanContent = content ? String(content).trim() : log.content;
+      const cleanImageUrls = Array.isArray(imageUrls) ? imageUrls.map(url => String(url).trim()) : log.imageUrls;
+      
+      await postLoggingService.update(log.id, {
+        status: 'success',
+        title: cleanTitle,
+        content: cleanContent,
+        imageUrls: cleanImageUrls,
+        topicId: topicId || undefined,
+        topicName: topicName || undefined,
+      });
+      
+      logger.info(`已更新日志状态为成功：${log.id}`);
+      
       res.json({
         success: true,
         message: '回调成功',
       });
     } else {
       logger.warn(`AutoJS 回调发帖失败：${errorMessage || '未知错误'}`);
+      
+      await postLoggingService.update(log.id, {
+        status: 'failed',
+        errorMessage: errorMessage || 'AutoJS 脚本执行失败',
+      });
+      
+      logger.info(`已更新日志状态为失败：${log.id}`);
+      
       res.json({
         success: true,
         message: '已记录失败状态',
@@ -928,10 +1009,12 @@ router.get('/autojs/scripts', async (req, res) => {
   try {
     logger.info('获取 AutoJS 脚本列表');
     
-    const config = loadConfig();
+    // 从数据库读取配置
+    const { autojsApiStorage } = await import('../../storage/mysql/autojs-api-storage');
+    const autojsConfig = await autojsApiStorage.getConfig();
     
     // 检查 AutoJS API 是否启用
-    if (!config.autojsApi?.enabled) {
+    if (!autojsConfig?.enabled) {
       return res.status(503).json({
         success: false,
         error: 'AutoJS API 服务未启用',
@@ -939,20 +1022,20 @@ router.get('/autojs/scripts', async (req, res) => {
       });
     }
     
-    // 检查配置文件中的 AutoJS API Token
-    if (!config.autojsApi.apiToken) {
-      logger.error('配置文件中未配置 AutoJS API Token');
+    // 检查 AutoJS API Token
+    if (!autojsConfig.apiToken) {
+      logger.error('数据库中未配置 AutoJS API Token');
       return res.status(503).json({
         success: false,
-        error: '请先在配置文件中配置 AutoJS API Token',
+        error: '请先在配置页面设置 AutoJS API Token',
         code: 'API_TOKEN_NOT_CONFIGURED',
       });
     }
     
     // 创建 AutoJS API 客户端（使用配置文件中的 Token）
     const autojsClient = createAutoJsApiClient({
-      baseUrl: config.autojsApi.baseUrl,
-      apiToken: config.autojsApi.apiToken,
+      baseUrl: autojsConfig.baseUrl,
+      apiToken: autojsConfig.apiToken,
     });
     
     // 获取脚本列表
@@ -992,10 +1075,12 @@ router.post('/autojs/execute', async (req, res) => {
       });
     }
     
-    const config = loadConfig();
+    // 从数据库读取配置
+    const { autojsApiStorage } = await import('../../storage/mysql/autojs-api-storage');
+    const autojsConfig = await autojsApiStorage.getConfig();
     
     // 检查 AutoJS API 是否启用
-    if (!config.autojsApi?.enabled) {
+    if (!autojsConfig?.enabled) {
       return res.status(503).json({
         success: false,
         error: 'AutoJS API 服务未启用',
@@ -1003,20 +1088,20 @@ router.post('/autojs/execute', async (req, res) => {
       });
     }
     
-    // 检查配置文件中的 AutoJS API Token
-    if (!config.autojsApi.apiToken) {
-      logger.error('配置文件中未配置 AutoJS API Token');
+    // 检查 AutoJS API Token
+    if (!autojsConfig.apiToken) {
+      logger.error('数据库中未配置 AutoJS API Token');
       return res.status(503).json({
         success: false,
-        error: '请先在配置文件中配置 AutoJS API Token',
+        error: '请先在配置页面设置 AutoJS API Token',
         code: 'API_TOKEN_NOT_CONFIGURED',
       });
     }
     
     // 创建 AutoJS API 客户端（使用配置文件中的 Token）
     const autojsClient = createAutoJsApiClient({
-      baseUrl: config.autojsApi.baseUrl,
-      apiToken: config.autojsApi.apiToken,
+      baseUrl: autojsConfig.baseUrl,
+      apiToken: autojsConfig.apiToken,
     });
     
     // 执行脚本

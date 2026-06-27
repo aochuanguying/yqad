@@ -12,9 +12,12 @@ const logger = getLogger('telecom-client');
 // ===================== 类型定义 =====================
 
 export interface TelecomConfig {
+  alertPhone: string;
+}
+
+export interface MobileServiceConfig {
   apiUrl: string;
   apiToken: string;
-  alertPhone: string;
 }
 
 export interface SendSmsResult {
@@ -46,36 +49,45 @@ const HEALTH_CHECK_ENDPOINT = '/health';
 
 class TelecomClient {
   private axiosInstance: AxiosInstance | null = null;
-  private config: TelecomConfig | null = null;
+  private telecomConfig: TelecomConfig | null = null;
+  private serviceConfig: MobileServiceConfig | null = null;
 
   /**
    * 初始化 Telecom 客户端
    */
-  init(config: TelecomConfig): void {
-    this.config = config;
+  init(telecomConfig: TelecomConfig, serviceConfig: MobileServiceConfig): void {
+    this.telecomConfig = telecomConfig;
+    this.serviceConfig = serviceConfig;
+    
+    if (!serviceConfig.apiUrl || !serviceConfig.apiToken) {
+      logger.warn('Telecom 客户端初始化失败：API 地址或 Token 为空');
+      this.axiosInstance = null;
+      return;
+    }
+    
     this.axiosInstance = axios.create({
-      baseURL: config.apiUrl,
+      baseURL: serviceConfig.apiUrl,
       timeout: API_TIMEOUT_MS,
       headers: {
-        'Authorization': `Bearer ${config.apiToken}`,
+        'Authorization': `Bearer ${serviceConfig.apiToken}`,
         'Content-Type': 'application/json',
       },
     });
-    logger.info('Telecom 客户端已初始化', { apiUrl: config.apiUrl });
+    logger.info('Telecom 客户端已初始化', { apiUrl: serviceConfig.apiUrl });
   }
 
   /**
    * 验证配置是否有效
    */
   isConfigured(): boolean {
-    return !!(this.config && this.config.apiUrl && this.config.apiToken);
+    return !!(this.serviceConfig && this.serviceConfig.apiUrl && this.serviceConfig.apiToken);
   }
 
   /**
    * 获取当前配置（用于测试）
    */
-  getConfig(): TelecomConfig | null {
-    return this.config;
+  getConfig(): { telecomConfig: TelecomConfig | null; serviceConfig: MobileServiceConfig | null } {
+    return { telecomConfig: this.telecomConfig, serviceConfig: this.serviceConfig };
   }
 
   /**

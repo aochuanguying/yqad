@@ -26,6 +26,7 @@
     "axios": "^1.18.1",
     "bcryptjs": "^3.0.3",
     "chromadb": "^3.4.3",
+    "connect-redis": "^9.0.0",
     "cookie": "^2.0.0",
     "cookie-signature": "^1.2.2",
     "crypto-js": "^4.2.0",

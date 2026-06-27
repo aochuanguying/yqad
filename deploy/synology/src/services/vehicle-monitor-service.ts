@@ -321,7 +321,7 @@ const vehicleAPI = createVehicleAPI();
 async function validateToken(): Promise<boolean> {
   const token = await getToken();
   if (!token) {
-    console.log('[VehicleMonitor] Token 未配置，请在 config/default.yaml 中填写 vehicleMonitor.token');
+    console.log('[VehicleMonitor] Token 未配置，请通过 Web 界面"车辆监控配置"页面设置 Token，或使用 API 接口保存 Token 到 Redis/数据库');
     return false;
   }
   

@@ -77,17 +77,23 @@ export class PendingPostService {
     const posts = await this.storage.getAllPending();
     const now = Date.now();
     let cleaned = 0;
+    let updatedLogs = 0;
 
     for (const mysqlPost of posts) {
       if (now - mysqlPost.created_at.getTime() >= this.expiryMs) {
         const post = this.convertToPendingPost(mysqlPost);
         try {
-          const log = await (postLoggingService as any).findByTaskId(post.taskId);
+          const log = await postLoggingService.findByTaskId(post.taskId);
           if (log && log.status === 'pending') {
-            logger.warn(`级联更新日志状态为失败：${post.taskId}`);
+            await postLoggingService.update(log.id, {
+              status: 'failed',
+              errorMessage: '发帖任务超时未确认（30 分钟）',
+            });
+            logger.info(`级联更新日志状态为失败：${post.taskId}, 日志 ID: ${log.id}`);
+            updatedLogs++;
           }
         } catch (error: any) {
-          logger.error(`更新日志状态失败：${error.message}`);
+          logger.error(`更新日志状态失败：${post.taskId}, 错误：${error.message}`);
         }
         
         cleaned++;
@@ -95,7 +101,7 @@ export class PendingPostService {
     }
 
     await this.storage.deleteExpired();
-    logger.info(`清理 ${cleaned} 条过期待确认记录`);
+    logger.info(`清理 ${cleaned} 条过期待确认记录，级联更新 ${updatedLogs} 条日志状态`);
   }
 
   async getAllPending(): Promise<PendingPost[]> {

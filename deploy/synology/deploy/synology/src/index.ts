@@ -1,10 +1,9 @@
-import { createApiClient } from './api';
+import { createApiClientAsync } from './api';
 import { AuthService } from './services/auth';
 import { AutoCommentService } from './services/auto-comment';
 import { AutoPostService } from './services/auto-post';
 import { generateDailySummary, checkAlerts, cleanOldLogs } from './services/daily-summary';
 import { createScheduler } from './scheduler';
-import { loadConfig } from './utils/config';
 import { getLogger } from './utils/logger';
 import { startWebServer } from './web/server';
 import { initializeRedisStorage } from './storage/redis/init';
@@ -13,15 +12,30 @@ import { startChromaHealthMonitoring } from './utils/chroma-health-monitor';
 import { disconnectRedis } from './utils/redis-connection-manager';
 import { chromaConnectionManager } from './utils/chroma-connection-manager';
 import MySQLConnectionManager from './utils/mysql-connection-manager';
-import { processMaterials } from './services/material-processing';
+import { commentConfigStorage } from './storage/mysql/comment-config-storage';
+import { postConfigStorage } from './storage/mysql/post-config-storage';
+import { schedulerConfigStorage } from './storage/mysql/scheduler-config-storage';
+import { apiConfigStorage } from './storage/mysql/api-config-storage';
+import { loadAIProvidersFromDB } from './utils/config';
 
 const logger = getLogger('main');
 
 async function main() {
   logger.info('=== 一汽奥迪 APP 自动任务系统启动 ===');
 
-  const config = loadConfig();
-  logger.info(`API 模式：${config.api.mode}`);
+  // 从数据库读取配置
+  const [apiConfig, commentConfig, postConfig, schedulerConfig] = await Promise.all([
+    apiConfigStorage.getConfig(),
+    commentConfigStorage.getConfig(),
+    postConfigStorage.getConfig(),
+    schedulerConfigStorage.getConfig(),
+  ]).catch(error => {
+    logger.warn('从数据库读取配置失败，将使用默认值:', error instanceof Error ? error.message : String(error));
+    return [null, null, null, null];
+  });
+  
+  const apiMode = apiConfig?.mode || 'mock';
+  logger.info(`API 模式：${apiMode}`);
 
   // 初始化 Redis 存储（可选，失败时降级到内存存储）
   try {
@@ -33,6 +47,8 @@ async function main() {
   // 初始化 MySQL 存储（可选，失败时不影响运行）
   try {
     await initializeMySQLStorage();
+    // MySQL 初始化完成后，从数据库加载 AI Provider 配置
+    await loadAIProvidersFromDB();
   } catch (error) {
     logger.warn('MySQL 初始化失败，将仅使用 Redis 存储:', error);
   }
@@ -46,7 +62,7 @@ async function main() {
   }
 
   // 初始化模块
-  const api = createApiClient();
+  const api = await createApiClientAsync();
   const authService = await AuthService.create(api);
   const commentService = new AutoCommentService(api, authService);
   const postService = new AutoPostService(api, authService);
@@ -58,16 +74,16 @@ async function main() {
 
 
   // 创建调度器
-  const scheduler = createScheduler({
+  const scheduler = await createScheduler({
     comment: async () => {
-      if (!config.comment.enabled) {
+      if (!commentConfig?.enabled) {
         logger.info('自动评论已禁用，跳过');
         return;
       }
       todayCommentResults = await commentService.performDailyComments();
     },
     post: async () => {
-      if (!config.post.enabled) {
+      if (!postConfig?.enabled) {
         logger.info('自动发帖已禁用，跳过');
         return;
       }
@@ -83,13 +99,11 @@ async function main() {
       todayPostResults = [];
     },
     materialProcessing: async () => {
-      try {
-        const r = await processMaterials();
-        logger.info(`素材梳理完成：scanned=${r.scanned}, processed=${r.processed}, converted=${r.converted}, copied=${r.copied}, failed=${r.failed}, skipped=${r.skipped}`);
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        logger.error(`素材梳理执行失败：${msg}`);
+      if (!schedulerConfig?.materialProcessing.enabled) {
+        logger.debug('素材整理已禁用，跳过');
+        return;
       }
+      logger.info('素材整理功能暂未实现，跳过');
     },
   });
 
