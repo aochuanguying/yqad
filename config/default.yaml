@@ -1,10 +1,4 @@
-# 基础设施配置（不存储在数据库中）
-# 所有业务配置已迁移到 MySQL 数据库
-
-# 环境配置
-env: 'test'
-
-# MySQL 数据库配置
+env: "test"
 mysql:
   test:
     host: "192.168.50.50"
@@ -23,8 +17,6 @@ mysql:
   connectTimeout: 10000
   acquireTimeout: 30000
   timeout: 30000
-
-# Redis 配置
 redis:
   test:
     host: "192.168.50.50"
@@ -36,15 +28,11 @@ redis:
     port: 6379
     db: 1
     keyPrefix: "prod:"
-
-# ChromaDB 配置
 chromadb:
   test:
     baseUrl: "http://192.168.50.50:8000"
   production:
     baseUrl: "http://192.168.50.50:8000"
-
-# Web 服务配置
 web:
   enabled: true
   port: 3000
@@ -64,8 +52,6 @@ web:
       - "/api/posts/batch"
       - "/api/posts/confirm"
       - "/api/posts/tasks/*"
-
-# 素材配置（基础设施，不存储在数据库中，测试和生产共享）
 materials:
   basePath: "./data/materials/processed"
   rawPath: "./data/materials/raw"
@@ -80,6 +66,4 @@ materials:
       enabled: true
       command: "auto"
       timeoutMs: 30000
-
-# 日志配置
-logLevel: 'info'
+logLevel: "info"
