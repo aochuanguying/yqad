@@ -72,12 +72,6 @@
     <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
       <div class="flex items-center gap-4">
         <h1 class="text-xl font-bold text-gray-800">⚙️ 一汽奥迪 APP 配置管理</h1>
-        <a href="/vehicle-monitor.html" class="px-3 py-1 bg-orange-600 text-white text-sm rounded-md hover:bg-orange-700 transition-colors flex items-center gap-1">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5l5 5v6a2 2 0 01-2 2z"></path>
-          </svg>
-          车辆监控
-        </a>
       </div>
       <div class="flex items-center gap-4">
         <span class="text-sm text-gray-500" id="status-text">加载中...</span>
@@ -101,42 +95,43 @@
     <div class="bg-white rounded-lg shadow-sm border overflow-hidden">
       <nav class="flex overflow-x-auto border-b" id="tabs">
         <button class="tab-btn px-4 py-3 text-sm whitespace-nowrap hover:bg-gray-50" data-group="token-settings">🔑 Token 设置</button>
-        <button class="tab-btn px-4 py-3 text-sm whitespace-nowrap hover:bg-gray-50" data-group="ai">AI 模型</button>
+        <button class="tab-btn px-4 py-3 text-sm whitespace-nowrap hover:bg-gray-50" data-group="ai">🤖 AI 模型</button>
         <button class="tab-btn px-4 py-3 text-sm whitespace-nowrap hover:bg-gray-50" data-group="forum-settings">💬 论坛设置</button>
         <button class="tab-btn px-4 py-3 text-sm whitespace-nowrap hover:bg-gray-50" data-group="log-settings">📋 日志记录</button>
         <button class="tab-btn px-4 py-3 text-sm whitespace-nowrap hover:bg-gray-50 text-green-700 font-medium" data-group="materials">📷 素材库</button>
         <button class="tab-btn px-4 py-3 text-sm whitespace-nowrap hover:bg-gray-50 text-purple-700 font-medium" data-group="topics">📝 发帖主题</button>
         <button class="tab-btn px-4 py-3 text-sm whitespace-nowrap hover:bg-gray-50 text-cyan-700 font-medium" data-group="autojs">🤖 AutoJS 配置</button>
         <button class="tab-btn px-4 py-3 text-sm whitespace-nowrap hover:bg-gray-50 text-orange-700 font-medium" data-group="vehicleMonitor">🚗 车辆监控</button>
+        <button class="tab-btn px-4 py-3 text-sm whitespace-nowrap hover:bg-gray-50 text-pink-700 font-medium" data-group="mobile">📱 手机配置</button>
       </nav>
 
       <!-- Form content with submenu layout -->
       <div class="flex" id="form-container">
         <!-- Left submenu for Token Settings -->
         <div class="w-48 border-r bg-gray-50 p-4 hidden" id="token-submenu">
-          <div class="submenu-item" data-subgroup="api">API 设置</div>
+          <div class="submenu-item" data-subgroup="api">⚙️ API 设置</div>
           <div class="submenu-item" data-subgroup="login">🔐 登录</div>
           <div class="submenu-item" data-subgroup="api-token">🔑 API Token</div>
         </div>
         
         <!-- Left submenu for AI Model -->
         <div class="w-48 border-r bg-gray-50 p-4 hidden" id="ai-submenu">
-          <div class="submenu-item" data-subgroup="model-management">模型管理</div>
-          <div class="submenu-item" data-subgroup="health-monitor">健康监控</div>
+          <div class="submenu-item" data-subgroup="model-management">🧠 模型管理</div>
+          <div class="submenu-item" data-subgroup="health-monitor">💚 健康监控</div>
         </div>
         
         <!-- Left submenu for Forum Settings -->
         <div class="w-48 border-r bg-gray-50 p-4 hidden" id="forum-submenu">
-          <div class="submenu-item" data-subgroup="comment">评论设置</div>
-          <div class="submenu-item" data-subgroup="post">发帖设置</div>
-          <div class="submenu-item" data-subgroup="scheduler">调度设置</div>
-          <div class="submenu-item" data-subgroup="contentLimits">长度设置</div>
+          <div class="submenu-item" data-subgroup="comment">💬 评论设置</div>
+          <div class="submenu-item" data-subgroup="post">📤 发帖设置</div>
+          <div class="submenu-item" data-subgroup="scheduler">⏰ 调度设置</div>
+          <div class="submenu-item" data-subgroup="contentLimits">📏 长度设置</div>
         </div>
         
         <!-- Left submenu for Log Settings -->
         <div class="w-48 border-r bg-gray-50 p-4 hidden" id="log-submenu">
-          <div class="submenu-item" data-subgroup="comment-logs">评论日志</div>
-          <div class="submenu-item" data-subgroup="post-logs">发帖日志</div>
+          <div class="submenu-item" data-subgroup="comment-logs">📝 评论日志</div>
+          <div class="submenu-item" data-subgroup="post-logs">📤 发帖日志</div>
         </div>
         
         <!-- Left submenu for Vehicle Monitor -->
@@ -144,6 +139,13 @@
           <div class="submenu-item" data-subgroup="monitor-status">📊 监控状态</div>
           <div class="submenu-item" data-subgroup="alert-config">⚠️ 告警配置</div>
           <div class="submenu-item" data-subgroup="basic-config">⚙️ 基本配置</div>
+        </div>
+        
+        <!-- Left submenu for Mobile Config -->
+        <div class="w-48 border-r bg-gray-50 p-4 hidden" id="mobile-submenu">
+          <div class="submenu-item" data-subgroup="sms">📨 手机短信</div>
+          <div class="submenu-item" data-subgroup="missed-calls">📞 未接电话</div>
+          <div class="submenu-item" data-subgroup="autojs">🤖 AutoJS 配置</div>
         </div>
         
         <!-- Main content area -->
@@ -249,6 +251,11 @@
         haToken: 'Home Assistant Token',
         deviceTrackerEntity: '手机设备实体 ID',
         token: '奥捷智行 Token',
+      },
+      mobile: {
+        sms: '手机短信记录',
+        missedCalls: '未接电话记录',
+        autojs: 'AutoJS 配置',
       },
     };
 
@@ -473,6 +480,11 @@
       document.querySelectorAll('#vehicle-monitor-submenu .submenu-item').forEach(item => {
         item.addEventListener('click', () => switchVehicleMonitorSubmenu(item.dataset.subgroup));
       });
+      
+      // 设置手机配置子菜单点击事件
+      document.querySelectorAll('#mobile-submenu .submenu-item').forEach(item => {
+        item.addEventListener('click', () => switchMobileSubmenu(item.dataset.subgroup));
+      });
     }
 
     // 切换 Tab
@@ -500,6 +512,7 @@
       forumSubmenu.classList.add('hidden');
       logSubmenu.classList.add('hidden');
       document.getElementById('vehicle-monitor-submenu').classList.add('hidden');
+      document.getElementById('mobile-submenu').classList.add('hidden');
       
       // Token 设置 Tab 显示左侧子菜单
       if (group === 'token-settings') {
@@ -554,6 +567,15 @@
         vehicleMonitorSubmenu.classList.remove('hidden');
         // 默认切换到监控状态子页面
         switchVehicleMonitorSubmenu('monitor-status');
+        return;
+      }
+      
+      // 手机配置 Tab 显示左侧子菜单
+      if (group === 'mobile') {
+        const mobileSubmenu = document.getElementById('mobile-submenu');
+        mobileSubmenu.classList.remove('hidden');
+        // 默认切换到手机短信子页面
+        switchMobileSubmenu('sms');
         return;
       }
       
@@ -785,6 +807,46 @@
         manualPostBtn.style.display = 'none';
         saveBtn.style.display = '';
         renderForm('vehicleMonitor');
+      }
+    }
+
+    // 切换手机配置子菜单
+    function switchMobileSubmenu(subgroup) {
+      // 确保左侧子菜单显示
+      const mobileSubmenu = document.getElementById('mobile-submenu');
+      mobileSubmenu.classList.remove('hidden');
+      
+      // 更新子菜单激活状态
+      document.querySelectorAll('#mobile-submenu .submenu-item').forEach(item => {
+        item.classList.toggle('submenu-item-active', item.dataset.subgroup === subgroup);
+      });
+      
+      // 根据子菜单切换内容
+      const saveBtn = document.getElementById('save-btn');
+      const manualCommentBtn = document.getElementById('manual-comment-btn');
+      const manualPostBtn = document.getElementById('manual-post-btn');
+      
+      if (subgroup === 'sms') {
+        // 手机短信 - 显示短信列表
+        currentGroup = 'sms';
+        manualCommentBtn.style.display = 'none';
+        manualPostBtn.style.display = 'none';
+        saveBtn.style.display = 'none';
+        renderSmsList();
+      } else if (subgroup === 'missed-calls') {
+        // 未接电话 - 显示未接电话列表
+        currentGroup = 'missed-calls';
+        manualCommentBtn.style.display = 'none';
+        manualPostBtn.style.display = 'none';
+        saveBtn.style.display = 'none';
+        renderMissedCallsList();
+      } else if (subgroup === 'autojs') {
+        // AutoJS 配置 - 显示 AutoJS 配置页面
+        currentGroup = 'autojs';
+        manualCommentBtn.style.display = 'none';
+        manualPostBtn.style.display = 'none';
+        saveBtn.style.display = 'none';
+        renderAutoJsTab();
       }
     }
 
@@ -1913,7 +1975,7 @@
               ${renderVehicleDetailItem('OBD 在线', getOnlineText(statusData.lastStatus?.obd), getOnlineColor(statusData.lastStatus?.obd))}
               ${renderVehicleDetailItem('车门', getDoorsText(statusData.lastStatus), getDoorsColor(statusData.lastStatus))}
               ${renderVehicleDetailItem('车窗', getWindowsText(statusData.lastStatus?.obd), getWindowsColor(statusData.lastStatus?.obd))}
-              ${renderVehicleDetailItem('左��胎压', getTireText(statusData.lastStatus?.obd?.tirePressure?.fl), 'text-gray-800')}
+              ${renderVehicleDetailItem('左前胎压', getTireText(statusData.lastStatus?.obd?.tirePressure?.fl), 'text-gray-800')}
               ${renderVehicleDetailItem('右前胎压', getTireText(statusData.lastStatus?.obd?.tirePressure?.fr), 'text-gray-800')}
               ${renderVehicleDetailItem('左后胎压', getTireText(statusData.lastStatus?.obd?.tirePressure?.rl), 'text-gray-800')}
               ${renderVehicleDetailItem('右后胎压', getTireText(statusData.lastStatus?.obd?.tirePressure?.rr), 'text-gray-800')}
@@ -5131,7 +5193,16 @@
             </div>
             ${tokenStatus.configured ? `
               <div class="text-sm ${tokenStatus.configured ? 'text-green-700' : 'text-yellow-700'} space-y-1">
-                <div><span class="font-medium">Token 前缀：</span>${escapeHtml(tokenStatus.tokenPrefix || 'N/A')}</div>
+                <div class="flex items-center gap-2">
+                  <span class="font-medium">Token：</span>
+                  <code class="px-2 py-1 bg-white border border-green-200 rounded font-mono text-xs">${escapeHtml(tokenStatus.tokenPrefix || 'N/A')}...</code>
+                  <button onclick="copyCurrentToken()" class="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1 px-2 py-1 rounded hover:bg-blue-50" title="复制完整 Token">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                    </svg>
+                    复制
+                  </button>
+                </div>
                 <div><span class="font-medium">创建时间：</span>${tokenStatus.createdAt ? new Date(tokenStatus.createdAt).toLocaleString('zh-CN') : 'N/A'}</div>
                 ${tokenStatus.lastUsedAt ? `<div><span class="font-medium">最后使用：</span>${new Date(tokenStatus.lastUsedAt).toLocaleString('zh-CN')}</div>` : ''}
               </div>
@@ -5239,8 +5310,8 @@
     }
     
     /**
-     * 重置 API Token
-     */
+       * 重置 API Token
+       */
     async function resetApiToken() {
       const btn = document.getElementById('reset-token-btn');
       if (btn) btn.disabled = true;
@@ -5284,7 +5355,56 @@
     }
     
     /**
-     * 复制 Token 到剪贴板
+     * 复制当前 Token（通过重置获取完整 Token）
+     */
+    async function copyCurrentToken() {
+      if (!confirm('⚠️ 点击确定将重新生成一个新的 Token，旧 Token 将立即失效。确定要继续吗？')) {
+        return;
+      }
+      
+      try {
+        const resp = await fetch('/api/posts/token/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reset: true }),
+        });
+        const result = await resp.json();
+        
+        if (result.success && result.data && result.data.token) {
+          await navigator.clipboard.writeText(result.data.token);
+          showToast('✅ Token 已复制到剪贴板', 'success');
+          // 复制后刷新状态显示
+          renderApiTokenTab();
+        } else {
+          showToast('❌ 获取 Token 失败：' + (result.error || '未知错误'), 'error');
+        }
+      } catch (e) {
+        showToast('❌ 复制失败：' + e.message, 'error');
+      }
+    }
+
+    /**
+     * 复制当前完整 Token（不重置）
+     */
+    async function copyCurrentToken() {
+      try {
+        const resp = await fetch('/api/posts/token/full');
+        const result = await resp.json();
+        
+        if (result.success && result.data && result.data.token) {
+          await navigator.clipboard.writeText(result.data.token);
+          showToast('✅ Token 已复制到剪贴板', 'success');
+        } else {
+          showToast('❌ 获取 Token 失败：' + (result.error || '未知错误'), 'error');
+        }
+      } catch (error) {
+        console.error('复制 Token 失败:', error);
+        showToast('❌ 复制失败：' + error.message, 'error');
+      }
+    }
+
+    /**
+     * 复制 Token 到剪贴板（用于重置后显示时复制）
      */
     function copyToken() {
       const input = document.getElementById('new-token-input');
@@ -5296,7 +5416,7 @@
         if (token) {
           sessionStorage.setItem('api_token', token);
         }
-        alert('Token 已复制到剪贴板！\n\n已自动保存，当前页面可直接使用。');
+        showToast('✅ Token 已复制到剪贴板', 'success');
       }
     }
 
@@ -5639,6 +5759,166 @@
       } catch (error) {
         console.error('保存 Token 失败:', error);
         alert('保存失败：' + error.message);
+      }
+    }
+
+    // ==================== 手机配置功能 ====================
+
+    // 渲染短信列表
+    function renderSmsList() {
+      const container = document.getElementById('main-content-area');
+      container.innerHTML = `
+        <div class="space-y-6">
+          <div class="flex items-center justify-between">
+            <h3 class="text-lg font-semibold text-gray-800">📨 手机短信记录</h3>
+            <button onclick="loadSmsList()" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center gap-2">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+              </svg>
+              刷新
+            </button>
+          </div>
+          
+          <div id="sms-list-container" class="bg-white border rounded-lg">
+            <div class="flex items-center justify-center py-12">
+              <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              <span class="ml-3 text-gray-600">加载中...</span>
+            </div>
+          </div>
+        </div>
+      `;
+      loadSmsList();
+    }
+
+    // 加载短信列表
+    async function loadSmsList() {
+      const container = document.getElementById('sms-list-container');
+      
+      try {
+        const resp = await fetch('/api/posts/mobile/sms?limit=50');
+        const result = await resp.json();
+        
+        if (result.success && result.data) {
+          if (result.data.length === 0) {
+            container.innerHTML = `
+              <div class="flex items-center justify-center py-12">
+                <span class="text-gray-500">暂无短信记录</span>
+              </div>
+            `;
+          } else {
+            container.innerHTML = `
+              <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                  <thead class="bg-gray-50">
+                    <tr>
+                      <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+                      <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">电话号码</th>
+                      <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">短信内容</th>
+                      <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">接收时间</th>
+                      <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">创建时间</th>
+                    </tr>
+                  </thead>
+                  <tbody class="bg-white divide-y divide-gray-200">
+                    ${result.data.map(sms => `
+                      <tr>
+                        <td class="px-4 py-3 text-sm text-gray-900">${sms.id}</td>
+                        <td class="px-4 py-3 text-sm text-gray-900">${sms.phoneNumber}</td>
+                        <td class="px-4 py-3 text-sm text-gray-900 max-w-md truncate">${sms.content}</td>
+                        <td class="px-4 py-3 text-sm text-gray-500">${new Date(sms.receivedAt).toLocaleString('zh-CN')}</td>
+                        <td class="px-4 py-3 text-sm text-gray-500">${new Date(sms.createdAt).toLocaleString('zh-CN')}</td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+              <div class="px-4 py-3 border-t bg-gray-50 text-sm text-gray-600">
+                共 ${result.data.length} 条记录
+              </div>
+            `;
+          }
+        } else {
+          container.innerHTML = `<div class="p-4 text-red-500">加载失败：${result.error || '未知错误'}</div>`;
+        }
+      } catch (error) {
+        container.innerHTML = `<div class="p-4 text-red-500">加载失败：${error.message}</div>`;
+      }
+    }
+
+    // 渲染未接电话列表
+    function renderMissedCallsList() {
+      const container = document.getElementById('main-content-area');
+      container.innerHTML = `
+        <div class="space-y-6">
+          <div class="flex items-center justify-between">
+            <h3 class="text-lg font-semibold text-gray-800">📞 未接电话记录</h3>
+            <button onclick="loadMissedCallsList()" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center gap-2">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+              </svg>
+              刷新
+            </button>
+          </div>
+          
+          <div id="missed-calls-list-container" class="bg-white border rounded-lg">
+            <div class="flex items-center justify-center py-12">
+              <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              <span class="ml-3 text-gray-600">加载中...</span>
+            </div>
+          </div>
+        </div>
+      `;
+      loadMissedCallsList();
+    }
+
+    // 加载未接电话列表
+    async function loadMissedCallsList() {
+      const container = document.getElementById('missed-calls-list-container');
+      
+      try {
+        const resp = await fetch('/api/posts/mobile/calls/missed?limit=50');
+        const result = await resp.json();
+        
+        if (result.success && result.data) {
+          if (result.data.length === 0) {
+            container.innerHTML = `
+              <div class="flex items-center justify-center py-12">
+                <span class="text-gray-500">暂无未接电话记录</span>
+              </div>
+            `;
+          } else {
+            container.innerHTML = `
+              <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                  <thead class="bg-gray-50">
+                    <tr>
+                      <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+                      <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">电话号码</th>
+                      <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">接收时间</th>
+                      <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">创建时间</th>
+                    </tr>
+                  </thead>
+                  <tbody class="bg-white divide-y divide-gray-200">
+                    ${result.data.map(call => `
+                      <tr>
+                        <td class="px-4 py-3 text-sm text-gray-900">${call.id}</td>
+                        <td class="px-4 py-3 text-sm text-gray-900">${call.phoneNumber}</td>
+                        <td class="px-4 py-3 text-sm text-gray-500">${new Date(call.receivedAt).toLocaleString('zh-CN')}</td>
+                        <td class="px-4 py-3 text-sm text-gray-500">${new Date(call.createdAt).toLocaleString('zh-CN')}</td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+              <div class="px-4 py-3 border-t bg-gray-50 text-sm text-gray-600">
+                共 ${result.data.length} 条记录
+              </div>
+            `;
+          }
+        } else {
+          container.innerHTML = `<div class="p-4 text-red-500">加载失败：${result.error || '未知错误'}</div>`;
+        }
+      } catch (error) {
+        container.innerHTML = `<div class="p-4 text-red-500">加载失败：${error.message}</div>`;
       }
     }
   </script>

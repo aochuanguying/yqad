@@ -501,6 +501,65 @@ router.get('/token', async (req, res) => {
 });
 
 /**
+ * GET /api/token/full
+ * 获取完整的 API Token（用于复制）
+ */
+router.get('/token/full', async (req, res) => {
+  try {
+    const config = await import('../../utils/api-token');
+    const status = await config.getTokenStatus();
+    
+    if (!status.configured) {
+      return res.status(404).json({
+        success: false,
+        error: 'Token 未配置',
+        code: 'TOKEN_NOT_CONFIGURED',
+      });
+    }
+    
+    // 从 Redis 获取完整 Token
+    const { getRedisClient, formatKey } = await import('../../storage/redis/index');
+    const redis = getRedisClient();
+    const key = formatKey('api:token');
+    const encryptedToken = await redis.get(key);
+    
+    if (!encryptedToken) {
+      return res.status(404).json({
+        success: false,
+        error: 'Token 不存在',
+        code: 'TOKEN_NOT_FOUND',
+      });
+    }
+    
+    // 解密 Token
+    const { ApiTokenStorage } = await import('../../storage/redis/api-token-storage');
+    const storage = new ApiTokenStorage();
+    // 通过反射调用私有方法解密
+    const token = (storage as any).decryptToken(encryptedToken);
+    
+    if (!token) {
+      return res.status(404).json({
+        success: false,
+        error: 'Token 不存在',
+        code: 'TOKEN_NOT_FOUND',
+      });
+    }
+    
+    res.json({
+      success: true,
+      data: { token },
+    });
+  } catch (error: any) {
+    logger.error(`获取完整 Token 异常：${error.message}`);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      code: 'INTERNAL_ERROR',
+    });
+  }
+});
+
+/**
  * POST /api/token/generate
  * 生成或重置 API Token
  */
