@@ -5,9 +5,9 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { loadConfig } from '../../utils/config';
 import { getLogger } from '../../utils/logger';
 import { getVehicleMonitorService } from '../services/vehicle-monitor-instance';
+import { vehicleMonitorStorage } from '../../storage/mysql/vehicle-monitor-storage';
 
 const logger = getLogger('vehicle-monitor-routes');
 const router = Router();
@@ -18,12 +18,13 @@ const router = Router();
  */
 router.get('/status', async (req: Request, res: Response) => {
   try {
-    const config = loadConfig();
+    // 从数据库读取配置
+    const vehicleConfig = await vehicleMonitorStorage.getConfig();
     const vehicleMonitorService = getVehicleMonitorService();
     
     const status = {
-      enabled: config.vehicleMonitor?.enabled !== false,
-      config: config.vehicleMonitor || {},
+      enabled: vehicleConfig?.enabled !== false,
+      config: vehicleConfig || {},
       lastStatus: vehicleMonitorService.getLastStatus(),
       lastMonitorTime: vehicleMonitorService.getLastMonitorTime(),
       alertLogs: vehicleMonitorService.getAlertLogs(10), // 最近 10 条
@@ -50,9 +51,10 @@ router.get('/status', async (req: Request, res: Response) => {
  */
 router.post('/execute', async (req: Request, res: Response) => {
   try {
-    const config = loadConfig();
+    // 从数据库读取配置
+    const vehicleConfig = await vehicleMonitorStorage.getConfig();
     
-    if (!config.vehicleMonitor || config.vehicleMonitor.enabled === false) {
+    if (!vehicleConfig || vehicleConfig.enabled === false) {
       return res.status(400).json({
         code: 'NOT_ENABLED',
         message: '车辆监控功能未启用',
@@ -63,16 +65,26 @@ router.post('/execute', async (req: Request, res: Response) => {
     
     logger.info('手动执行车辆监控');
     
-    // 执行监控
+    // 执行监控（等待完成）
     await vehicleMonitorService.runMonitor();
+    
+    // 等待 1 秒确保状态已更新
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    const result = {
+      lastStatus: vehicleMonitorService.getLastStatus(),
+      lastMonitorTime: vehicleMonitorService.getLastMonitorTime(),
+    };
+    
+    logger.info('监控执行完成', {
+      hasLastStatus: !!result.lastStatus,
+      lastMonitorTime: result.lastMonitorTime,
+    });
     
     res.json({
       code: 'SUCCESS',
       message: '监控执行成功',
-      data: {
-        lastStatus: vehicleMonitorService.getLastStatus(),
-        lastMonitorTime: vehicleMonitorService.getLastMonitorTime(),
-      },
+      data: result,
     });
   } catch (error: any) {
     const msg = error instanceof Error ? error.message : String(error);
@@ -115,9 +127,10 @@ router.delete('/alerts', async (req: Request, res: Response) => {
  */
 router.get('/device-location', async (req: Request, res: Response) => {
   try {
-    const config = loadConfig();
+    // 从数据库读取配置
+    const vehicleConfig = await vehicleMonitorStorage.getConfig();
     
-    if (!config.vehicleMonitor?.haBaseUrl || !config.vehicleMonitor?.haToken || !config.vehicleMonitor?.deviceTrackerEntity) {
+    if (!vehicleConfig?.haBaseUrl || !vehicleConfig?.haToken || !vehicleConfig?.deviceTrackerEntity) {
       return res.status(400).json({
         code: 'NOT_CONFIGURED',
         message: 'Home Assistant 设备追踪未配置',

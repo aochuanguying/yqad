@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
-import { loadConfig } from '../../utils/config';
 import { getLogger } from '../../utils/logger';
 import { createAuthMiddleware } from '../middleware/auth-middleware';
+import { aiProviderStorage } from '../../storage/mysql/ai-provider-storage';
 
 const logger = getLogger('ai-health-routes');
 const router = Router();
@@ -105,8 +105,18 @@ async function testProviderHealth(provider: any): Promise<{
  */
 router.get('/ai/health', async (req: Request, res: Response) => {
   try {
-    const config = loadConfig();
-    const providers = config.ai.providers || [];
+    // 从数据库读取 providers
+    const providers = await aiProviderStorage.getAllProviders();
+    
+    if (!providers || providers.length === 0) {
+      res.json({
+        success: true,
+        data: [],
+        timestamp: new Date().toISOString(),
+        message: '未配置任何 AI Provider',
+      });
+      return;
+    }
     
     // 并行测试所有 provider 的健康状态
     const healthChecks = providers.map(provider => testProviderHealth(provider));
@@ -131,13 +141,13 @@ router.get('/ai/health', async (req: Request, res: Response) => {
 /**
  * GET /api/ai/health/:provider - 获取单个 Provider 详细指标
  */
-router.get('/ai/health/:provider', (req: Request, res: Response) => {
+router.get('/ai/health/:provider', async (req: Request, res: Response) => {
   const { provider } = req.params;
   
   try {
-    const config = loadConfig();
-    const providers = config.ai.providers || [];
-    const providerConfig = providers.find(p => p.name === provider);
+    // 从数据库读取 providers
+    const providers = await aiProviderStorage.getAllProviders();
+    const providerConfig = providers?.find(p => p.name === provider);
     
     if (!providerConfig) {
       res.status(404).json({

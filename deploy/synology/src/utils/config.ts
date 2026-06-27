@@ -9,7 +9,7 @@ export interface AIProviderConfig {
   model: string;
   temperature?: number;
   maxTokens?: number;
-  requestTimeout?: number;  // 单个模型的请求超时(毫秒)
+  requestTimeout?: number;  // 单个模型的请求超时 (毫秒)
 }
 
 export interface AppConfig {
@@ -17,9 +17,9 @@ export interface AppConfig {
     mode: 'mock' | 'real';
     baseUrl: string;
     timeout: number;
-    deviceId?: string;
-    nickName?: string;
-    ipRegion?: string;
+    deviceId?: string | null;
+    nickName?: string | null;
+    ipRegion?: string | null;
   };
   auth: {
     username: string;
@@ -33,8 +33,6 @@ export interface AppConfig {
     maxTokens?: number;
     queryParams?: Record<string, string>;
     providers?: AIProviderConfig[];
-    providerOrder?: string[];        // AI 模型调用顺序，如 ["higpt", "gpt"]
-    requestTimeout?: number;         // 单次 AI 请求超时 (毫秒)，默认 30000
     fallback?: {                     // 兜底机制配置
       enabled?: boolean;             // 是否启用兜底机制，默认 true
       mode?: 'fast' | 'robust';      // fast=快速失败 (评论), robust=稳健模式 (发帖)
@@ -42,29 +40,6 @@ export interface AppConfig {
       baseDelay?: number;            // 基础等待时间 (ms)，默认 2000
       maxDelay?: number;             // 最大等待时间 (ms)，默认 10000
       providerOrder?: string[];      // 兜底 provider 顺序，默认使用 ai.providerOrder
-    };
-    timeout?: {                      // 超时控制配置
-      global?: number;               // 全局默认超时 (ms)，默认 30000
-      connect?: number;              // 连接超时 (ms)
-      read?: number;                 // 读取超时 (ms)
-      dynamicAdjustment?: boolean;   // 是否启用动态调整，默认 true
-      scene?: {                      // 场景级超时
-        comment?: number;            // 评论场景超时 (ms)，默认 15000
-        post?: number;               // 发帖场景超时 (ms)，默认 60000
-        analysis?: number;           // 分析场景超时 (ms)，默认 30000
-      };
-    };
-    rateLimit?: {                    // 速率限制配置
-      enabled?: boolean;             // 是否启用，默认 true
-      tokensPerMinute?: number;      // 每分钟 token 数，默认 60
-      burstSize?: number;            // 突发容量，默认 10
-      whitelist?: string[];          // 白名单 provider，不限流
-    };
-    circuitBreaker?: {               // 熔断器配置
-      enabled?: boolean;             // 是否启用，默认 true
-      failureThreshold?: number;     // 失败阈值，默认 5
-      resetTimeout?: number;         // 恢复超时 (ms)，默认 60000
-      halfOpenMaxRequests?: number;  // 半开状态最大请求数，默认 3
     };
   };
   comment: {
@@ -184,6 +159,12 @@ export interface AppConfig {
     apiToken: string;
     postScript: string;
   };
+  telecomApi?: {
+    enabled: boolean;
+    apiUrl: string;
+    apiToken: string;
+    alertPhone: string;
+  };
   // 【第一步优化】合规性检查相关配置
   contentDeduplication?: {
     enabled?: boolean;
@@ -237,35 +218,70 @@ export interface AppConfig {
  * 若配置中未声明 providers，将顶层 ai.* 字段包装为单元素数组（向后兼容旧格式）。
  */
 function normalizeAIConfig(config: AppConfig): void {
-  if (!config.ai.providers || config.ai.providers.length === 0) {
-    const apiKey = config.ai.apiKey || '';
-    const baseUrl = config.ai.baseUrl || '';
-    const model = config.ai.model || '';
-    config.ai.providers = [
-      {
-        name: model || 'default',
-        apiKey,
-        baseUrl,
-        model,
-        temperature: config.ai.temperature,
-        maxTokens: config.ai.maxTokens,
+  // 如果 config.ai 不存在，初始化为空对象
+  if (!config.ai) {
+    config.ai = {};
+  }
+  
+  // providers 从数据库读取，这里不处理（由应用启动时注入）
+}
+
+/**
+ * 初始化 API 配置默认值（如果配置文件未定义）
+ */
+function normalizeApiConfig(config: AppConfig): void {
+  if (!config.api) {
+    config.api = {
+      mode: 'mock',
+      baseUrl: 'http://127.0.0.1:9000',
+      timeout: 5000,
+    };
+  }
+}
+
+/**
+ * 初始化 Scheduler 配置默认值（如果配置文件未定义）
+ */
+function normalizeSchedulerConfig(config: AppConfig): void {
+  if (!config.scheduler) {
+    config.scheduler = {
+      comment: {
+        cron: '0 9-21 * * *',
+        randomOffsetMin: 0,
+        randomOffsetMax: 30,
       },
-    ];
+      post: {
+        cron: '0 10,14,20 * * *',
+        randomOffsetMin: 0,
+        randomOffsetMax: 30,
+      },
+      materialProcessing: {
+        intervalMinutes: 30,
+        enabled: true,
+      },
+    };
+  }
+}
+
+/**
+ * 初始化 Post 配置默认值（如果配置文件未定义）
+ */
+function normalizePostConfig(config: AppConfig): void {
+  if (!config.post) {
+    config.post = {
+      enabled: true,
+      mode: 'scheduled',
+      dailyLimit: 10,
+      avoidRepeatDays: 7,
+    };
   }
 }
 
 function normalizeFeaturedPostingConfig(config: AppConfig): void {
+  // 从数据库读取，配置文件不设置默认值
   if (!config.featuredPosting) {
     (config as any).featuredPosting = {};
   }
-  const fp = (config as any).featuredPosting;
-  if (fp.enabled === undefined) fp.enabled = true;
-  if (fp.minContentChars === undefined) fp.minContentChars = 250;
-  if (fp.minImages === undefined) fp.minImages = 4;
-  if (fp.maxImages === undefined) fp.maxImages = 9;  // 精华帖图片数量上限
-  if (fp.recommendedImages === undefined) fp.recommendedImages = 6;  // 精华帖推荐图片数量
-  if (fp.maxGenerateRetries === undefined) fp.maxGenerateRetries = 2;
-  if (fp.maxImageUploadRetries === undefined) fp.maxImageUploadRetries = 2;
 }
 
 /**
@@ -274,30 +290,14 @@ function normalizeFeaturedPostingConfig(config: AppConfig): void {
  * 新格式：{ intervalMinutes: number, enabled: boolean }
  */
 function migrateMaterialProcessingConfig(config: AppConfig): void {
-  const mp = (config.scheduler as any).materialProcessing;
-  if (!mp) return;
-  
-  // 检查是否已经是新格式
-  if (typeof mp.intervalMinutes === 'number') {
-    return; // 已经是新格式，无需迁移
-  }
-  
-  // 检查是否是旧格式
-  if (mp.cron && typeof mp.randomOffsetMax === 'number') {
-    // 旧格式 -> 新格式迁移
-    // 根据旧配置估算间隔：默认 30 分钟
-    mp.intervalMinutes = 30;
-    mp.enabled = true;
-    
-    // 保留旧字段用于向后兼容（但不使用）
-    // console.log('素材整理配置已自动迁移为间隔模式：每隔 30 分钟执行一次');
-  }
+  // 从数据库读取，配置文件不处理
 }
 
 let cachedConfig: AppConfig | null = null;
+let aiProvidersInitialized = false;
 
 export function loadConfig(): AppConfig {
-  if (cachedConfig) return cachedConfig;
+  if (cachedConfig && cachedConfig.ai?.providers !== undefined) return cachedConfig;
 
   const configPath = path.resolve(process.cwd(), 'config/default.yaml');
   const localConfigPath = path.resolve(process.cwd(), 'config/local.yaml');
@@ -332,15 +332,66 @@ export function loadConfig(): AppConfig {
     config.web.auth.enabled = process.env.WEB_AUTH_ENABLED === 'true';
   }
 
-  // 归一化 AI 配置，确保 providers 数组可用
+  // 归一化 AI 配置
   normalizeAIConfig(config);
+  normalizeApiConfig(config);
+  normalizeSchedulerConfig(config);
+  normalizePostConfig(config);
   normalizeFeaturedPostingConfig(config);
   
   // 迁移素材整理调度配置（旧格式 -> 新格式）
   migrateMaterialProcessingConfig(config);
 
+  // 如果已经初始化过 AI providers，尝试从数据库重新加载
+  if (aiProvidersInitialized && !config.ai?.providers) {
+    try {
+      const { AIProviderStorage } = require('../storage/mysql/ai-provider-storage');
+      const storage = AIProviderStorage.getInstance();
+      // 同步读取（假设数据库连接已建立）
+      const promise = storage.getEnabledProviders();
+      promise.then((providers: any[]) => {
+        if (cachedConfig && cachedConfig.ai) {
+          cachedConfig.ai.providers = providers;
+        }
+      }).catch((err: any) => {
+        console.warn('[Config] 异步加载 AI Provider 失败:', err.message);
+      });
+    } catch (error: any) {
+      // 忽略错误，providers 会在下次 loadAIProvidersFromDB 时加载
+    }
+  }
+
   cachedConfig = config;
   return config;
+}
+
+/**
+ * 从数据库加载 AI Provider 并更新缓存
+ * 必须在 MySQL 初始化完成后调用
+ */
+export async function loadAIProvidersFromDB(): Promise<void> {
+  try {
+    const { AIProviderStorage } = await import('../storage/mysql/ai-provider-storage');
+    const storage = AIProviderStorage.getInstance();
+    const providers = await storage.getEnabledProviders();
+    
+    if (!cachedConfig) {
+      loadConfig();
+    }
+    
+    if (!cachedConfig!.ai) cachedConfig!.ai = {};
+    cachedConfig!.ai.providers = providers;
+    aiProvidersInitialized = true;
+    
+    console.log(`[Config] 从数据库加载了 ${providers.length} 个 AI Provider`);
+    console.log(`[Config] 缓存配置中的 providers: ${JSON.stringify(providers.map(p => p.name))}`);
+  } catch (error: any) {
+    console.warn('[Config] 从数据库读取 AI Provider 失败:', error.message);
+    if (!cachedConfig) cachedConfig = loadConfig();
+    if (!cachedConfig!.ai) cachedConfig!.ai = {};
+    cachedConfig!.ai.providers = [];
+    aiProvidersInitialized = true;
+  }
 }
 
 function deepMerge(target: any, source: any): any {

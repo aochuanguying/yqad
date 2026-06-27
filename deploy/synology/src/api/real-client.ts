@@ -17,6 +17,7 @@ import { HotTopic, PublishOptions } from '../types/posting-optimization';
 import { loadConfig } from '../utils/config';
 import { getLogger } from '../utils/logger';
 import { generateVrfCode, buildContentJson } from '../utils/publish-helpers';
+import { getAPIConfigStorage } from '../storage/mysql/api-config-storage';
 
 const logger = getLogger('real-api');
 
@@ -36,18 +37,22 @@ const FEED_TYPE_MAP: Record<string, string> = {
 export type TokenRenewalCallback = (newToken: string) => void;
 
 export class RealAudiApi implements IAudiApi {
-  private client: AxiosInstance;
+  private _client: AxiosInstance;
   private tokenRenewalCallback: TokenRenewalCallback | null = null;
 
-  constructor() {
-    const config = loadConfig();
-    this.client = axios.create({
-      baseURL: config.api.baseUrl,
-      timeout: config.api.timeout,
-      // 强制使用 HTTP/1.1 避免 HTTP/2 兼容性问题
+  private get client(): AxiosInstance {
+    return this._client;
+  }
+
+  constructor(baseUrl?: string, timeout?: number) {
+    // 使用传入的参数或默认值初始化
+    this._client = axios.create({
+      baseURL: baseUrl || 'https://audi2c.faw-vw.com',
+      timeout: timeout || 10000,
       httpAgent: new (require('http').Agent)({ keepAlive: true, maxSockets: 10 }),
       httpsAgent: new (require('https').Agent)({ keepAlive: true, maxSockets: 10 }),
     });
+    logger.info(`RealAudiApi 初始化：${this._client.defaults.baseURL}`);
   }
 
   /**

@@ -116,8 +116,8 @@ class ChromaConnectionManager {
       // 根据环境推断默认值
       const isDevelopment = process.env.NODE_ENV !== 'production';
       const defaultUrl = isDevelopment 
-        ? 'http://10.6.0.5:8000'  // 本地开发
-        : 'http://chromadb:8000';        // 生产环境
+        ? 'http://192.168.50.50:8000'  // 本地开发
+        : 'http://192.168.50.50:8000';        // 生产环境
       
       logger.warn(`未配置 CHROMADB_URL，使用默认值：${defaultUrl}`);
       return {

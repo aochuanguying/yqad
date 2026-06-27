@@ -3,11 +3,13 @@ import { AuthService } from './auth';
 import { PostParser } from './post-parser';
 import { CommentAnalyzer, PostFeatures } from './comment-analyzer';
 import { generateComment, CommentGenerationOptions } from '../ai/content-generator';
-import { loadConfig } from '../utils/config';
+
 import { getLogger } from '../utils/logger';
 import { sleep, randomDelay } from '../utils/retry';
 import { getCommentHistoryStorage, CreateCommentHistoryInput } from '../storage/mysql/comment-history-storage';
 import { getCommentLogStorage, CreateCommentLogInput } from '../storage/mysql/comment-log-storage';
+import { getCommentConfigStorage } from '../storage/mysql/comment-config-storage';
+import { getPostConfigStorage } from '../storage/mysql/post-config-storage';
 
 const logger = getLogger('auto-comment');
 
@@ -67,7 +69,12 @@ export class AutoCommentService {
    * 只评论 1 条，不启动调度
    */
   async performSingleComment(): Promise<CommentResult[]> {
-    const config = loadConfig();
+    // 从数据库加载配置
+    const [commentConfig, postConfig] = await Promise.all([
+      getCommentConfigStorage().getConfig(),
+      getPostConfigStorage().getConfig(),
+    ]);
+    
     const results: CommentResult[] = [];
 
     // 获取 1 篇帖子
@@ -114,7 +121,7 @@ export class AutoCommentService {
     const postFeatures = commentAnalyzer.analyzePost(enrichedPost);
 
     // 生成评论
-    const recentOpenings = await this.getRecentOpenings(config.post.avoidRepeatDays);
+    const recentOpenings = await this.getRecentOpenings(postConfig?.avoidRepeatDays || 7);
     const genOptions: CommentGenerationOptions = {
       batchIndex: 0,
       recentOpenings,
@@ -175,18 +182,23 @@ export class AutoCommentService {
    * 支持多页获取、时间优先、兜底模式、拟人化回复
    */
   async performDailyComments(): Promise<CommentResult[]> {
-    const config = loadConfig();
+    // 从数据库加载配置
+    const [commentConfig, postConfig] = await Promise.all([
+      getCommentConfigStorage().getConfig(),
+      getPostConfigStorage().getConfig(),
+    ]);
+    
     const results: CommentResult[] = [];
 
     // 多页获取帖子列表
     const allPosts = await this.fetchPostsWithPaging();
 
     // 提取最近 avoidRepeatDays 天内的评论开头（用于避免重复）
-    const avoidRepeatDays = (config.comment as any).avoidRepeatDays || 7;
+    const avoidRepeatDays = postConfig?.avoidRepeatDays || 7;
     const recentOpenings = await this.getRecentOpenings(avoidRepeatDays);
 
     // 选择未评论过的帖子（已按时间排序）
-    const targetPosts = await this.selectTargetPosts(allPosts, config.comment.dailyLimit);
+    const targetPosts = await this.selectTargetPosts(allPosts, commentConfig?.dailyLimit || 3);
 
     let postsToComment: Post[];
     let previousComments: Map<string, string> | undefined;
@@ -194,7 +206,7 @@ export class AutoCommentService {
 
     if (targetPosts.length === 0) {
       // 激活兜底模式
-      const fallback = await this.selectFallbackPosts(config.comment.dailyLimit);
+      const fallback = await this.selectFallbackPosts(commentConfig?.dailyLimit || 3);
       if (!fallback) {
         return results;
       }
@@ -368,7 +380,10 @@ export class AutoCommentService {
 
       // 评论间随机延时（最后一条不需要等待）
       if (i < enrichedPosts.length - 1) {
-        const delay = randomDelay(config.comment.delayMin * 1000, config.comment.delayMax * 1000);
+        const delay = randomDelay(
+          (commentConfig?.delayMin || 60) * 1000,
+          (commentConfig?.delayMax || 180) * 1000
+        );
         logger.info(`等待 ${Math.round(delay / 1000)}秒 后发布下一条评论...`);
         await sleep(delay);
       }
@@ -526,8 +541,8 @@ export class AutoCommentService {
    * 多页获取帖子，遇到未评论帖子即停止
    */
   private async fetchPostsWithPaging(): Promise<Post[]> {
-    const config = loadConfig();
-    const maxPages = config.comment.maxFetchPages || 5;
+    const commentConfig = await getCommentConfigStorage().getConfig();
+    const maxPages = commentConfig?.maxFetchPages || 5;
     const allPosts: Post[] = [];
     const seenIds = new Set<string>();
 

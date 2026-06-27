@@ -128,6 +128,7 @@ export function createWebApp(params?: { includeApiRoutes?: boolean }): express.E
     const telecomRoutes = require('./routes/telecom-routes').default;
     const tokenRoutes = require('./routes/token-routes').default;
     const memberManagementRoutes = require('./routes/member-management-routes').memberManagementRoutes;
+    const mobileRoutes = require('./routes/mobile-routes').mobileRoutes;
 
     // token-routes 定义的是 /token，所以挂载在 /api 下（公开路由，不需要认证）
     // 必须放在所有 /api 路由之前，避免被认证中间件拦截
@@ -165,10 +166,28 @@ export function createWebApp(params?: { includeApiRoutes?: boolean }): express.E
     app.use('/api', authMiddleware, aiHealthRoutes);
     // telecom-routes 定义的是 /telecom-config, /telecom-test, /alert-history，所以挂载在 /api 下
     app.use('/api', authMiddleware, telecomRoutes);
+    // mobile-routes 定义的是 /mobile/sms 和 /mobile/calls/missed，所以挂载在 /api/posts/mobile 下
+    app.use('/api/posts/mobile', mobileRoutes);
   }
 
-  // 静态文件中间件放在 API 路由之后
-  app.use(express.static(path.join(__dirname, 'public')));
+  // 静态文件中间件放在 API 路由之后（禁用缓存，确保实时更新）
+  app.use(express.static(path.join(__dirname, 'public'), {
+    etag: true,
+    lastModified: true,
+    maxAge: 0,  // 不缓存 HTML 文件
+    setHeaders: (res, filePath) => {
+      // 对 HTML 文件设置不缓存
+      if (filePath.endsWith('.html')) {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+      }
+      // 对 JS/CSS 文件设置短期缓存
+      else if (filePath.endsWith('.js') || filePath.endsWith('.css')) {
+        res.setHeader('Cache-Control', 'public, max-age=300'); // 5 分钟
+      }
+    },
+  }));
 
   const materialsPath = config.materials.processedPath || './data/materials/processed';
   app.use('/images', imageAccessMiddleware, express.static(materialsPath));

@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  higpt-gateway:
+    container_name: higpt-gateway
+    image: higpt-gateway:latest
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:${PORT:-3000}"
+    volumes:
+      - ../config:/app/config
+      - ../logs:/app/logs
+    env_file:
+      - .env
+    environment:
+      - TZ=Asia/Shanghai
+      - PORT=${PORT:-3000}
+      - GATEWAY_API_KEY=${GATEWAY_API_KEY:-}
+      - HIGPT_BASE_URL=${HIGPT_BASE_URL:-https://inner-apisix.hisense.com/higpt-new/v1}
+      - HIGPT_API_KEY=${HIGPT_API_KEY:-}
+      - HIGPT_USER_KEY=${HIGPT_USER_KEY:-}
+      - HIGPT_PROXY_URL=${HIGPT_PROXY_URL:-}
+      - HIGPT_TIMEOUT_MS=${HIGPT_TIMEOUT_MS:-120000}
+    network_mode: bridge
