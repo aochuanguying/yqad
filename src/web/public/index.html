@@ -3,12 +3,33 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>一汽奥迪APP - 配置管理</title>
+  <title>一汽奥迪 APP - 配置管理</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <!-- 高德地图 JS API -->
+  <script type="text/javascript" src="https://webapi.amap.com/maps?v=2.0&key=dacf436680aad0a1920cd1b95eb7ce2b"></script>
   <style>
     .tab-active { border-bottom: 2px solid #2563eb; color: #2563eb; font-weight: 600; }
     .toast { animation: slideIn 0.3s ease-out; }
     @keyframes slideIn { from { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    
+    /* 地图容器样式 */
+    .map-container {
+      width: 100%;
+      height: 400px;
+      border-radius: 0.5rem;
+      overflow: hidden;
+      border: 1px solid #e5e7eb;
+    }
+    #vehicle-map {
+      width: 100%;
+      height: 100%;
+    }
+    .address-text {
+      font-size: 0.875rem;
+      color: #6b7280;
+      margin-top: 0.75rem;
+      line-height: 1.5;
+    }
     
     /* 图片懒加载渐显效果 */
     .lazy-image {
@@ -85,7 +106,7 @@
         <button class="tab-btn px-4 py-3 text-sm whitespace-nowrap hover:bg-gray-50" data-group="log-settings">📋 日志记录</button>
         <button class="tab-btn px-4 py-3 text-sm whitespace-nowrap hover:bg-gray-50 text-green-700 font-medium" data-group="materials">📷 素材库</button>
         <button class="tab-btn px-4 py-3 text-sm whitespace-nowrap hover:bg-gray-50 text-purple-700 font-medium" data-group="topics">📝 发帖主题</button>
-        <button class="tab-btn px-4 py-3 text-sm whitespace-nowrap hover:bg-gray-50 text-cyan-700 font-medium" onclick="window.open('/autojs-config.html', '_blank')">🤖 AutoJS 配置</button>
+        <button class="tab-btn px-4 py-3 text-sm whitespace-nowrap hover:bg-gray-50 text-cyan-700 font-medium" data-group="autojs">🤖 AutoJS 配置</button>
         <button class="tab-btn px-4 py-3 text-sm whitespace-nowrap hover:bg-gray-50 text-orange-700 font-medium" data-group="vehicleMonitor">🚗 车辆监控</button>
       </nav>
 
@@ -116,6 +137,13 @@
         <div class="w-48 border-r bg-gray-50 p-4 hidden" id="log-submenu">
           <div class="submenu-item" data-subgroup="comment-logs">评论日志</div>
           <div class="submenu-item" data-subgroup="post-logs">发帖日志</div>
+        </div>
+        
+        <!-- Left submenu for Vehicle Monitor -->
+        <div class="w-48 border-r bg-gray-50 p-4 hidden" id="vehicle-monitor-submenu">
+          <div class="submenu-item" data-subgroup="monitor-status">📊 监控状态</div>
+          <div class="submenu-item" data-subgroup="alert-config">⚠️ 告警配置</div>
+          <div class="submenu-item" data-subgroup="basic-config">⚙️ 基本配置</div>
         </div>
         
         <!-- Main content area -->
@@ -440,6 +468,11 @@
       document.querySelectorAll('#log-submenu .submenu-item').forEach(item => {
         item.addEventListener('click', () => switchLogSubmenu(item.dataset.subgroup));
       });
+      
+      // 设置车辆监控子菜单点击事件
+      document.querySelectorAll('#vehicle-monitor-submenu .submenu-item').forEach(item => {
+        item.addEventListener('click', () => switchVehicleMonitorSubmenu(item.dataset.subgroup));
+      });
     }
 
     // 切换 Tab
@@ -466,6 +499,7 @@
       aiSubmenu.classList.add('hidden');
       forumSubmenu.classList.add('hidden');
       logSubmenu.classList.add('hidden');
+      document.getElementById('vehicle-monitor-submenu').classList.add('hidden');
       
       // Token 设置 Tab 显示左侧子菜单
       if (group === 'token-settings') {
@@ -503,6 +537,23 @@
         logSubmenu.classList.remove('hidden');
         // 默认切换到评论日志子页面
         switchLogSubmenu('comment-logs');
+        return;
+      }
+      
+      if (group === 'autojs') {
+        manualCommentBtn.style.display = 'none';
+        manualPostBtn.style.display = 'none';
+        saveBtn.style.display = 'none';
+        renderAutoJsTab();
+        return;
+      }
+      
+      // 车辆监控 Tab 显示左侧子菜单
+      if (group === 'vehicleMonitor') {
+        const vehicleMonitorSubmenu = document.getElementById('vehicle-monitor-submenu');
+        vehicleMonitorSubmenu.classList.remove('hidden');
+        // 默认切换到监控状态子页面
+        switchVehicleMonitorSubmenu('monitor-status');
         return;
       }
       
@@ -691,6 +742,49 @@
         manualPostBtn.style.display = 'none';
         saveBtn.style.display = 'none';
         renderPostLogsTab();
+      }
+    }
+
+    // 切换车辆监控子菜单
+    function switchVehicleMonitorSubmenu(subgroup) {
+      // 确保左侧子菜单显示
+      const vehicleMonitorSubmenu = document.getElementById('vehicle-monitor-submenu');
+      vehicleMonitorSubmenu.classList.remove('hidden');
+      
+      // 更新子菜单激活状态
+      document.querySelectorAll('#vehicle-monitor-submenu .submenu-item').forEach(item => {
+        item.classList.toggle('submenu-item-active', item.dataset.subgroup === subgroup);
+      });
+      
+      // 重置 AI 模型管理标志位
+      isInAiModelManagement = false;
+      
+      // 根据子菜单切换内容
+      const saveBtn = document.getElementById('save-btn');
+      const manualCommentBtn = document.getElementById('manual-comment-btn');
+      const manualPostBtn = document.getElementById('manual-post-btn');
+      
+      if (subgroup === 'monitor-status') {
+        // 监控状态 - 显示 iframe 嵌入 vehicle-monitor.html 的监控状态部分
+        currentGroup = 'monitor-status';
+        manualCommentBtn.style.display = 'none';
+        manualPostBtn.style.display = 'none';
+        saveBtn.style.display = 'none';
+        renderMonitorStatusTab();
+      } else if (subgroup === 'alert-config') {
+        // 告警配置 - 显示 iframe 嵌入 vehicle-monitor.html 的告警配置部分
+        currentGroup = 'alert-config';
+        manualCommentBtn.style.display = 'none';
+        manualPostBtn.style.display = 'none';
+        saveBtn.style.display = 'none';
+        renderAlertConfigTab();
+      } else if (subgroup === 'basic-config') {
+        // 基本配置 - 显示车辆监控配置表单
+        currentGroup = 'vehicleMonitor';
+        manualCommentBtn.style.display = 'none';
+        manualPostBtn.style.display = 'none';
+        saveBtn.style.display = '';
+        renderForm('vehicleMonitor');
       }
     }
 
@@ -1620,8 +1714,1130 @@
       html += '</div>';
       container.innerHTML = html;
       
-      // 加载日志
+      // 加载发帖日志
       loadPostLogs();
+    }
+
+    // 渲染监控状态页面
+    function renderMonitorStatusTab() {
+      const container = document.getElementById('main-content-area');
+      
+      container.innerHTML = `
+        <div class="space-y-6">
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="text-xl font-semibold text-gray-800">📊 车辆监控状态</h3>
+              <p class="text-sm text-gray-500 mt-1">实时监控车辆状态、位置和详细数据</p>
+            </div>
+            <button id="manual-monitor-btn" class="px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+              </svg>
+              立即执行监控
+            </button>
+          </div>
+          
+          <div id="monitor-status-container">
+            <p class="text-gray-500 text-sm">加载中...</p>
+          </div>
+        </div>
+      `;
+      
+      // 加载监控状态
+      loadMonitorStatus();
+      // 设置手动执行监控按钮
+      setupManualMonitorInIndex();
+      // 设置清空告警记录按钮
+      setupClearAlertsInIndex();
+    }
+
+    // 渲染告警配置页面
+    function renderAlertConfigTab() {
+      const container = document.getElementById('main-content-area');
+      
+      container.innerHTML = `
+        <div class="space-y-6">
+          <div>
+            <h3 class="text-xl font-semibold text-gray-800">⚠️ 告警配置</h3>
+            <p class="text-sm text-gray-500 mt-1">配置告警通知方式和查看告警历史</p>
+          </div>
+          
+          <div id="alert-config-container">
+            <p class="text-gray-500 text-sm">加载中...</p>
+          </div>
+        </div>
+      `;
+      
+      // 加载告警配置、统计和历史
+      loadAlertConfig();
+      loadAlertStats();
+      loadAlertHistory();
+    }
+
+    // 加载监控状态
+    async function loadMonitorStatus() {
+      const container = document.getElementById('monitor-status-container');
+      
+      try {
+        const resp = await fetch('/api/vehicle-monitor/status');
+        const data = await resp.json();
+        
+        if (data.code === 'SUCCESS' && data.data) {
+          renderMonitorStatusContent(data.data);
+        } else {
+          container.innerHTML = '<p class="text-red-500">加载失败</p>';
+        }
+      } catch (error) {
+        container.innerHTML = '<p class="text-red-500">加载失败：' + error.message + '</p>';
+      }
+    }
+
+    // 渲染监控状态内容
+    function renderMonitorStatusContent(statusData) {
+      const container = document.getElementById('monitor-status-container');
+      
+      const statusText = statusData.enabled ? '运行中' : '已停止';
+      const statusColor = statusData.enabled ? 'text-green-600' : 'text-gray-400';
+      
+      // 电池电压显示
+      let batteryText = '-- V';
+      let batteryColor = 'text-gray-400';
+      if (statusData.lastStatus?.obd?.batteryVolt !== undefined && statusData.lastStatus.obd.batteryVolt !== null) {
+        const volt = statusData.lastStatus.obd.batteryVolt;
+        batteryText = `${volt.toFixed(1)} V`;
+        if (volt < 11.5) batteryColor = 'text-red-600';
+        else if (volt < 12.0) batteryColor = 'text-yellow-600';
+        else batteryColor = 'text-green-600';
+      }
+      
+      // 车辆位置和地址
+      let locationText = '--';
+      let addressText = '--';
+      if (statusData.lastStatus?.location) {
+        const loc = statusData.lastStatus.location;
+        locationText = `${loc.lat.toFixed(4)}, ${loc.lng.toFixed(4)}`;
+        // 更新地图
+        updateVehicleMap(loc.lng, loc.lat);
+        // 异步获取地址（用于位置卡片）
+        getAddressFromCoordinates(loc.lng, loc.lat).then(address => {
+          const addressEl = document.getElementById('vehicle-address');
+          if (addressEl) {
+            addressEl.textContent = address || '--';
+          }
+        });
+      }
+      
+      // 上次监控时间
+      const lastTimeText = statusData.lastMonitorTime 
+        ? new Date(statusData.lastMonitorTime).toLocaleString('zh-CN') 
+        : '--';
+      
+      container.innerHTML = `
+        <!-- 状态卡片 -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+          <!-- 监控状态 -->
+          <div class="bg-white rounded-lg shadow-sm border p-6">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-sm font-medium text-gray-600">监控状态</p>
+                <p class="text-2xl font-bold ${statusColor} mt-2">${statusText}</p>
+              </div>
+              <div class="p-3 bg-blue-100 rounded-full">
+                <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+              </div>
+            </div>
+          </div>
+
+          <!-- 电池电压 -->
+          <div class="bg-white rounded-lg shadow-sm border p-6">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-sm font-medium text-gray-600">电池电压</p>
+                <p class="text-2xl font-bold ${batteryColor} mt-2">${batteryText}</p>
+              </div>
+              <div class="p-3 bg-green-100 rounded-full">
+                <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                </svg>
+              </div>
+            </div>
+          </div>
+
+          <!-- 车辆位置 -->
+          <div class="bg-white rounded-lg shadow-sm border p-6">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-sm font-medium text-gray-600">车辆位置</p>
+                <p class="text-sm font-medium text-gray-800 mt-2">${locationText}</p>
+                <p id="vehicle-address" class="text-xs text-gray-500 mt-1 line-clamp-2">--</p>
+              </div>
+              <div class="p-3 bg-purple-100 rounded-full">
+                <svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                </svg>
+              </div>
+            </div>
+          </div>
+
+          <!-- 上次监控时间 -->
+          <div class="bg-white rounded-lg shadow-sm border p-6">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-sm font-medium text-gray-600">上次监控时间</p>
+                <p class="text-sm font-medium text-gray-800 mt-2">${lastTimeText}</p>
+              </div>
+              <div class="p-3 bg-gray-100 rounded-full">
+                <svg class="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 车辆详细状态 -->
+        <div class="bg-white rounded-lg shadow-sm border mb-6">
+          <div class="px-6 py-4 border-b bg-gray-50">
+            <h3 class="text-lg font-semibold text-gray-800">🚗 车辆详细状态</h3>
+          </div>
+          <div class="p-6">
+            <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              ${renderVehicleDetailItem('发动机', getEngineText(statusData.lastStatus?.obd), getEngineColor(statusData.lastStatus?.obd))}
+              ${renderVehicleDetailItem('总里程', getMileageText(statusData.lastStatus?.obd), 'text-gray-800')}
+              ${renderVehicleDetailItem('剩余油量', getFuelText(statusData.lastStatus?.obd), getFuelColor(statusData.lastStatus?.obd))}
+              ${renderVehicleDetailItem('车外温度', getTempText(statusData.lastStatus?.obd), 'text-gray-800')}
+              ${renderVehicleDetailItem('设防', getDefenceText(statusData.lastStatus?.obd), getDefenceColor(statusData.lastStatus?.obd))}
+              ${renderVehicleDetailItem('OBD 在线', getOnlineText(statusData.lastStatus?.obd), getOnlineColor(statusData.lastStatus?.obd))}
+              ${renderVehicleDetailItem('车门', getDoorsText(statusData.lastStatus), getDoorsColor(statusData.lastStatus))}
+              ${renderVehicleDetailItem('车窗', getWindowsText(statusData.lastStatus?.obd), getWindowsColor(statusData.lastStatus?.obd))}
+              ${renderVehicleDetailItem('左��胎压', getTireText(statusData.lastStatus?.obd?.tirePressure?.fl), 'text-gray-800')}
+              ${renderVehicleDetailItem('右前胎压', getTireText(statusData.lastStatus?.obd?.tirePressure?.fr), 'text-gray-800')}
+              ${renderVehicleDetailItem('左后胎压', getTireText(statusData.lastStatus?.obd?.tirePressure?.rl), 'text-gray-800')}
+              ${renderVehicleDetailItem('右后胎压', getTireText(statusData.lastStatus?.obd?.tirePressure?.rr), 'text-gray-800')}
+            </div>
+          </div>
+        </div>
+
+        <!-- 监控配置 -->
+        <div class="bg-white rounded-lg shadow-sm border mb-6">
+          <div class="px-6 py-4 border-b bg-gray-50">
+            <h3 class="text-lg font-semibold text-gray-800">⚙️ 监控配置</h3>
+          </div>
+          <div class="p-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              ${renderConfigItem('监控间隔', (statusData.config?.intervalMinutes || '--') + ' 分钟')}
+              ${renderConfigItem('快速监控间隔', (statusData.config?.quickIntervalMinutes || '--') + ' 分钟')}
+              ${renderConfigItem('安全距离', (statusData.config?.safeDistanceMeters || '--') + ' 米')}
+              ${renderConfigItem('移动判定阈值', (statusData.config?.moveThresholdMeters || '--') + ' 米')}
+              ${renderConfigItem('最低电压', (statusData.config?.minBatteryVolt || '--') + ' V')}
+              ${renderConfigItem('告警电话', statusData.config?.alertPhone || '未配置')}
+            </div>
+          </div>
+        </div>
+
+        <!-- 车辆位置地图 -->
+        <div class="bg-white rounded-lg shadow-sm border mb-6">
+          <div class="px-6 py-4 border-b bg-gray-50">
+            <h3 class="text-lg font-semibold text-gray-800">🗺️ 车辆位置</h3>
+          </div>
+          <div class="p-6">
+            <div class="map-container">
+              <div id="vehicle-map"></div>
+            </div>
+            <p id="map-address" class="address-text">--</p>
+          </div>
+        </div>
+
+        <!-- 车辆告警记录 -->
+        <div class="bg-white rounded-lg shadow-sm border">
+          <div class="px-6 py-4 border-b bg-gray-50 flex items-center justify-between">
+            <h3 class="text-lg font-semibold text-gray-800">📋 车辆告警记录</h3>
+            <button id="clear-alerts-btn" class="px-3 py-1 text-sm text-red-600 hover:bg-red-50 rounded transition-colors">
+              清空记录
+            </button>
+          </div>
+          <div class="p-6">
+            <div id="alert-log-container" class="space-y-3">
+              ${renderAlertLogs(statusData.alertLogs || [])}
+            </div>
+          </div>
+        </div>
+      `;
+
+      // 延迟初始化地图，确保 DOM 已渲染
+      setTimeout(() => {
+        initVehicleMap();
+        // 如果有位置信息，更新地图
+        if (statusData.lastStatus?.location) {
+          updateVehicleMap(statusData.lastStatus.location.lng, statusData.lastStatus.location.lat);
+        }
+      }, 100);
+    }
+
+    // 设置手动执行监控按钮
+    function setupManualMonitorInIndex() {
+      const btn = document.getElementById('manual-monitor-btn');
+      if (!btn) return;
+
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        btn.innerHTML = `
+          <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          执行中...
+        `;
+
+        try {
+          const resp = await fetch('/api/vehicle-monitor/execute', { method: 'POST' });
+          const data = await resp.json();
+
+          if (data.code === 'SUCCESS') {
+            showToast('监控执行成功', 'success');
+            await loadMonitorStatus();
+          } else {
+            showToast(data.message || '执行失败', 'error');
+          }
+        } catch (error) {
+          showToast('网络错误', 'error');
+        } finally {
+          btn.disabled = false;
+          btn.innerHTML = `
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+            </svg>
+            立即执行监控
+          `;
+        }
+      });
+    }
+
+    // 设置清空告警记录按钮
+    function setupClearAlertsInIndex() {
+      const btn = document.getElementById('clear-alerts-btn');
+      if (!btn) return;
+
+      btn.addEventListener('click', async () => {
+        if (!confirm('确定要清空所有车辆告警记录吗？')) return;
+
+        try {
+          const resp = await fetch('/api/vehicle-monitor/alerts', { method: 'DELETE' });
+          const data = await resp.json();
+
+          if (data.code === 'SUCCESS') {
+            showToast('记录已清空', 'success');
+            await loadMonitorStatus();
+          } else {
+            showToast(data.message || '清空失败', 'error');
+          }
+        } catch (error) {
+          console.error('清空记录失败:', error);
+          showToast('网络错误', 'error');
+        }
+      });
+    }
+
+    // 加载告警配置
+    async function loadAlertConfig() {
+      const container = document.getElementById('alert-config-container');
+      
+      try {
+        const resp = await fetch('/api/telecom-config');
+        const data = await resp.json();
+        
+        if (data.success) {
+          renderAlertConfigContent(data.config);
+        } else {
+          container.innerHTML = '<p class="text-red-500">加载失败</p>';
+        }
+      } catch (error) {
+        container.innerHTML = '<p class="text-red-500">加载失败：' + error.message + '</p>';
+      }
+    }
+
+    // 渲染告警配置内容
+    function renderAlertConfigContent(config) {
+      const container = document.getElementById('alert-config-container');
+      
+      container.innerHTML = `
+        <!-- Telecom API 配置表单 -->
+        <div class="bg-white rounded-lg shadow-sm border mb-6">
+          <div class="px-6 py-4 border-b bg-gray-50">
+            <h4 class="text-lg font-semibold text-gray-800">📱 告警通知配置（Android Telecom API）</h4>
+          </div>
+          <div class="p-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">
+                  API 地址 <span class="text-red-500">*</span>
+                </label>
+                <input 
+                  type="text" 
+                  id="telecom-api-url" 
+                  value="${config.apiUrl || ''}"
+                  placeholder="http://192.168.1.100:5000"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p class="text-xs text-gray-500 mt-1">Android Telecom API 服务地址，包含协议和端口</p>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">
+                  API Token <span class="text-red-500">*</span>
+                </label>
+                <input 
+                  type="text" 
+                  id="telecom-api-token" 
+                  value="${config.apiTokenRaw || ''}"
+                  placeholder="请输入 API Token"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p class="text-xs text-gray-500 mt-1">Token 将加密存储，页面显示时会部分掩码</p>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">
+                  告警接收手机号 <span class="text-red-500">*</span>
+                </label>
+                <input 
+                  type="text" 
+                  id="telecom-alert-phone" 
+                  value="${config.alertPhone || ''}"
+                  placeholder="13800138000"
+                  maxlength="11"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p class="text-xs text-gray-500 mt-1">11 位中国大陆手机号，用于接收告警短信和电话</p>
+              </div>
+              <div class="flex items-end">
+                <div class="flex gap-3">
+                  <button 
+                    id="telecom-test-btn" 
+                    type="button"
+                    class="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors flex items-center gap-2"
+                  >
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    测试连接
+                  </button>
+                  <button 
+                    id="telecom-save-btn" 
+                    type="button"
+                    class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center gap-2"
+                  >
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path>
+                    </svg>
+                    保存配置
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="flex items-center gap-3">
+              <label class="flex items-center">
+                <input 
+                  type="checkbox" 
+                  id="telecom-enabled" 
+                  ${config.enabled ? 'checked' : ''}
+                  class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                />
+                <span class="ml-2 text-sm text-gray-700">启用告警通知</span>
+              </label>
+              <span id="telecom-status" class="text-xs px-2 py-1 rounded bg-gray-100 text-gray-600">未配置</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 告警统计 -->
+        <div class="bg-white rounded-lg shadow-sm border mb-6">
+          <div class="px-6 py-4 border-b bg-gray-50">
+            <h4 class="text-lg font-semibold text-gray-800">📊 告警统计</h4>
+          </div>
+          <div class="p-6">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div class="bg-blue-50 rounded-lg p-4">
+                <p class="text-sm text-gray-600 mb-1">今日告警次数</p>
+                <p id="stats-today" class="text-2xl font-bold text-blue-600">0</p>
+              </div>
+              <div class="bg-green-50 rounded-lg p-4">
+                <p class="text-sm text-gray-600 mb-1">本周告警次数</p>
+                <p id="stats-week" class="text-2xl font-bold text-green-600">0</p>
+              </div>
+              <div class="bg-purple-50 rounded-lg p-4">
+                <p class="text-sm text-gray-600 mb-1">最常见异常</p>
+                <p id="stats-top-anomaly" class="text-lg font-semibold text-purple-600">--</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 通知发送历史表格 -->
+        <div class="bg-white rounded-lg shadow-sm border mb-6">
+          <div class="px-6 py-4 border-b bg-gray-50 flex items-center justify-between">
+            <h4 class="text-lg font-semibold text-gray-800">📋 通知发送历史</h4>
+            <button id="refresh-history-btn" class="px-3 py-1 text-sm text-blue-600 hover:bg-blue-50 rounded transition-colors flex items-center gap-1">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+              </svg>
+              刷新
+            </button>
+          </div>
+          <div class="p-6">
+            <div class="overflow-x-auto">
+              <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                  <tr>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">时间</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">异常类型</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">通知方式</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">短信状态</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">电话状态</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">接收人</th>
+                  </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200" id="alert-history-table">
+                  <tr>
+                    <td colspan="6" class="px-4 py-8 text-center text-gray-500 text-sm">暂无告警记录</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      `;
+
+      // 更新状态显示
+      updateTelecomStatus(config.enabled, config.apiUrl);
+
+      // 绑定事件
+      setupTelecomConfigEvents();
+    }
+
+    // ========== 车辆监控状态渲染辅助函数 ==========
+    
+    // 渲染车辆详细状态项
+    function renderVehicleDetailItem(label, value, colorClass = 'text-gray-800') {
+      return `
+        <div class="p-4 bg-gray-50 rounded-lg">
+          <p class="text-xs text-gray-500 mb-1">${label}</p>
+          <p class="text-lg font-semibold ${colorClass}">${value}</p>
+        </div>
+      `;
+    }
+    
+    // 渲染配置项
+    function renderConfigItem(label, value) {
+      return `
+        <div>
+          <p class="text-sm text-gray-500">${label}</p>
+          <p class="text-base font-medium text-gray-800">${value}</p>
+        </div>
+      `;
+    }
+    
+    // 渲染告警日志
+    function renderAlertLogs(logs) {
+      if (!logs || logs.length === 0) {
+        return '<p class="text-gray-500 text-sm text-center py-8">暂无告警记录</p>';
+      }
+      
+      return logs.map(log => {
+        const date = new Date(log.timestamp);
+        const timeStr = date.toLocaleString('zh-CN');
+        let bgColor = 'bg-gray-50';
+        let borderColor = 'border-gray-200';
+        let iconColor = 'text-gray-600';
+        
+        if (log.type === 'battery_low') {
+          bgColor = 'bg-red-50';
+          borderColor = 'border-red-200';
+          iconColor = 'text-red-600';
+        } else if (log.type === 'distance_exceeded') {
+          bgColor = 'bg-yellow-50';
+          borderColor = 'border-yellow-200';
+          iconColor = 'text-yellow-600';
+        } else if (log.type === 'vehicle_moved') {
+          bgColor = 'bg-orange-50';
+          borderColor = 'border-orange-200';
+          iconColor = 'text-orange-600';
+        }
+        
+        return `
+          <div class="${bgColor} border ${borderColor} rounded-lg p-4">
+            <div class="flex items-start gap-3">
+              <svg class="w-5 h-5 ${iconColor} flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+              </svg>
+              <div class="flex-1">
+                <div class="flex items-center justify-between mb-1">
+                  <h4 class="font-medium text-gray-800">${getAlertTypeText(log.type)}</h4>
+                  <span class="text-xs text-gray-500">${timeStr}</span>
+                </div>
+                <p class="text-sm text-gray-600">${log.message || ''}</p>
+                ${log.action ? `<p class="text-xs text-gray-500 mt-2">处理：${log.action}</p>` : ''}
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+    
+    // 获取告警类型文本
+    function getAlertTypeText(type) {
+      switch (type) {
+        case 'battery_low': return '⚠️ 电池电压过低';
+        case 'distance_exceeded': return '⚠️ 车辆超出安全距离';
+        case 'vehicle_moved': return '⚠️ 车辆发生移动';
+        default: return '⚠️ 未知告警';
+      }
+    }
+
+    // ========== 车辆位置地图功能 ==========
+    
+    let vehicleMapInstance = null;
+    let vehicleMarker = null;
+    let deviceMarker = null;
+
+    // WGS-84 转 GCJ-02 坐标转换函数
+    function wgs84ToGcj02(lat, lng) {
+      const PI = 3.1415926535897932384626;
+      const a = 6378245.0;
+      const ee = 0.00669342162296594323;
+
+      function transformLat(x, y) {
+        let ret = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * Math.sqrt(Math.abs(x));
+        ret += (20.0 * Math.sin(6.0 * x * PI) + 20.0 * Math.sin(2.0 * x * PI)) * 2.0 / 3.0;
+        ret += (20.0 * Math.sin(y * PI) + 40.0 * Math.sin(y / 3.0 * PI)) * 2.0 / 3.0;
+        ret += (160.0 * Math.sin(y / 12.0 * PI) + 320 * Math.sin(y * PI / 30.0)) * 2.0 / 3.0;
+        return ret;
+      }
+
+      function transformLon(x, y) {
+        let ret = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * Math.sqrt(Math.abs(x));
+        ret += (20.0 * Math.sin(6.0 * x * PI) + 20.0 * Math.sin(2.0 * x * PI)) * 2.0 / 3.0;
+        ret += (20.0 * Math.sin(x * PI) + 40.0 * Math.sin(x / 3.0 * PI)) * 2.0 / 3.0;
+        ret += (150.0 * Math.sin(x / 12.0 * PI) + 300.0 * Math.sin(x / 30.0 * PI)) * 2.0 / 3.0;
+        return ret;
+      }
+
+      const dLat = transformLat(lng - 105.0, lat - 35.0);
+      const dLon = transformLon(lng - 105.0, lat - 35.0);
+      const radLat = lat / 180.0 * PI;
+      let magic = Math.sin(radLat);
+      magic = 1 - ee * magic * magic;
+      const sqrtMagic = Math.sqrt(magic);
+      const dLatFinal = (dLat * 180.0) / ((a * (1 - ee)) / (magic * sqrtMagic) * PI);
+      const dLonFinal = (dLon * 180.0) / (a / sqrtMagic * Math.cos(radLat) * PI);
+
+      return {
+        lat: lat + dLatFinal,
+        lng: lng + dLonFinal
+      };
+    }
+
+    // 计算两点之间的距离（Haversine 公式），单位：米
+    function calculateDistance(lat1, lng1, lat2, lng2) {
+      const R = 6371000;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLng = (lng2 - lng1) * Math.PI / 180;
+      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLng/2) * Math.sin(dLng/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      return R * c;
+    }
+
+    // 初始化车辆地图
+    function initVehicleMap() {
+      if (!window.AMap) {
+        console.error('高德地图 API 未加载');
+        return;
+      }
+
+      if (!vehicleMapInstance) {
+        vehicleMapInstance = new AMap.Map('vehicle-map', {
+          zoom: 15,
+          mapStyle: 'amap://styles/normal',
+        });
+        console.log('车辆地图实例创建成功');
+      }
+    }
+
+    // 更新车辆位置地图
+    async function updateVehicleMap(lng, lat) {
+      if (!lng || !lat) {
+        console.log('updateVehicleMap: 经纬度无效', lng, lat);
+        return;
+      }
+
+      console.log('updateVehicleMap: 开始更新位置', lng, lat);
+
+      // 确保地图已初始化
+      if (!vehicleMapInstance) {
+        initVehicleMap();
+      }
+
+      if (!vehicleMapInstance) {
+        console.log('updateVehicleMap: 地图实例未初始化');
+        return;
+      }
+
+      // 清除旧的标记
+      if (vehicleMarker) {
+        vehicleMapInstance.remove(vehicleMarker);
+      }
+      if (deviceMarker) {
+        vehicleMapInstance.remove(deviceMarker);
+      }
+
+      // 创建新的车辆标记（红色标记）
+      vehicleMarker = new AMap.Marker({
+        position: [lng, lat],
+        title: '车辆位置',
+        map: vehicleMapInstance,
+        icon: new AMap.Icon({
+          size: new AMap.Size(25, 34),
+          image: 'https://webapi.amap.com/theme/v1.3/markers/n/mark_r.png',
+          imageSize: new AMap.Size(25, 34),
+        }),
+      });
+      console.log('车辆标记已创建，添加到地图');
+
+      // 获取手机设备位置
+      const deviceLocation = await getDeviceLocation();
+      
+      // 根据是否有手机位置，调整地图视野
+      if (deviceLocation) {
+        // 同时显示车辆和手机位置
+        vehicleMapInstance.setFitView([vehicleMarker, deviceMarker]);
+        console.log('地图已调整视野以显示车辆和手机');
+        
+        // 计算并显示车辆与手机之间的距离
+        const distance = calculateDistance(deviceLocation.lat, deviceLocation.lng, lat, lng);
+        console.log(`车辆与手机距离：${Math.round(distance)} 米`);
+      } else {
+        // 只显示车辆位置
+        vehicleMapInstance.setCenter([lng, lat]);
+        vehicleMapInstance.setZoom(15);
+        console.log('地图已定位到车辆位置');
+      }
+
+      // 获取并显示地址
+      await getAddressFromAMapForMap(lat, lng);
+    }
+
+    // 获取手机设备位置并显示在地图上（通过 Home Assistant API）
+    async function getDeviceLocation() {
+      try {
+        const response = await fetch('/api/vehicle-monitor/device-location', { credentials: 'include' });
+        const data = await response.json();
+        
+        if (data.code === 'SUCCESS' && data.data) {
+          let { lat, lng } = data.data;
+          
+          // WGS-84 转 GCJ-02 坐标转换（高德地图使用 GCJ-02）
+          const gcj02 = wgs84ToGcj02(lat, lng);
+          lat = gcj02.lat;
+          lng = gcj02.lng;
+          
+          console.log('获取到手机设备位置:', lat, lng);
+          
+          // 清除旧的设备标记
+          if (deviceMarker) {
+            vehicleMapInstance.remove(deviceMarker);
+          }
+          
+          // 创建新的设备标记（蓝色标记）
+          deviceMarker = new AMap.Marker({
+            position: [lng, lat],
+            title: '手机位置',
+            map: vehicleMapInstance,
+            icon: new AMap.Icon({
+              size: new AMap.Size(25, 34),
+              image: 'https://webapi.amap.com/theme/v1.3/markers/n/mark_b.png',
+              imageSize: new AMap.Size(25, 34),
+            }),
+          });
+          console.log('手机设备标记已创建');
+          
+          return { lat, lng };
+        } else {
+          console.warn('获取手机设备位置失败:', data.message);
+          return null;
+        }
+      } catch (error) {
+        console.error('获取手机设备位置失败:', error);
+        return null;
+      }
+    }
+
+    // 通过高德地图 REST API 获取地址（用于地图页面）
+    async function getAddressFromAMapForMap(lat, lng) {
+      const mapAddressEl = document.getElementById('map-address');
+      const AMAP_KEY = 'dacf436680aad0a1920cd1b95eb7ce2b';
+      
+      try {
+        console.log('开始通过高德地图 REST API 获取地址...');
+        const url = `https://restapi.amap.com/v3/geocode/regeo?location=${lng},${lat}&key=${AMAP_KEY}&radius=200&extensions=base`;
+        
+        const response = await fetch(url);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        console.log('高德 REST API 响应:', data);
+        
+        if (data && data.status === '1' && data.regeocode && data.regeocode.formatted_address) {
+          const address = data.regeocode.formatted_address;
+          console.log('获取到地址:', address);
+          
+          if (mapAddressEl) {
+            mapAddressEl.textContent = address;
+            console.log('地图地址已显示');
+          }
+        } else {
+          console.warn('高德 REST API 未返回有效地址:', data);
+          if (mapAddressEl) {
+            mapAddressEl.textContent = '地址获取失败';
+          }
+        }
+      } catch (error) {
+        console.error('高德 REST API 调用失败:', error);
+        if (mapAddressEl) {
+          mapAddressEl.textContent = '地址获取失败';
+        }
+      }
+    }
+
+    // ========== 车辆位置地址解析 ==========
+    
+    // 通过高德地图 REST API 获取地址
+    async function getAddressFromCoordinates(lng, lat) {
+      if (!lng || !lat) return '--';
+      
+      const AMAP_KEY = 'dacf436680aad0a1920cd1b95eb7ce2b';
+      
+      try {
+        const url = `https://restapi.amap.com/v3/geocode/regeo?location=${lng},${lat}&key=${AMAP_KEY}&radius=200&extensions=base`;
+        
+        const response = await fetch(url);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data && data.status === '1' && data.regeocode && data.regeocode.formatted_address) {
+          return data.regeocode.formatted_address;
+        } else {
+          console.warn('高德 REST API 未返回有效地址:', data);
+          return '地址获取失败';
+        }
+      } catch (error) {
+        console.error('高德 REST API 调用失败:', error);
+        return '地址获取失败';
+      }
+    }
+
+    // ========== Telecom API 配置相关函数 ==========
+    
+    // 更新 Telecom 状态显示
+    function updateTelecomStatus(enabled, apiUrl) {
+      const statusEl = document.getElementById('telecom-status');
+      if (!statusEl) return;
+      
+      if (!enabled) {
+        statusEl.textContent = '未启用';
+        statusEl.className = 'text-xs px-2 py-1 rounded bg-gray-100 text-gray-600';
+      } else if (!apiUrl) {
+        statusEl.textContent = '未配置';
+        statusEl.className = 'text-xs px-2 py-1 rounded bg-yellow-100 text-yellow-600';
+      } else {
+        statusEl.textContent = '已配置';
+        statusEl.className = 'text-xs px-2 py-1 rounded bg-green-100 text-green-600';
+      }
+    }
+
+    // 加载告警统计
+    async function loadAlertStats() {
+      try {
+        const resp = await fetch('/api/alert-stats');
+        const data = await resp.json();
+
+        if (data.success) {
+          const stats = data.stats;
+          document.getElementById('stats-today').textContent = stats.todayCount || 0;
+          document.getElementById('stats-week').textContent = stats.weekCount || 0;
+          if (stats.topAnomalies && stats.topAnomalies.length > 0) {
+            document.getElementById('stats-top-anomaly').textContent = stats.topAnomalies[0].type;
+          } else {
+            document.getElementById('stats-top-anomaly').textContent = '--';
+          }
+        }
+      } catch (error) {
+        console.error('加载告警统计失败:', error);
+      }
+    }
+
+    // 加载告警历史
+    async function loadAlertHistory() {
+      try {
+        const resp = await fetch('/api/alert-history?limit=20');
+        const data = await resp.json();
+
+        if (data.success) {
+          renderAlertHistoryTable(data.history);
+        }
+      } catch (error) {
+        console.error('加载告警历史失败:', error);
+      }
+    }
+
+    // 渲染告警历史表格
+    function renderAlertHistoryTable(history) {
+      const tbody = document.getElementById('alert-history-table');
+      if (!tbody) return;
+
+      if (!history || history.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-8 text-center text-gray-500 text-sm">暂无告警记录</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = history.map(record => {
+        const date = new Date(record.timestamp);
+        const timeStr = date.toLocaleString('zh-CN');
+        const smsStatusColor = record.smsStatus === 'success' ? 'text-green-600' : 
+                               record.smsStatus === 'timeout' ? 'text-yellow-600' : 'text-red-600';
+        const callStatusColor = record.callStatus === 'success' ? 'text-green-600' : 
+                                record.callStatus === 'timeout' ? 'text-yellow-600' : 'text-red-600';
+        const notificationTypeText = record.notificationType === 'both' ? '短信 + 电话' : 
+                                     record.notificationType === 'sms' ? '短信' : '电话';
+
+        return `
+          <tr>
+            <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">${timeStr}</td>
+            <td class="px-4 py-3 text-sm text-gray-900">${record.anomalies.join(', ')}</td>
+            <td class="px-4 py-3 text-sm text-gray-900">${notificationTypeText}</td>
+            <td class="px-4 py-3 text-sm ${smsStatusColor}">${record.smsStatus === 'success' ? '✓ 成功' : record.smsStatus === 'timeout' ? '⏱ 超时' : '✗ 失败'}</td>
+            <td class="px-4 py-3 text-sm ${callStatusColor}">${record.callStatus === 'success' ? '✓ 成功' : record.callStatus === 'timeout' ? '⏱ 超时' : '✗ 失败'}</td>
+            <td class="px-4 py-3 text-sm text-gray-900">${record.phone}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    // 设置 Telecom 配置相关事件
+    function setupTelecomConfigEvents() {
+      // 测试连接按钮
+      const testBtn = document.getElementById('telecom-test-btn');
+      if (testBtn) {
+        testBtn.addEventListener('click', async () => {
+          const apiUrl = document.getElementById('telecom-api-url').value.trim();
+          const apiToken = document.getElementById('telecom-api-token').value.trim();
+
+          if (!apiUrl || !apiToken) {
+            showToast('请填写 API 地址和 Token', 'error');
+            return;
+          }
+
+          testBtn.disabled = true;
+          testBtn.innerHTML = `
+            <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            测试中...
+          `;
+
+          try {
+            const resp = await fetch('/api/telecom-test', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ apiUrl, apiToken }),
+            });
+            const data = await resp.json();
+
+            if (data.success) {
+              showToast(data.message || '连接测试成功', 'success');
+            } else {
+              showToast(data.error || '连接测试失败', 'error');
+            }
+          } catch (error) {
+            console.error('测试连接失败:', error);
+            showToast('网络错误', 'error');
+          } finally {
+            testBtn.disabled = false;
+            testBtn.innerHTML = `
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+              </svg>
+              测试连接
+            `;
+          }
+        });
+      }
+
+      // 保存配置按钮
+      const saveBtn = document.getElementById('telecom-save-btn');
+      if (saveBtn) {
+        saveBtn.addEventListener('click', async () => {
+          const enabled = document.getElementById('telecom-enabled').checked;
+          const apiUrl = document.getElementById('telecom-api-url').value.trim();
+          const apiToken = document.getElementById('telecom-api-token').value.trim();
+          const alertPhone = document.getElementById('telecom-alert-phone').value.trim();
+
+          if (enabled && (!apiUrl || !apiToken || !alertPhone)) {
+            showToast('启用时必须填写 API 地址、Token 和告警手机号', 'error');
+            return;
+          }
+
+          if (enabled && alertPhone && !/^1\d{10}$/.test(alertPhone)) {
+            showToast('手机号格式不正确，请输入 11 位中国大陆手机号', 'error');
+            return;
+          }
+
+          saveBtn.disabled = true;
+          saveBtn.innerHTML = `
+            <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            保存中...
+          `;
+
+          try {
+            const resp = await fetch('/api/telecom-config', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ enabled, apiUrl, apiToken, alertPhone }),
+            });
+            const data = await resp.json();
+
+            if (data.success) {
+              showToast('配置已保存', 'success');
+              updateTelecomStatus(enabled, apiUrl);
+              await loadAlertStats();
+              await loadAlertHistory();
+            } else {
+              showToast(data.error || '保存失败', 'error');
+            }
+          } catch (error) {
+            console.error('保存配置失败:', error);
+            showToast('网络错误', 'error');
+          } finally {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = `
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path>
+              </svg>
+              保存配置
+            `;
+          }
+        });
+      }
+
+      // 刷新历史按钮
+      const refreshBtn = document.getElementById('refresh-history-btn');
+      if (refreshBtn) {
+        refreshBtn.addEventListener('click', async () => {
+          await loadAlertHistory();
+          await loadAlertStats();
+          showToast('已刷新', 'success');
+        });
+      }
+    }
+    
+    // 发动机状态文本
+    function getEngineText(obd) {
+      if (!obd) return '--';
+      return obd.engineOn ? '运行中' : '已熄火';
+    }
+    function getEngineColor(obd) {
+      if (!obd) return 'text-gray-400';
+      return obd.engineOn ? 'text-green-600' : 'text-gray-600';
+    }
+    
+    // 里程文本
+    function getMileageText(obd) {
+      if (!obd || obd.currentMileage === null || obd.currentMileage === undefined) return '-- km';
+      return `${obd.currentMileage} km`;
+    }
+    
+    // 油量文本
+    function getFuelText(obd) {
+      if (!obd) return '-- L (--)';
+      const fuelLiters = obd.oilLiters != null ? obd.oilLiters : 0;
+      const fuelPercent = obd.oilPercent != null ? obd.oilPercent : 0;
+      return `${fuelLiters}L (${fuelPercent}%)`;
+    }
+    function getFuelColor(obd) {
+      if (!obd) return 'text-gray-400';
+      const fuelPercent = obd.oilPercent != null ? obd.oilPercent : 0;
+      return fuelPercent < 20 ? 'text-red-600' : 'text-gray-800';
+    }
+    
+    // 温度文本
+    function getTempText(obd) {
+      if (!obd || obd.outsideTemp === null || obd.outsideTemp === undefined) return '-- ℃';
+      return `${obd.outsideTemp} ℃`;
+    }
+    
+    // 设防文本
+    function getDefenceText(obd) {
+      if (!obd) return '--';
+      return obd.isDefence ? '已设防' : '未设防';
+    }
+    function getDefenceColor(obd) {
+      if (!obd) return 'text-gray-400';
+      return obd.isDefence ? 'text-green-600' : 'text-orange-600';
+    }
+    
+    // OBD 在线文本
+    function getOnlineText(obd) {
+      if (!obd) return '--';
+      return obd.isOnline ? '在线' : '离线';
+    }
+    function getOnlineColor(obd) {
+      if (!obd) return 'text-gray-400';
+      return obd.isOnline ? 'text-green-600' : 'text-red-600';
+    }
+    
+    // 车门状态文本
+    function getDoorsText(lastStatus) {
+      if (!lastStatus || !lastStatus.obd || !lastStatus.carInfo) return '--';
+      const openDoors = lastStatus.obd.doors.filter(d => d.open);
+      if (openDoors.length === 0) return '全部关闭';
+      return openDoors.map(d => d.label).join('、') + '未关';
+    }
+    function getDoorsColor(lastStatus) {
+      if (!lastStatus || !lastStatus.obd || !lastStatus.carInfo) return 'text-gray-400';
+      const openDoors = lastStatus.obd.doors.filter(d => d.open);
+      return openDoors.length === 0 ? 'text-green-600' : 'text-red-600';
+    }
+    
+    // 车窗状态文本
+    function getWindowsText(obd) {
+      if (!obd) return '--';
+      const openWindows = obd.windows.filter(w => w.open);
+      if (openWindows.length === 0) return '全部关闭';
+      return openWindows.map(w => w.label).join('、') + '未关';
+    }
+    function getWindowsColor(obd) {
+      if (!obd) return 'text-gray-400';
+      const openWindows = obd.windows.filter(w => w.open);
+      return openWindows.length === 0 ? 'text-green-600' : 'text-red-600';
+    }
+    
+    // 胎压文本
+    function getTireText(pressure) {
+      if (pressure === null || pressure === undefined) return '-- bar';
+      return `${pressure.toFixed(2)} bar`;
     }
 
     // 加载发帖日志
@@ -1734,6 +2950,371 @@
         }
       } catch (e) {
         container.innerHTML = '<p class="text-red-500">加载异常：' + e.message + '</p>';
+      }
+    }
+
+    // ========== AutoJS 配置功能 ==========
+
+    function renderAutoJsTab() {
+      const container = document.getElementById('main-content-area');
+      
+      let html = '<div class="space-y-6">';
+      
+      // AutoJS API 服务配置
+      html += '<div class="bg-white rounded-lg shadow-sm border">';
+      html += '<div class="p-6">';
+      html += '<div class="mb-6">';
+      html += '<h2 class="text-lg font-semibold text-gray-800 mb-2">🤖 AutoJS API 服务配置</h2>';
+      html += '<p class="text-sm text-gray-600">配置 AutoJS API 服务地址和脚本信息，用于远程执行发帖脚本</p>';
+      html += '</div>';
+      
+      html += '<form id="autojs-form" class="space-y-4">';
+      
+      // 启用状态
+      html += '<div>';
+      html += '<label class="flex items-center gap-2 mb-2">';
+      html += '<input type="checkbox" id="autojs-enabled" class="w-4 h-4 text-blue-600 rounded">';
+      html += '<span class="text-sm font-medium text-gray-700">启用 AutoJS API 远程发帖</span>';
+      html += '</label>';
+      html += '<p class="text-xs text-gray-500 ml-6">启用后，手工发帖将通过 AutoJS API 远程执行脚本</p>';
+      html += '</div>';
+      
+      // 服务器地址
+      html += '<div>';
+      html += '<label for="autojs-base-url" class="block text-sm font-medium text-gray-700 mb-1">';
+      html += 'AutoJS API 服务器地址 <span class="text-red-500">*</span>';
+      html += '</label>';
+      html += '<input type="text" id="autojs-base-url" name="baseUrl" placeholder="例如：http://192.168.50.149:8899" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">';
+      html += '<p class="text-xs text-gray-500 mt-1">AutoJS API 服务的完整 URL 地址</p>';
+      html += '</div>';
+      
+      // API Token 提示
+      html += '<div class="p-4 bg-blue-50 border border-blue-200 rounded-md">';
+      html += '<div class="flex items-start gap-3">';
+      html += '<svg class="w-5 h-5 text-blue-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">';
+      html += '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>';
+      html += '</svg>';
+      html += '<div>';
+      html += '<h4 class="text-sm font-medium text-blue-800 mb-1">API Token 说明</h4>';
+      html += '<p class="text-xs text-blue-700">AutoJS API 使用本服务生成的<strong>发帖 API Token</strong>进行认证。请确保已在"🔑 Token 设置"中生成 Token。</p>';
+      html += '</div>';
+      html += '</div>';
+      html += '</div>';
+      
+      // 脚本名称
+      html += '<div>';
+      html += '<label for="autojs-post-script" class="block text-sm font-medium text-gray-700 mb-1">发帖脚本名称</label>';
+      html += '<input type="text" id="autojs-post-script" name="postScript" value="audi_post.js" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">';
+      html += '<p class="text-xs text-gray-500 mt-1">相对于 AutoJS 脚本目录的文件名，默认：audi_post.js</p>';
+      html += '</div>';
+      
+      // 操作按钮
+      html += '<div class="flex gap-3 pt-4 border-t">';
+      html += '<button type="submit" class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">保存配置</button>';
+      html += '<button type="button" id="autojs-test-btn" class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors">测试连接</button>';
+      html += '</div>';
+      
+      html += '</form>';
+      html += '</div>';
+      
+      // 使用说明
+      html += '<div class="px-6 py-4 bg-gray-50 border-t">';
+      html += '<h3 class="text-sm font-semibold text-gray-700 mb-2">📖 使用说明</h3>';
+      html += '<ul class="text-sm text-gray-600 space-y-1 list-disc list-inside">';
+      html += '<li>启用后，点击"立即发帖"按钮会调用 AutoJS API 执行脚本</li>';
+      html += '<li>脚本会在手机上运行，自动完成发帖流程</li>';
+      html += '<li>发帖成功后，脚本会回调本服务更新日志状态</li>';
+      html += '<li>如果脚本执行异常未回调，30 分钟后日志会自动标记为失败</li>';
+      html += '</ul>';
+      html += '</div>';
+      html += '</div>';
+      
+      // 脚本列表管理
+      html += '<div class="bg-white rounded-lg shadow-sm border">';
+      html += '<div class="p-6">';
+      html += '<div class="flex items-center justify-between mb-4">';
+      html += '<div>';
+      html += '<h2 class="text-lg font-semibold text-gray-800">📜 脚本列表</h2>';
+      html += '<p class="text-sm text-gray-600">查看和管理 AutoJS 服务器上的所有脚本</p>';
+      html += '</div>';
+      html += '<button type="button" id="autojs-refresh-scripts-btn" class="px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors flex items-center gap-2">';
+      html += '<svg id="autojs-refresh-icon" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">';
+      html += '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>';
+      html += '</svg>';
+      html += '刷新列表';
+      html += '</button>';
+      html += '</div>';
+      
+      // 加载状态
+      html += '<div id="autojs-scripts-loading" class="hidden text-center py-8">';
+      html += '<svg class="animate-spin mx-auto h-8 w-8 text-blue-600" fill="none" viewBox="0 0 24 24">';
+      html += '<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>';
+      html += '<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>';
+      html += '</svg>';
+      html += '<p class="text-sm text-gray-500 mt-2">正在加载脚本列表...</p>';
+      html += '</div>';
+      
+      // 脚本列表
+      html += '<div id="autojs-scripts-container" class="space-y-2">';
+      html += '<p class="text-gray-500 text-sm">点击"刷新列表"加载脚本</p>';
+      html += '</div>';
+      
+      // 空状态提示
+      html += '<div id="autojs-scripts-empty" class="hidden text-center py-8">';
+      html += '<svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">';
+      html += '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>';
+      html += '</svg>';
+      html += '<p class="text-sm text-gray-600 mt-2">暂无脚本</p>';
+      html += '</div>';
+      
+      // 错误状态
+      html += '<div id="autojs-scripts-error" class="hidden text-center py-8">';
+      html += '<svg class="mx-auto h-12 w-12 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">';
+      html += '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>';
+      html += '</svg>';
+      html += '<p id="autojs-scripts-error-msg" class="text-sm text-red-600 mt-2"></p>';
+      html += '<button type="button" id="autojs-retry-scripts-btn" class="mt-3 px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors">重试</button>';
+      html += '</div>';
+      html += '</div>';
+      html += '</div>';
+      
+      html += '</div>';
+      container.innerHTML = html;
+      
+      // 加载配置
+      loadAutoJsConfig();
+      
+      // 绑定事件
+      const form = document.getElementById('autojs-form');
+      if (form) {
+        form.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          await saveAutoJsConfig();
+        });
+      }
+      
+      const testBtn = document.getElementById('autojs-test-btn');
+      if (testBtn) {
+        testBtn.addEventListener('click', testAutoJsConnection);
+      }
+      
+      const refreshBtn = document.getElementById('autojs-refresh-scripts-btn');
+      if (refreshBtn) {
+        refreshBtn.addEventListener('click', loadAutoJsScripts);
+      }
+      
+      const retryBtn = document.getElementById('autojs-retry-scripts-btn');
+      if (retryBtn) {
+        retryBtn.addEventListener('click', loadAutoJsScripts);
+      }
+    }
+
+    // 加载 AutoJS 配置
+    async function loadAutoJsConfig() {
+      try {
+        const resp = await fetch('/api/posts/autojs/config');
+        const result = await resp.json();
+        
+        if (result.success) {
+          const enabledEl = document.getElementById('autojs-enabled');
+          const baseUrlEl = document.getElementById('autojs-base-url');
+          const postScriptEl = document.getElementById('autojs-post-script');
+          
+          if (enabledEl) enabledEl.checked = result.data.enabled;
+          if (baseUrlEl) baseUrlEl.value = result.data.baseUrl || '';
+          if (postScriptEl) postScriptEl.value = result.data.postScript || 'audi_post.js';
+        } else {
+          showToast('加载 AutoJS 配置失败：' + result.error, 'error');
+        }
+      } catch (error) {
+        showToast('加载 AutoJS 配置失败：' + error.message, 'error');
+      }
+    }
+
+    // 保存 AutoJS 配置
+    async function saveAutoJsConfig() {
+      const enabled = document.getElementById('autojs-enabled')?.checked || false;
+      const baseUrl = document.getElementById('autojs-base-url')?.value.trim() || '';
+      const postScript = document.getElementById('autojs-post-script')?.value.trim() || 'audi_post.js';
+
+      if (enabled && !baseUrl) {
+        showToast('启用 AutoJS API 时必须提供服务器地址', 'error');
+        return false;
+      }
+
+      try {
+        const resp = await fetch('/api/posts/autojs/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled, baseUrl, postScript }),
+        });
+
+        const result = await resp.json();
+        
+        if (result.success) {
+          showToast('AutoJS 配置已保存', 'success');
+          await loadAutoJsConfig();
+          return true;
+        } else {
+          showToast('保存失败：' + result.error, 'error');
+          return false;
+        }
+      } catch (error) {
+        showToast('保存失败：' + error.message, 'error');
+        return false;
+      }
+    }
+
+    // 测试 AutoJS 连接
+    async function testAutoJsConnection() {
+      const baseUrl = document.getElementById('autojs-base-url')?.value.trim();
+      const btn = document.getElementById('autojs-test-btn');
+
+      if (!baseUrl) {
+        showToast('请先填写服务器地址', 'error');
+        return;
+      }
+
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = '测试中...';
+      }
+
+      try {
+        const configResp = await fetch('/api/posts/autojs/config');
+        const configResult = await configResp.json();
+        
+        if (!configResult.data.apiTokenConfigured) {
+          showToast('请先在"🔑 Token 设置"中生成 API Token', 'error');
+          return;
+        }
+        
+        const resp = await fetch(baseUrl + '/api/health');
+
+        if (resp.ok) {
+          showToast('连接成功！AutoJS API 服务正常', 'success');
+        } else {
+          showToast('连接失败：' + resp.status + ' ' + resp.statusText, 'error');
+        }
+      } catch (error) {
+        showToast('连接失败：' + error.message, 'error');
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = '测试连接';
+        }
+      }
+    }
+
+    // 加载 AutoJS 脚本列表
+    async function loadAutoJsScripts() {
+      const loadingEl = document.getElementById('autojs-scripts-loading');
+      const containerEl = document.getElementById('autojs-scripts-container');
+      const emptyEl = document.getElementById('autojs-scripts-empty');
+      const errorEl = document.getElementById('autojs-scripts-error');
+      const errorMsgEl = document.getElementById('autojs-scripts-error-msg');
+      const refreshIcon = document.getElementById('autojs-refresh-icon');
+
+      if (loadingEl) loadingEl.classList.remove('hidden');
+      if (containerEl) containerEl.innerHTML = '';
+      if (emptyEl) emptyEl.classList.add('hidden');
+      if (errorEl) errorEl.classList.add('hidden');
+
+      if (refreshIcon) {
+        refreshIcon.classList.add('animate-spin');
+      }
+
+      try {
+        const resp = await fetch('/api/posts/autojs/scripts');
+        const result = await resp.json();
+
+        if (result.success && result.data?.scripts) {
+          const scripts = result.data.scripts;
+
+          if (scripts.length === 0) {
+            if (emptyEl) emptyEl.classList.remove('hidden');
+          } else {
+            if (containerEl) {
+              containerEl.innerHTML = scripts.map(script => `
+                <div class="flex items-center justify-between p-3 bg-gray-50 rounded-md border border-gray-200 hover:border-blue-300 transition-colors">
+                  <div class="flex items-center gap-3">
+                    <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                    </svg>
+                    <span class="text-sm font-medium text-gray-700">${escapeHtml(script)}</span>
+                  </div>
+                  <button type="button" data-script="${escapeHtml(script)}" class="autojs-execute-script-btn px-3 py-1.5 bg-green-600 text-white text-xs rounded-md hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-1">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path>
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    立即执行
+                  </button>
+                </div>
+              `).join('');
+
+              containerEl.querySelectorAll('.autojs-execute-script-btn').forEach(btn => {
+                btn.addEventListener('click', handleAutoJsExecuteScript);
+              });
+            }
+          }
+        } else {
+          if (errorEl) {
+            errorEl.classList.remove('hidden');
+            if (errorMsgEl) {
+              errorMsgEl.textContent = result.error || '获取脚本列表失败';
+            }
+          }
+        }
+      } catch (error) {
+        if (errorEl) {
+          errorEl.classList.remove('hidden');
+          if (errorMsgEl) {
+            errorMsgEl.textContent = '加载失败：' + error.message;
+          }
+        }
+      } finally {
+        if (loadingEl) loadingEl.classList.add('hidden');
+        if (refreshIcon) {
+          refreshIcon.classList.remove('animate-spin');
+        }
+      }
+    }
+
+    // 执行 AutoJS 脚本
+    async function handleAutoJsExecuteScript(e) {
+      const btn = e.currentTarget;
+      const script = btn.getAttribute('data-script');
+      const originalText = btn.innerHTML;
+
+      btn.disabled = true;
+      btn.innerHTML = `
+        <svg class="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        执行中...
+      `;
+
+      try {
+        const resp = await fetch('/api/posts/autojs/execute', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ script, sync: false }),
+        });
+
+        const result = await resp.json();
+
+        if (result.success) {
+          showToast(`脚本 "${script}" 已开始执行`, 'success');
+        } else {
+          showToast(`执行失败：${result.error || result.message}`, 'error');
+        }
+      } catch (error) {
+        showToast(`执行失败：${error.message}`, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
       }
     }
 
