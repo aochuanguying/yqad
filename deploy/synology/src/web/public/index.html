@@ -195,7 +195,7 @@
       'ai.requestTimeout': 'AI 请求默认超时时间，单位毫秒。单个模型可覆盖此值',
       'ai.providers': '配置多个 AI 服务商，支持故障自动切换',
       'ai.fallback.enabled': '是否启用降级机制，当主模型失败时自动切换备用模型',
-      'ai.fallback.mode': '降级模式：fast 快速失败，robust 稳健重试（评论�� fast，发帖用 robust）',
+      'ai.fallback.mode': '降级模式：fast 快速失败，robust 稳健重试（评论用 fast，发帖用 robust）',
       'ai.fallback.maxRetries': 'robust 模式下的最大重试次数',
       'ai.fallback.baseDelay': '重试基础等待时间，单位毫秒',
       'ai.fallback.maxDelay': '重试最大等待时间，单位毫秒',
@@ -250,7 +250,7 @@
       'materials.basePath': '素材库根路径',
       'materials.rawPath': '原始素材（待处理）存储路径',
       'materials.processedPath': '处理后素材（可用）存储路径',
-      'materials.processing.enabled': '是否启用素材自动处理（格式转换、���水印等）',
+      'materials.processing.enabled': '是否启用素材自动处理（格式转换、去水印等）',
       'materials.processing.outputFormat': '输出图片格式：jpeg 或 png',
       'materials.processing.jpegQuality': 'JPEG 压缩质量 (1-100)',
       'materials.processing.enableVision': '是否启用视觉分析（识别图片内容）',
@@ -1029,7 +1029,7 @@
           html += '<div class="flex items-start justify-between mb-2">';
           html += '<div class="flex items-center gap-2">';
           html += `<span class="px-2 py-1 text-xs rounded ${isManual ? 'bg-indigo-100 text-indigo-700' : 'bg-blue-100 text-blue-700'}">${isManual ? '手动' : '自动'}</span>`;
-          html += `<span class="px-2 py-1 text-xs rounded ${isTopic ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-700'}">${isTopic ? '��题发帖' : '自由发帖'}</span>`;
+          html += `<span class="px-2 py-1 text-xs rounded ${isTopic ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-700'}">${isTopic ? '📝主题发帖' : '自由发帖'}</span>`;
           if (log.topicName) {
             html += `<span class="px-2 py-1 text-xs rounded bg-green-100 text-green-700">${escapeHtml(log.topicName)}</span>`;
           }
