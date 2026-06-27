@@ -56,6 +56,7 @@ async function mixedAuthMiddleware(req: any, res: any, next: any) {
 /**
  * POST /api/posts/mobile/sms
  * 添加短信记录（混合认证：Session 或 API Token）
+ * 注意：此接口仅用于外部设备（AutoJS）上报接收到的短信，不用于主动发送短信
  */
 router.post('/sms', mixedAuthMiddleware, async (req: Request, res: Response) => {
   try {
@@ -84,6 +85,64 @@ router.post('/sms', mixedAuthMiddleware, async (req: Request, res: Response) => 
   } catch (error: any) {
     logger.error(`添加短信记录失败：${error.message}`);
     res.status(500).json({ error: '服务器内部错误', code: 'INTERNAL_ERROR' });
+  }
+});
+
+/**
+ * POST /api/posts/mobile/send-sms
+ * 主动发送短信（混合认证：Session 或 API Token）
+ * 调用 Android Telecom API 发送短信，不记录到短信记录表
+ */
+router.post('/send-sms', mixedAuthMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { phone_number, content } = req.body;
+
+    // 验证必填字段
+    if (!phone_number || !content) {
+      return res.status(400).json({ 
+        error: '缺少必填字段', 
+        code: 'MISSING_FIELDS',
+        missing: [!phone_number ? 'phone_number' : null, !content ? 'content' : null].filter(Boolean)
+      });
+    }
+
+    // 调用 Android Telecom API 发送短信
+    const { telecomClient } = await import('../../services/telecom-client');
+    const { telecomApiStorage } = await import('../../storage/mysql/telecom-api-storage');
+    const { mobileServiceConfigStorage } = await import('../../storage/mysql/mobile-service-config-storage');
+    
+    const telecomConfig = await telecomApiStorage.getConfig();
+    const serviceConfig = await mobileServiceConfigStorage.getConfig();
+    
+    if (telecomConfig && telecomConfig.alertPhone && serviceConfig && serviceConfig.apiUrl && serviceConfig.apiToken) {
+      telecomClient.init(telecomConfig, serviceConfig);
+      
+      // 发送短信
+      const smsResult = await telecomClient.sendSms(phone_number, content);
+      
+      if (smsResult.success) {
+        logger.info(`短信发送成功：${phone_number}`);
+        res.json({ 
+          success: true, 
+          message: '短信发送成功'
+        });
+      } else {
+        logger.warn(`短信发送失败：${smsResult.error}`);
+        res.status(500).json({ 
+          success: false,
+          error: '短信发送失败：' + (smsResult.error || '未知错误')
+        });
+      }
+    } else {
+      logger.warn('Telecom API 未配置');
+      res.status(503).json({ 
+        success: false,
+        error: 'Telecom API 未配置'
+      });
+    }
+  } catch (telecomError: any) {
+    logger.error(`调用 Telecom API 失败：${telecomError.message}`);
+    res.status(500).json({ error: '调用 Telecom API 失败：' + telecomError.message, code: 'INTERNAL_ERROR' });
   }
 });
 
@@ -191,11 +250,12 @@ router.get('/missed-calls', mixedAuthMiddleware, async (req: Request, res: Respo
 
 /**
  * POST /api/posts/mobile/call
- * 拨打电话并记录（混合认证：Session 或 API Token）
+ * 拨打电话（混合认证：Session 或 API Token）
+ * 注意：主动外呼不记录到未接电话表，未接电话表只记录外部打进来的未接来电
  */
 router.post('/call', mixedAuthMiddleware, async (req: Request, res: Response) => {
   try {
-    const { phone_number, received_at } = req.body;
+    const { phone_number } = req.body;
 
     // 验证必填字段
     if (!phone_number) {
@@ -206,66 +266,43 @@ router.post('/call', mixedAuthMiddleware, async (req: Request, res: Response) =>
       });
     }
 
-    // 1. 记录通话记录
-    const record: MissedCallRecord = {
-      phoneNumber: phone_number,
-      receivedAt: received_at ? new Date(received_at) : new Date(),
-    };
-
-    const id = await missedCallStorage.addMissedCall(record);
-    logger.info(`通话记录已添加，ID: ${id}`);
-
-    // 2. 调用 Android Telecom API 拨打电话
-    try {
-      const { telecomClient } = await import('../../services/telecom-client');
-      const { telecomApiStorage } = await import('../../storage/mysql/telecom-api-storage');
-      const { mobileServiceConfigStorage } = await import('../../storage/mysql/mobile-service-config-storage');
+    // 调用 Android Telecom API 拨打电话
+    const { telecomClient } = await import('../../services/telecom-client');
+    const { telecomApiStorage } = await import('../../storage/mysql/telecom-api-storage');
+    const { mobileServiceConfigStorage } = await import('../../storage/mysql/mobile-service-config-storage');
+    
+    const telecomConfig = await telecomApiStorage.getConfig();
+    const serviceConfig = await mobileServiceConfigStorage.getConfig();
+    
+    if (telecomConfig && telecomConfig.alertPhone && serviceConfig && serviceConfig.apiUrl && serviceConfig.apiToken) {
+      telecomClient.init(telecomConfig, serviceConfig);
       
-      const telecomConfig = await telecomApiStorage.getConfig();
-      const serviceConfig = await mobileServiceConfigStorage.getConfig();
+      // 拨打电话
+      const callResult = await telecomClient.makePhoneCall(phone_number);
       
-      if (telecomConfig && telecomConfig.enabled && serviceConfig && serviceConfig.apiUrl && serviceConfig.apiToken) {
-        telecomClient.init(telecomConfig, serviceConfig);
-        
-        // 拨打电话
-        const callResult = await telecomClient.makePhoneCall(phone_number);
-        
-        if (callResult.success) {
-          logger.info(`电话拨打成功：${phone_number}`);
-          res.json({ 
-            success: true, 
-            data: { id },
-            message: '电话拨打成功'
-          });
-        } else {
-          logger.warn(`电话拨打失败：${callResult.error}`);
-          // 即使拨打电话失败，也返回成功（因为记录已保存）
-          res.json({ 
-            success: true, 
-            data: { id },
-            message: '记录已保存，但电话拨打失败：' + (callResult.error || '未知错误')
-          });
-        }
-      } else {
-        logger.warn('Telecom API 未配置，仅保存通话记录');
+      if (callResult.success) {
+        logger.info(`电话拨打成功：${phone_number}`);
         res.json({ 
           success: true, 
-          data: { id },
-          message: '通话记录已保存（Telecom API 未配置）'
+          message: '电话拨打成功'
+        });
+      } else {
+        logger.warn(`电话拨打失败：${callResult.error}`);
+        res.status(500).json({ 
+          success: false,
+          error: '电话拨打失败：' + (callResult.error || '未知错误')
         });
       }
-    } catch (telecomError: any) {
-      logger.warn(`调用 Telecom API 失败：${telecomError.message}`);
-      // Telecom API 调用失败不影响主流程，仅记录日志
-      res.json({ 
-        success: true, 
-        data: { id },
-        message: '通话记录已保存，但 Telecom API 调用失败'
+    } else {
+      logger.warn('Telecom API 未配置');
+      res.status(503).json({ 
+        success: false,
+        error: 'Telecom API 未配置'
       });
     }
-  } catch (error: any) {
-    logger.error(`添加通话记录失败：${error.message}`);
-    res.status(500).json({ error: '服务器内部错误', code: 'INTERNAL_ERROR' });
+  } catch (telecomError: any) {
+    logger.error(`调用 Telecom API 失败：${telecomError.message}`);
+    res.status(500).json({ error: '调用 Telecom API 失败：' + telecomError.message, code: 'INTERNAL_ERROR' });
   }
 });
 

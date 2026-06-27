@@ -6137,15 +6137,14 @@
       }
       
       try {
-        const resp = await fetch('/api/posts/mobile/sms', {
+        const resp = await fetch('/api/posts/mobile/send-sms', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
             phone_number: phoneNumber,
-            content: content,
-            received_at: new Date().toISOString()
+            content: content
           })
         });
         
@@ -6154,7 +6153,7 @@
         if (result.success) {
           showToast('✅ 短信发送成功', 'success');
           closeSendSmsModal();
-          loadSmsList(); // 刷新列表
+          // 注意：主动发送的短信不记录到短信记录表，所以不刷新列表
         } else {
           showToast('❌ 发送失败：' + (result.error || '未知错误'), 'error');
         }

@@ -257,7 +257,8 @@
       }
 
       try {
-        const response = await fetch('/api/posts/mobile/sms', {
+        // 主动发送短信，使用 send-sms 接口
+        const response = await fetch('/api/posts/mobile/send-sms', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -265,27 +266,28 @@
           },
           body: JSON.stringify({
             phone_number: phoneNumber,
-            content: content,
-            received_at: receivedAt || new Date().toISOString()
+            content: content
           })
         });
 
         if (!response.ok) {
           const error = await response.json();
-          throw new Error(error.error || '添加失败');
+          throw new Error(error.error || '发送失败');
         }
 
         const result = await response.json();
         if (result.success) {
-          showToast('添加成功');
+          showToast('短信发送成功');
           document.getElementById('sms-phone').value = '';
           document.getElementById('sms-content').value = '';
           document.getElementById('sms-time').value = '';
-          loadSmsList();
+          // 注意：主动发送的短信不记录到短信记录表
+        } else {
+          throw new Error(result.error || '发送失败');
         }
       } catch (error) {
-        console.error('添加短信失败:', error);
-        showToast(error.message || '添加失败', 'error');
+        console.error('发送短信失败:', error);
+        showToast(error.message || '发送失败', 'error');
       }
     });
 

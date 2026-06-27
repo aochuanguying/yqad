@@ -64,7 +64,8 @@ class AlertService {
       const telecomConfig = await telecomApiStorage.getConfig();
       const serviceConfig = await mobileServiceConfigStorage.getConfig();
       
-      if (telecomConfig && telecomConfig.enabled && serviceConfig && serviceConfig.apiUrl && serviceConfig.apiToken) {
+      // 检查配置是否完整（mobile_service_config 表没有 enabled 字段）
+      if (telecomConfig && telecomConfig.alertPhone && serviceConfig && serviceConfig.apiUrl && serviceConfig.apiToken) {
         this.telecomConfig = telecomConfig;
         this.serviceConfig = serviceConfig;
         telecomClient.init(telecomConfig, serviceConfig);
@@ -73,7 +74,7 @@ class AlertService {
           alertPhone: telecomConfig.alertPhone 
         });
       } else {
-        logger.warn('告警服务未启用或配置不完整');
+        logger.warn('告警服务未配置或配置不完整');
       }
     } catch (error) {
       logger.error('初始化告警服务失败:', error instanceof Error ? error.message : String(error));
@@ -91,7 +92,8 @@ class AlertService {
       const telecomConfig = await telecomApiStorage.getConfig();
       const serviceConfig = await mobileServiceConfigStorage.getConfig();
       
-      if (telecomConfig && telecomConfig.enabled && serviceConfig && serviceConfig.apiUrl && serviceConfig.apiToken) {
+      // 检查配置是否完整（mobile_service_config 表没有 enabled 字段）
+      if (telecomConfig && telecomConfig.alertPhone && serviceConfig && serviceConfig.apiUrl && serviceConfig.apiToken) {
         const oldServiceConfig = this.serviceConfig;
         this.telecomConfig = telecomConfig;
         this.serviceConfig = serviceConfig;
@@ -104,7 +106,7 @@ class AlertService {
       } else {
         this.telecomConfig = null;
         this.serviceConfig = null;
-        logger.warn('告警服务配置已禁用或不完整');
+        logger.warn('告警服务配置未配置或不完整');
       }
     } catch (error) {
       logger.error('重新加载告警服务配置失败:', error instanceof Error ? error.message : String(error));
