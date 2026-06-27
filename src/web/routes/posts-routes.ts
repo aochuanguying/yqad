@@ -676,11 +676,12 @@ router.post('/execute', async (req, res) => {
     isPostTaskRunning = true;
     
     try {
-      // 加载配置
-      const config = loadConfig();
+      // 从数据库读取 AutoJS API 配置
+      const { autojsApiStorage } = await import('../../storage/mysql/autojs-api-storage');
+      const autojsConfig = await autojsApiStorage.getConfig();
       
       // 检查 AutoJS API 是否启用
-      if (!config.autojsApi?.enabled) {
+      if (!autojsConfig?.enabled) {
         logger.warn('AutoJS API 未启用，无法执行远程脚本');
         return res.status(503).json({
           success: false,
@@ -689,23 +690,20 @@ router.post('/execute', async (req, res) => {
         });
       }
       
-      // 获取本服务的 API Token
-      const { readApiTokenAsync } = await import('../../utils/api-token');
-      const apiTokenConfig = await readApiTokenAsync();
-      
-      if (!apiTokenConfig) {
-        logger.error('本服务未配置 API Token，无法调用 AutoJS API');
+      // 检查 AutoJS API Token
+      if (!autojsConfig.apiToken) {
+        logger.error('数据库中未配置 AutoJS API Token');
         return res.status(503).json({
           success: false,
-          error: '请先在"🔑 API Token"页面生成 API Token',
+          error: '请先在配置页面设置 AutoJS API Token',
           code: 'API_TOKEN_NOT_CONFIGURED',
         });
       }
       
-      // 创建 AutoJS API 客户端（使用本服务的 API Token）
+      // 创建 AutoJS API 客户端（使用数据库中的配置）
       const autojsClient = createAutoJsApiClient({
-        baseUrl: config.autojsApi.baseUrl,
-        apiToken: apiTokenConfig.token,
+        baseUrl: autojsConfig.baseUrl,
+        apiToken: autojsConfig.apiToken,
       });
       
       // 健康检查
@@ -721,7 +719,7 @@ router.post('/execute', async (req, res) => {
       }
       
       // 执行远程脚本（异步方式）
-      const scriptName = config.autojsApi.postScript || 'audi_post.js';
+      const scriptName = autojsConfig.postScript || 'audi_post.js';
       logger.info(`执行远程脚本：${scriptName}`);
       
       const result = await autojsClient.executeScript(scriptName, false);
