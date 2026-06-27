@@ -109,7 +109,7 @@ describe('图片去水印服务', () => {
 
   describe('集成测试', () => {
     it('应该完整测试自由发帖流程中的去水印集成', () => {
-      // 这个测试需要完��的系统集成
+      // 这个测试需要完整的系统集成
       // 包括 internet-reference-service 和 auto-post
       console.log('集成测试需要完整的系统环境');
     });

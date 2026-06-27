@@ -400,7 +400,7 @@ export async function updateConfigGroup(
       await contentQualityScoringStorage.saveConfig(newValues as any);
       // 不更新 fullConfig[group]，保持配置文件干净
     } 
-    // 特殊处理 postingIntervalControl 配置：只更新��据库，不写回配置文件
+    // 特殊处理 postingIntervalControl 配置：只更新数据库，不写回配置文件
     else if (group === 'postingIntervalControl') {
       await postingIntervalControlStorage.saveConfig(newValues as any);
       // 不更新 fullConfig[group]，保持配置文件干净

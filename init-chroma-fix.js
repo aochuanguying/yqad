@@ -115,7 +115,7 @@ async function initChromaDB() {
   console.log('   - prod:content_dedup（内容去重）');
   console.log('   - prod:topic_recommend（主题推荐）');
   console.log('   - prod:sensitive_variants（敏感变体）');
-  console.log('   - prod:comment_sentiment（评论情感���');
+  console.log('   - prod:comment_sentiment（评论情感）');
   console.log('');
 }
 

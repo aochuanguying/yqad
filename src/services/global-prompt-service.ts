@@ -90,7 +90,7 @@ export async function load(): Promise<GlobalPrompt | null> {
 }
 
 /**
- * 保存全局人设配置（异步，到 MySQL），验��通过后写入
+ * 保存全局人设配置（异步，到 MySQL），验证通过后写入
  */
 export async function save(prompt: GlobalPrompt): Promise<SaveResult> {
   const result = validate(prompt);

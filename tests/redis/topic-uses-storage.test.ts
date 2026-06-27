@@ -29,7 +29,7 @@ describe('TopicUsesStorage', () => {
       expect(uses).toBe(5);
     });
 
-    it('应该返回 0 ���果主题不存在', async () => {
+    it('应该返回 0 如果主题不存在', async () => {
       const uses = await topicUsesStorage.getUses('non-existent-topic');
       expect(uses).toBe(0);
     });

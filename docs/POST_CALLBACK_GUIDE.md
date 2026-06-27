@@ -276,7 +276,7 @@ async function batchGenerateAndPost(count = 3) {
     task = statusResponse.data;
   } while (task.status === 'pending' || task.status === 'processing');
   
-  // 3. ��每篇内容分别发布和回调
+  // 3. 对每篇内容分别发布和回调
   for (const post of task.results) {
     const { taskId: postTaskId, title, content, images } = post;
     

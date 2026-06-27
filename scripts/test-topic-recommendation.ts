@@ -109,7 +109,7 @@ async function testTopicRecommendation() {
     }
     console.log();
 
-    // 4. 不同方向的���荐
+    // 4. 不同方向的推荐
     console.log('4️⃣  不同方向的推荐...');
     const新能源 Query = '新能源汽车购买建议';
     const新能源 Embedding = await embeddingVectorizer.generateEmbedding(新能源 Query);

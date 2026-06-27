@@ -1288,7 +1288,7 @@ export class AutoPostService {
               keyPoints: [subDirection?.direction || topic.direction],
               emotion: 'positive',
             });
-            logger.info(`【多样化】使��� AI 生成标题："${finalTitle}"`);
+            logger.info(`【多样化】使用 AI 生成标题："${finalTitle}"`);
           } catch (err) {
             logger.warn(`生成多样化标题失败，使用原标题`);
           }

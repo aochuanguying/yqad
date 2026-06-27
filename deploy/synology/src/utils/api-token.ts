@@ -34,7 +34,7 @@ export interface TokenStatus {
 /**
  * 生成新的 API Token
  * 
- * 使用加密安全的��机数生成器生成 32 字节（256 位）的随机数，
+ * 使用加密安全的随机数生成器生成 32 字节（256 位）的随机数，
  * 转换为 hex 编码（64 字符），并添加前缀 "api_token_"
  * 
  * @returns 生成的 API Token

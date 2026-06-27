@@ -531,4 +531,4 @@ rm scripts/migrate-chromadb-collections.ts
 
 **复盘日期**: 2026-06-22  
 **复盘负责人**: 系统架构组  
-**文档版��**: v1.0
+**文档版本**: v1.0

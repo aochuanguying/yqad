@@ -104,7 +104,7 @@ export class TaskCacheStorage {
         const client = getRedisClient();
         const key = formatKey(`task:${taskId}`);
         await client.hSet(key, 'status', status);
-        logger.debug(`更新任务 ${taskId} 状态���${status}`);
+        logger.debug(`更新任务 ${taskId} 状态为${status}`);
         return;
       }
     } catch (error) {

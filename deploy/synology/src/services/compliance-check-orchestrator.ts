@@ -30,7 +30,7 @@ export interface ComplianceCheckInput {
 }
 
 /**
- * 合规���检查结果
+ * 合规检查结果
  */
 export interface ComplianceCheckResult {
   passed: boolean;

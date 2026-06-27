@@ -673,7 +673,7 @@ async function migrateMaterials(mysqlPool: mysql.Pool, chroma: ChromaClient) {
 
 ---
 
-## 🎯 五��实施建议
+## 🎯 五项实施建议
 
 ### 5.1 短期（1-2 周）
 

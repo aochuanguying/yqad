@@ -434,7 +434,7 @@ function getPrefixedCollectionName(baseName: string): string {
 // 导出单例
 export const commentSentimentStorage = new CommentSentimentStorage();
 
-// 导出便��函数
+// 导出便捷函数
 export async function initCommentSentimentStorage(): Promise<void> {
   await commentSentimentStorage.initialize();
 }

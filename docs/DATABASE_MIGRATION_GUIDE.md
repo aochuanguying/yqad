@@ -245,7 +245,7 @@ CREATE TABLE post_history (
 
 ---
 
-#### 5. 待确认���帖
+#### 5. 待确认发帖
 
 **文件路径**: `./data/pending-posts.json`
 
@@ -426,7 +426,7 @@ CREATE TABLE global_prompts (
 **用途**: 发帖详细日志
 **数据量**: 较大
 **迁移方案**: 
-- **存储**: MySQL `post_logs` ��
+- **存储**: MySQL `post_logs` 表
 - **归档策略**: 按月分表
 
 **表结构**:
@@ -976,7 +976,7 @@ export const taskRepository = new TaskRepository();
 const taskStore = new Map<string, AsyncTask>();
 ```
 
-修改��：
+修改后：
 ```typescript
 import { taskRepository } from '../../database/repositories/task-repository';
 

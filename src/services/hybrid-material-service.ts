@@ -594,7 +594,7 @@ class HybridMaterialService {
         if (localCount === 0) {
           strategy = `混合模式：选择最贴合的${selected.length}个（全部网络素材）`;
         } else if (internetCount === 0) {
-          strategy = `混合模式：选��最贴合的${selected.length}个（全部本地素材）`;
+          strategy = `混合模式：选择最贴合的${selected.length}个（全部本地素材）`;
         } else {
           strategy = `混合模式：选择最贴合的${selected.length}个（本地${localCount}+网络${internetCount}）`;
         }
@@ -674,7 +674,7 @@ class HybridMaterialService {
         const stat = fs.statSync(material.path);
         const sizeKB = stat.size / 1024;
         
-        // 清晰度：文件越大通常���清晰（简化逻辑）
+        // 清晰度：文件越大通常越清晰（简化逻辑）
         score.clarity = Math.min(20, Math.floor(sizeKB / 500));
         
         // 新鲜度：文件越新越新鲜

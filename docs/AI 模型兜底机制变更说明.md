@@ -159,7 +159,7 @@ async function main(): Promise<void> {
 
 ### 2. 业务代码无需修改
 
-兜底机制对业务代码完全透明，`generateComment()` 和 `generatePost()` 会自动使��兜底机制：
+兜底机制对业务代码完全透明，`generateComment()` 和 `generatePost()` 会自动使用兜底机制：
 
 ```typescript
 // 回帖服务 - 自动使用快速模式（15 秒超时）

@@ -167,7 +167,7 @@ class MaterialVectorStorage {
           metadatas: batchMetadatas,
         });
 
-        logger.debug(`批量添加��材向量：${i + batchIds.length}/${ids.length}`);
+        logger.debug(`批量添加素材向量：${i + batchIds.length}/${ids.length}`);
       }
 
       logger.info(`批量添加 ${ids.length} 个素材向量成功`);
@@ -320,7 +320,7 @@ class MaterialVectorStorage {
 
       return null;
     } catch (error) {
-      logger.error(`根据文件��径搜索失败：${filePath}`, error);
+      logger.error(`根据文件路径搜索失败：${filePath}`, error);
       return null;
     }
   }

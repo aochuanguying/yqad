@@ -81,7 +81,7 @@ const newFunction = `async function runVisionIfEnabled(imagePath, forceEnabled) 
                     content: [
                         {
                             type: 'text',
-                            text: '请识别这张图片的主要内容，并严格输出 JSON（不要输出多余文字）。字段��tags(字符串数组，3-10 个)，intro(用于检索与发帖参考的中文介绍，80-150 字)。',
+                            text: '请识别这张图片的主要内容，并严格输出 JSON（不要输出多余文字）。字段：tags(字符串数组，3-10 个)，intro(用于检索与发帖参考的中文介绍，80-150 字)。',
                         },
                         { type: 'image_url', image_url: { url: \`data:\${mimeType};base64,\${base64}\` } },
                     ],
