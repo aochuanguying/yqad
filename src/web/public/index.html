@@ -5875,7 +5875,7 @@
       const container = document.getElementById('missed-calls-list-container');
       
       try {
-        const resp = await fetch('/api/posts/mobile/calls/missed?limit=50');
+        const resp = await fetch('/api/posts/mobile/missed-calls?limit=50');
         const result = await resp.json();
         
         if (result.success && result.data) {

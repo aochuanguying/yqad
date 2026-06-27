@@ -1,6 +1,5 @@
 import { Router, Request, Response } from 'express';
 import { getLogger } from '../../utils/logger';
-import { verifyApiToken } from '../../utils/api-token';
 import { mobileSmsStorage, MobileSmsRecord } from '../../storage/mysql/mobile-sms-storage';
 import { missedCallStorage, MissedCallRecord } from '../../storage/mysql/missed-call-storage';
 
@@ -8,27 +7,13 @@ const logger = getLogger('mobile-routes');
 
 const router = Router();
 
-/**
- * 简化的鉴权中间件（使用会话认证，已登录即可访问）
- */
-function simpleAuthMiddleware(req: any, res: any, next: any) {
-  // 检查是否有会话（已登录）
-  if (req.session && req.session.authenticated) {
-    logger.info('会话认证通过');
-    next();
-  } else {
-    logger.warn('未登录或会话过期');
-    res.status(401).json({ error: '未登录或会话过期', code: 'UNAUTHORIZED' });
-  }
-}
-
 // ==================== 手机短信 API ====================
 
 /**
  * POST /api/posts/mobile/sms
  * 添加短信记录
  */
-router.post('/sms', simpleAuthMiddleware, async (req: Request, res: Response) => {
+router.post('/sms', async (req: Request, res: Response) => {
   try {
     const { phone_number, content, received_at } = req.body;
 
@@ -62,7 +47,7 @@ router.post('/sms', simpleAuthMiddleware, async (req: Request, res: Response) =>
  * GET /api/posts/mobile/sms
  * 查询短信记录列表
  */
-router.get('/sms', simpleAuthMiddleware, async (req: Request, res: Response) => {
+router.get('/sms', async (req: Request, res: Response) => {
   try {
     const { phone_number, limit, offset } = req.query;
 
@@ -84,10 +69,10 @@ router.get('/sms', simpleAuthMiddleware, async (req: Request, res: Response) => 
 // ==================== 未接电话 API ====================
 
 /**
- * POST /api/posts/mobile/calls/missed
+ * POST /api/posts/mobile/missed-calls
  * 添加未接电话记录
  */
-router.post('/calls/missed', simpleAuthMiddleware, async (req: Request, res: Response) => {
+router.post('/missed-calls', async (req: Request, res: Response) => {
   try {
     const { phone_number, received_at } = req.body;
 
@@ -117,10 +102,10 @@ router.post('/calls/missed', simpleAuthMiddleware, async (req: Request, res: Res
 });
 
 /**
- * GET /api/posts/mobile/calls/missed
+ * GET /api/posts/mobile/missed-calls
  * 查询未接电话记录列表
  */
-router.get('/calls/missed', simpleAuthMiddleware, async (req: Request, res: Response) => {
+router.get('/missed-calls', async (req: Request, res: Response) => {
   try {
     const { phone_number, limit, offset } = req.query;
 
