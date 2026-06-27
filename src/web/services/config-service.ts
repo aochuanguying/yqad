@@ -348,14 +348,15 @@ export async function updateConfigGroup(
     // 保存旧配置用于回滚
     const oldGroupConfig = { ...fullConfig[group] };
 
-    // 特殊处理 vehicleMonitor 配置：如果更新了 token，同时更新文件
-    if (group === 'vehicleMonitor' && newValues.token) {
-      const { updateToken } = require('../../services/vehicle-monitor-service');
-      updateToken(newValues.token);
-      // 从 newValues 中移除 token，避免写入配置文件
-      const valuesToSave = { ...newValues };
-      delete valuesToSave.token;
-      fullConfig[group] = valuesToSave;
+    // 特殊处理 vehicleMonitor 配置：只更新数据库，不写回配置文件
+    if (group === 'vehicleMonitor') {
+      // 如果有 token，同时更新 Redis
+      if (newValues.token) {
+        const { updateToken } = require('../../services/vehicle-monitor-service');
+        updateToken(newValues.token);
+      }
+      await vehicleMonitorStorage.saveConfig(newValues as any);
+      // 不更新 fullConfig[group]，保持配置文件干净
     } 
     // 特殊处理 api 配置：只更新数据库，不写回配置文件
     else if (group === 'api') {
