@@ -66,17 +66,30 @@ export function createSessionMiddleware() {
         return function(opts) { return new RedisStore(opts); };
       `)();
       
-      const redisClient = getRedisClient();
+      // 获取 Redis 客户端（可能抛出异常）
+      let redisClient;
+      try {
+        redisClient = getRedisClient();
+      } catch (e) {
+        throw new Error('Redis 客户端未初始化：' + (e instanceof Error ? e.message : String(e)));
+      }
+      
+      logger.debug('Redis 客户端状态:', {
+        hasClient: !!redisClient,
+        clientType: typeof redisClient,
+      });
+      
       const store = createRedisStore({
         client: redisClient,
-        prefix: 'sess:',  // Session key 前缀
+        prefix: 'prod:sess:',  // Session key 前缀（使用 prod: 区分）
         ttl: authConfig?.sessionMaxAge ? Math.floor(authConfig.sessionMaxAge / 1000) : 86400, // 默认 24 小时
       });
       
       (sessionOptions as any).store = store;
       logger.info('✅ 生产环境 Session 已使用 Redis 存储');
     } catch (error) {
-      logger.error('⚠️  Redis Session 存储初始化失败，降级使用 MemoryStore:', error instanceof Error ? error.message : String(error));
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      logger.error('⚠️  Redis Session 存储初始化失败，降级使用 MemoryStore:', errorMsg);
     }
   } else {
     logger.info('开发环境使用 MemoryStore');
