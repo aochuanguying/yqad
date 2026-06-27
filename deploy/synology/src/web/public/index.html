@@ -1047,10 +1047,14 @@
             html += `</details>`;
           }
           
-          if (log.status === 'failed' && log.errorMessage) {
+          if (log.status === 'pending') {
+            html += `<p class="text-sm text-yellow-600 mb-2">⏳ 等待 AutoJS 脚本回调...</p>`;
+          } else if (log.status === 'failed' && log.errorMessage) {
             html += `<p class="text-sm text-red-600 mb-2">❌ ${escapeHtml(log.errorMessage)}</p>`;
-          } else {
+          } else if (log.status === 'success') {
             html += `<p class="text-sm text-green-600 mb-2">✅ 发布成功</p>`;
+          } else {
+            html += `<p class="text-sm text-gray-600 mb-2">未知状态：${log.status}</p>`;
           }
           
           // 图片预览
