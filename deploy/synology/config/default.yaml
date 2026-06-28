@@ -1,4 +1,4 @@
-env: "test"
+env: "production"
 mysql:
   test:
     host: "192.168.50.50"

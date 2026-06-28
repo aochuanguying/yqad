@@ -60,6 +60,9 @@ export async function saveApiTokenAsync(token: string): Promise<ApiTokenConfig> 
   // 保存到 Redis
   await apiTokenStorage.saveToken(token);
   
+  // 刷新内存缓存，确保验证时使用最新 Token
+  refreshCachedToken(token);
+  
   logger.info('API Token 已保存到 Redis');
   return config;
 }
@@ -193,6 +196,18 @@ export async function initApiToken(): Promise<ApiTokenConfig> {
  */
 let cachedToken: string | null = null;
 let tokenLoaded = false;
+
+/**
+ * 刷新内存缓存中的 Token
+ * 当保存新 Token 时调用此函数，确保验证时使用最新 Token
+ * 
+ * @param newToken 新的 Token
+ */
+export function refreshCachedToken(newToken: string): void {
+  cachedToken = newToken;
+  tokenLoaded = true;
+  logger.debug('API Token 缓存已刷新');
+}
 
 export async function verifyApiToken(providedToken: string): Promise<boolean> {
   // 如果还未加载缓存，先加载

@@ -65,9 +65,13 @@ export class TopicUsageStorage extends BaseDAO {
    */
   async initialize(): Promise<void> {
     try {
-      // 创建子方向使用记录表
+      // 先删除旧表（解决外键约束问题）
+      await this.query('DROP TABLE IF EXISTS topic_sub_direction_usages');
+      await this.query('DROP TABLE IF EXISTS topic_material_usages');
+      
+      // 创建子方向使用记录表（不强制外键约束，避免 topics 表不存在时失败）
       await this.query(`
-        CREATE TABLE IF NOT EXISTS topic_sub_direction_usages (
+        CREATE TABLE topic_sub_direction_usages (
           id VARCHAR(36) PRIMARY KEY,
           topic_id VARCHAR(36) NOT NULL,
           sub_direction_index INT NOT NULL,
@@ -76,15 +80,14 @@ export class TopicUsageStorage extends BaseDAO {
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
           UNIQUE KEY unique_topic_sub_direction (topic_id, sub_direction_index),
-          KEY idx_topic_id (topic_id),
-          FOREIGN KEY (topic_id) REFERENCES topics(id) ON DELETE CASCADE
+          KEY idx_topic_id (topic_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
       `);
       logger.info('子方向使用记录表初始化完成');
 
-      // 创建素材使用记录表
+      // 创建素材使用记录表（不强制外键约束）
       await this.query(`
-        CREATE TABLE IF NOT EXISTS topic_material_usages (
+        CREATE TABLE topic_material_usages (
           id VARCHAR(36) PRIMARY KEY,
           topic_id VARCHAR(36) NOT NULL,
           material_path VARCHAR(500) NOT NULL,
@@ -94,8 +97,7 @@ export class TopicUsageStorage extends BaseDAO {
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
           UNIQUE KEY unique_topic_material (topic_id, material_path),
-          KEY idx_topic_id (topic_id),
-          FOREIGN KEY (topic_id) REFERENCES topics(id) ON DELETE CASCADE
+          KEY idx_topic_id (topic_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
       `);
       logger.info('素材使用记录表初始化完成');
@@ -237,8 +239,7 @@ let instance: TopicUsageStorage | null = null;
 export const getTopicUsageStorage = (): TopicUsageStorage => {
   if (!instance) {
     instance = new TopicUsageStorage();
-    // 自动初始化表结构
-    instance.initialize().catch(err => logger.error(`初始化失败：${err.message}`));
   }
   return instance;
 };
+export const topicUsageStorage = getTopicUsageStorage();

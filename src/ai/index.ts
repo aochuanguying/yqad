@@ -6,6 +6,7 @@
 
 export {
   generateContent,
+  initFallbackChain,
 } from './client';
 
 export {

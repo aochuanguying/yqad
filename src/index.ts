@@ -17,13 +17,46 @@ import { postConfigStorage } from './storage/mysql/post-config-storage';
 import { schedulerConfigStorage } from './storage/mysql/scheduler-config-storage';
 import { apiConfigStorage } from './storage/mysql/api-config-storage';
 import { loadAIProvidersFromDB } from './utils/config';
+import { initFallbackChain } from './ai';
 
 const logger = getLogger('main');
 
 async function main() {
   logger.info('=== 一汽奥迪 APP 自动任务系统启动 ===');
 
-  // 从数据库读取配置
+  // 1. 先初始化 MySQL（因为 Redis 中的某些服务可能依赖 MySQL）
+  try {
+    await initializeMySQLStorage();
+    // MySQL 初始化完成后，从数据库加载 AI Provider 配置
+    await loadAIProvidersFromDB();
+  } catch (error) {
+    logger.warn('MySQL 初始化失败，将仅使用 Redis 存储:', error);
+  }
+
+  // 2. 初始化 AI FallbackChain（必须在 loadAIProvidersFromDB 之后）
+  try {
+    initFallbackChain();
+    logger.info('✓ AI 兜底机制初始化成功');
+  } catch (error) {
+    logger.warn('AI 兜底机制初始化失败，将使用传统模式:', error);
+  }
+
+  // 2. 初始化 Redis 存储（可选，失败时降级到内存存储）
+  try {
+    await initializeRedisStorage();
+  } catch (error) {
+    logger.warn('Redis 初始化失败，将使用内存存储:', error);
+  }
+
+  // 3. 初始化 ChromaDB（可选，失败时不影响核心功能）
+  try {
+    await chromaConnectionManager.initialize();
+    logger.info('✅ ChromaDB 初始化成功');
+  } catch (error) {
+    logger.warn('ChromaDB 初始化失败，向量存储功能将不可用:', error instanceof Error ? error.message : String(error));
+  }
+
+  // 4. 从数据库读取配置（必须在 MySQL 初始化之后）
   const [apiConfig, commentConfig, postConfig, schedulerConfig] = await Promise.all([
     apiConfigStorage.getConfig(),
     commentConfigStorage.getConfig(),
@@ -36,22 +69,6 @@ async function main() {
   
   const apiMode = apiConfig?.mode || 'mock';
   logger.info(`API 模式：${apiMode}`);
-
-  // 初始化 Redis 存储（可选，失败时降级到内存存储）
-  try {
-    await initializeRedisStorage();
-  } catch (error) {
-    logger.warn('Redis 初始化失败，将使用内存存储:', error);
-  }
-
-  // 初始化 MySQL 存储（可选，失败时不影响运行）
-  try {
-    await initializeMySQLStorage();
-    // MySQL 初始化完成后，从数据库加载 AI Provider 配置
-    await loadAIProvidersFromDB();
-  } catch (error) {
-    logger.warn('MySQL 初始化失败，将仅使用 Redis 存储:', error);
-  }
 
   // 启动 ChromaDB 健康监控
   try {

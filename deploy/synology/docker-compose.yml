@@ -1,12 +1,13 @@
 services:
   yqad:
-    container_name: yqad-auto-tasks
-    image: yqad-auto-tasks:latest
+    container_name: yqad
+    image: yqad:latest
     build:
       context: .
       dockerfile: Dockerfile
     platform: linux/amd64
     restart: unless-stopped
+    network_mode: bridge
     environment:
       NODE_ENV: production
       TZ: ${TZ:-Asia/Shanghai}

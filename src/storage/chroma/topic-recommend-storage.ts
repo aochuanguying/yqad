@@ -52,7 +52,7 @@ export interface TopicRecommendResult {
  * 主题推荐存储类
  */
 class TopicRecommendStorage {
-  private collectionName = getPrefixedCollectionName('topic_recommend');
+  private collectionName = 'prod_topic_recommend'; // 使用下划线前缀，与 chroma-connection-manager 一致
   private collection: Collection | null = null;
   private initialized: boolean = false;
 
@@ -318,12 +318,6 @@ class TopicRecommendStorage {
 /**
  * 获取带环境前缀的 Collection 名称
  */
-function getPrefixedCollectionName(baseName: string): string {
-  const env = process.env.NODE_ENV || 'development';
-  const prefix = env === 'production' ? 'prod:' : 'dev:';
-  return `${prefix}${baseName}`;
-}
-
 // 导出单例
 export const topicRecommendStorage = new TopicRecommendStorage();
 

@@ -47,7 +47,8 @@ export interface CollectionConfig {
 function getEnvironmentPrefix(): string {
   const env = process.env.NODE_ENV || 'development';
   const isProduction = env === 'production';
-  return isProduction ? 'prod:' : 'dev:';
+  // 使用下划线而不是冒号，因为 ChromaDB 不支持冒号
+  return isProduction ? 'prod_' : 'dev_';
 }
 
 /**
@@ -74,9 +75,16 @@ class ChromaConnectionManager {
       
       logger.info(`初始化 ChromaDB 连接：${this.config.url}`);
       
-      // 创建客户端
+      // 解析 URL，提取 host 和 port
+      const urlObj = new URL(this.config.url);
+      const isHttps = urlObj.protocol === 'https:';
+      const port = parseInt(urlObj.port) || (isHttps ? 443 : 80);
+      
+      // 创建客户端（使用新的 ssl/host/port 参数，替代废弃的 path 参数）
       this.client = new ChromaClient({
-        path: this.config.url,
+        host: urlObj.hostname,
+        port: port,
+        ssl: isHttps,
       });
 
       // 测试连接
@@ -213,6 +221,8 @@ class ChromaConnectionManager {
         }
 
         // 创建 Collection
+        // 注意：我们不指定 embeddingFunction，因为 ChromaDB 1.0+ 默认会警告
+        // 但我们自己提供向量，不需要 ChromaDB 生成嵌入
         const collection = await this.client.createCollection({
           name: collectionConfig.name,
           metadata: {

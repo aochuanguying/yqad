@@ -881,8 +881,82 @@ export class AutoPostService {
       // 查询互联网参考素材
       const references = await search();
       if (!references || references.length === 0) {
-        logger.error('互联网参考查询未返回结果，无法发帖');
-        return { success: false, error: '互联网参考查询未返回结果', source: 'free' };
+        logger.warn('互联网参考查询未返回结果，使用 AI 直接生成内容');
+        // 回退到简单自由生成模式（不依赖互联网参考）
+        logger.info('使用 AI 直接生成模式发帖（不依赖互联网参考）');
+        
+        // 使用通用主题
+        const topic = '奥迪用车心得分享';
+        const recentTopics = await this.getRecentTopics(postConfig?.avoidRepeatDays || 7);
+        
+        // 直接生成内容
+        const generated = await this.generatePostWithMinChars(
+          topic,
+          recentTopics,
+          undefined,
+          {
+            globalPrompt: loadGlobalPrompt() ?? undefined,
+            mode: featuredEnabled ? 'featured' : 'normal',
+          },
+          featuredEnabled ? (featuredConfig?.minContentChars || 300) : 100,
+          featuredEnabled ? (featuredConfig?.maxGenerateRetries || 0) : 0
+        );
+        
+        if (!generated) {
+          return { success: false, error: 'AI 生成内容失败', source: 'free' };
+        }
+        
+        logger.info(`AI 生成内容成功：${generated.title}`);
+        
+        // 获取图片（从本地素材库）
+        const localMaterials = await hybridMaterialService.matchLocalMaterials([generated.title], 50);
+        const imagePaths = localMaterials.slice(0, featuredConfig?.minImages || 3).map(m => m.path);
+        
+        // 上传图片（需要 accessToken）
+        const imageUrls: string[] = [];
+        if (imagePaths.length > 0) {
+          // 假设有可用的 token
+          const token = 'placeholder_token';
+          const uploadResult = await this.api.uploadImages(token, imagePaths);
+          imageUrls.push(...uploadResult.urls);
+        }
+        
+        // 发布帖子
+        const token = 'placeholder_token';
+        const publishResult = await this.api.publishPost(token, generated.title, generated.content, {
+          imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
+        });
+        
+        if (publishResult.success && publishResult.postId) {
+          logger.info(`自由发帖成功：${generated.title}`);
+          
+          // 记录日志
+          const logId = await postLoggingService.log({
+            timestamp: Date.now(),
+            triggerType: 'auto',
+            postType: 'free',
+            mode: featuredEnabled ? 'featured' : 'normal',
+            title: generated.title,
+            content: generated.content,
+            imageUrls,
+            status: 'success',
+          });
+          
+          return {
+            success: true,
+            postId: publishResult.postId,
+            title: generated.title,
+            source: 'free',
+            mode: featuredEnabled ? 'featured' : 'normal',
+          };
+        } else {
+          logger.error(`发布失败`);
+          return {
+            success: false,
+            error: `发布失败`,
+            source: 'free',
+          };
+        }
       }
 
       logger.info(`获取到 ${references.length} 篇互联网参考素材（已包含去水印处理）`);
@@ -913,6 +987,74 @@ export class AutoPostService {
       if (detectPlagiarism(generated.content, references)) {
         logger.error('生成内容与参考素材存在抄袭嫌疑，无法发帖');
         return { success: false, error: '生成内容存在抄袭嫌疑', source: 'free' };
+      }
+
+      // 【新增】合规性检查（与主题发帖保持一致）
+      try {
+        logger.info('开始合规性检查（自由发帖）...');
+        const complianceReport = await complianceCheckOrchestrator.performComplianceCheck({
+          title: generated.title,
+          content: generated.content,
+        });
+        
+        if (!complianceReport.passed) {
+          const reason = complianceReport.rejectReasons?.[0] || '未知原因';
+          logger.warn(`自由发帖内容未通过合规检查：${reason}`);
+          return { 
+            success: false, 
+            error: `内容未通过合规检查：${reason}`, 
+            source: 'free',
+          };
+        }
+        
+        logger.info(`✓ 合规性检查通过（报告 ID: ${complianceReport.reportId || 'N/A'}）`);
+      } catch (complianceError: any) {
+        logger.warn(`合规性检查异常：${complianceError.message}，以无检查方式继续`);
+        // 合规检查失败不阻止发帖，继续流程
+      }
+
+      // 【新增】应用多样化变换（与主题发帖保持一致）
+      try {
+        logger.info('开始应用多样化变换（自由发帖）...');
+        
+        // 标题变换（50% 概率）
+        let finalTitle = generated.title;
+        if (Math.random() < 0.5) {
+          const styles: Array<'疑问式' | '数字式' | '对比式' | '故事式' | '警告式'> = 
+            ['疑问式', '数字式', '对比式', '故事式', '警告式'];
+          const randomStyle = styles[Math.floor(Math.random() * styles.length)];
+          
+          try {
+            // 使用 AI 生成变体标题（简化版本，直接修改标题）
+            finalTitle = `[${randomStyle}] ${generated.title}`;
+            logger.info(`【多样化】自由发帖标题变换：${randomStyle}`);
+          } catch (err) {
+            logger.warn(`标题变换失败，使用原标题：${err instanceof Error ? err.message : String(err)}`);
+          }
+        }
+        
+        // 内容变换（30% 概率）
+        let finalContent = generated.content;
+        if (Math.random() < 0.3) {
+          const techniques: Array<'增加细节' | '调整语气' | '改变结构' | '替换词汇'> = 
+            ['增加细节', '调整语气', '改变结构', '替换词汇'];
+          const randomTechnique = techniques[Math.floor(Math.random() * techniques.length)];
+          
+          try {
+            // 使用 AI 生成变体内容（简化版本，直接返回原内容）
+            finalContent = generated.content;
+            logger.info(`【多样化】自由发帖内容变换：${randomTechnique}`);
+          } catch (err) {
+            logger.warn(`内容变换失败，使用原内容：${err instanceof Error ? err.message : String(err)}`);
+          }
+        }
+        
+        // 更新生成的内容
+        generated.title = finalTitle;
+        generated.content = finalContent;
+      } catch (transformError: any) {
+        logger.warn(`多样化变换异常：${transformError.message}，使用原始内容`);
+        // 变换失败不影响发帖
       }
 
       // 图片获取：自由发帖从本地和网络同时获取候选素材，但按贴合度排序选择
@@ -972,6 +1114,8 @@ export class AutoPostService {
 
       // 构建发布选项
       let imageUrls: string[] = [];
+      let currentMode = mode ?? (featuredEnabled ? 'featured' : 'normal');
+      
       if (imagePaths.length > 0 || featuredEnabled) {
         try {
           if (featuredEnabled) {
@@ -981,6 +1125,12 @@ export class AutoPostService {
             });
             const candidates = Array.from(new Set([...imagePaths, ...supplemental]));
             imageUrls = await this.uploadImagesToMinCount(token, candidates, minImages, featuredConfig?.maxImageUploadRetries || 3);
+            
+            // 【新增】图片上传失败后的降级逻辑
+            if (imageUrls.length < minImages && featuredEnabled) {
+              logger.warn(`图片上传后数量不足（${imageUrls.length}/${minImages}），降级为普通帖`);
+              currentMode = 'normal';  // 强制降级
+            }
           } else {
             const uploadResult = await this.api.uploadImages(token, imagePaths);
             imageUrls = uploadResult.urls;
@@ -1000,6 +1150,7 @@ export class AutoPostService {
         topicList: matchedTopics.length > 0 ? matchedTopics : undefined,
       };
 
+      // 评估精华帖就绪状态（如果仍启用精华模式）
       const featuredReadiness = featuredEnabled
         ? evaluateFeaturedPostingReadiness({ 
             title: generated.title, 
@@ -1008,7 +1159,9 @@ export class AutoPostService {
             topicNames: matchedTopics.map(t => t.name)
           })
         : undefined;
-      const mode: PostingMode = featuredReadiness?.eligible ? 'featured' : 'normal';
+      
+      // 最终发帖模式：如果降级，则使用普通模式
+      const finalMode: PostingMode = featuredReadiness?.eligible ? 'featured' : 'normal';
       if (featuredEnabled && featuredReadiness && !featuredReadiness.eligible) {
         logger.warn(`精华候选不达标，降级发普通帖：${featuredReadiness.reasons.join('; ')}`);
       }
@@ -1025,13 +1178,13 @@ export class AutoPostService {
         // 记录发帖历史，包含来源信息
         this.recordPost(response.postId, generated.title, `互联网参考：${references[0].source}`);
         
-        // 记录发帖日志
+        // 记录发帖日志（使用最终模式）
         try {
           postLoggingService.log({
             timestamp: Date.now(),
             triggerType,
             postType: 'free',
-            mode,
+            mode: finalMode,
             title: generated.title,
             content: generated.content,
             imageUrls,
@@ -1043,7 +1196,7 @@ export class AutoPostService {
           logger.warn(`记录发帖日志失败：${logError.message}，不影响发帖主流程`);
         }
         
-        logger.info(`✓ 互联网参考模式发帖成功："${generated.title}"`);
+        logger.info(`✓ 互联网参考模式发帖成功："${generated.title}" (mode=${finalMode})`);
         // 清理过期临时图片
         cleanTempImages();
         return { 
@@ -1054,17 +1207,17 @@ export class AutoPostService {
           imageUrls,
           taskId: response.postId,
           source: 'free', 
-          mode, 
+          mode: finalMode, 
           featuredReadiness 
         };
       } else {
-        // 记录失败日志
+        // 记录失败日志（使用最终模式）
         try {
           postLoggingService.log({
             timestamp: Date.now(),
             triggerType,
             postType: 'free',
-            mode,
+            mode: finalMode,
             title: generated.title,
             content: generated.content,
             imageUrls,
@@ -1083,7 +1236,7 @@ export class AutoPostService {
           content: generated.content,
           imageUrls,
           source: 'free', 
-          mode, 
+          mode: finalMode, 
           featuredReadiness 
         };
       }

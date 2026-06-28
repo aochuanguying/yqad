@@ -103,6 +103,14 @@ export class MySQLConnectionManager {
     return rows as T;
   }
 
+  async execute(sql: string, params?: any[]): Promise<any> {
+    if (!this.pool || !this.connected) {
+      throw new Error('MySQL 未连接');
+    }
+    const [result] = await this.pool.execute(sql, params);
+    return result;
+  }
+
   async executeInTransaction<T>(callback: (conn: PoolConnection) => Promise<T>): Promise<T> {
     if (!this.pool || !this.connected) {
       throw new Error('MySQL 未连接');

@@ -58,7 +58,7 @@ export interface VariantDetectionResult {
  * 敏感词变体存储类
  */
 class SensitiveVariantStorage {
-  private collectionName = getPrefixedCollectionName('sensitive_variants');
+  private collectionName = 'prod_sensitive_variants'; // 使用下划线前缀，与 chroma-connection-manager 一致
   private collection: Collection | null = null;
   private initialized: boolean = false;
 
@@ -366,15 +366,6 @@ class SensitiveVariantStorage {
       return null;
     }
   }
-}
-
-/**
- * 获取带环境前缀的 Collection 名称
- */
-function getPrefixedCollectionName(baseName: string): string {
-  const env = process.env.NODE_ENV || 'development';
-  const prefix = env === 'production' ? 'prod:' : 'dev:';
-  return `${prefix}${baseName}`;
 }
 
 // 导出单例

@@ -150,7 +150,7 @@ let instance: DailySummaryStorage | null = null;
 export const getDailySummaryStorage = (): DailySummaryStorage => {
   if (!instance) {
     instance = new DailySummaryStorage();
-    instance.initialize().catch(err => logger.error(`初始化失败：${err.message}`));
   }
   return instance;
 };
+export const dailySummaryStorage = getDailySummaryStorage();

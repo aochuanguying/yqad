@@ -19,6 +19,8 @@ import { complianceReportConfigStorage } from './compliance-report-config-storag
 import { mobileSmsStorage } from './mobile-sms-storage';
 import { missedCallStorage } from './missed-call-storage';
 import { mobileServiceConfigStorage } from './mobile-service-config-storage';
+import { dailySummaryStorage } from './daily-summary-storage';
+import { topicUsageStorage } from './topic-usage-storage';
 
 const logger = getLogger('mysql-init');
 
@@ -45,6 +47,13 @@ export async function initializeMySQLStorage(): Promise<void> {
       await apiConfigStorage.initialize();
     } catch (error) {
       logger.warn('API 配置存储初始化失败，将使用文件配置:', error instanceof Error ? error.message : String(error));
+    }
+    
+    // 初始化评论配置存储
+    try {
+      await commentConfigStorage.initialize();
+    } catch (error) {
+      logger.warn('评论配置存储初始化失败，将使用文件配置:', error instanceof Error ? error.message : String(error));
     }
     
     // 初始化发帖配置存储
@@ -157,6 +166,20 @@ export async function initializeMySQLStorage(): Promise<void> {
       await mobileServiceConfigStorage.initialize();
     } catch (error) {
       logger.warn('手机服务配置存储初始化失败:', error instanceof Error ? error.message : String(error));
+    }
+    
+    // 初始化每日摘要存储
+    try {
+      await dailySummaryStorage.initialize();
+    } catch (error) {
+      logger.warn('每日摘要存储初始化失败:', error instanceof Error ? error.message : String(error));
+    }
+    
+    // 初始化主题使用记录存储
+    try {
+      await topicUsageStorage.initialize();
+    } catch (error) {
+      logger.warn('主题使用记录存储初始化失败:', error instanceof Error ? error.message : String(error));
     }
     
     logger.info('✅ MySQL 存储系统初始化完成');

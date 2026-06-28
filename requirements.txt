@@ -1,0 +1,7 @@
+# 小红书爬虫依赖
+xhshow>=0.2.0
+playwright>=1.40.0
+requests>=2.31.0
+
+# 知乎测试（可选）
+# 知乎使用官方 API，不需要额外 Python 依赖

@@ -70,7 +70,7 @@ export interface SentimentCluster {
  * 评论情感存储类
  */
 class CommentSentimentStorage {
-  private collectionName = getPrefixedCollectionName('comment_sentiment');
+  private collectionName = 'prod_comment_sentiment'; // 使用下划线前缀，与 chroma-connection-manager 一致
   private collection: Collection | null = null;
   private initialized: boolean = false;
 
@@ -420,15 +420,6 @@ class CommentSentimentStorage {
       return null;
     }
   }
-}
-
-/**
- * 获取带环境前缀的 Collection 名称
- */
-function getPrefixedCollectionName(baseName: string): string {
-  const env = process.env.NODE_ENV || 'development';
-  const prefix = env === 'production' ? 'prod:' : 'dev:';
-  return `${prefix}${baseName}`;
 }
 
 // 导出单例

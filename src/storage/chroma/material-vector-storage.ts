@@ -63,19 +63,10 @@ export interface QueryOptions {
 }
 
 /**
- * 获取带环境前缀的 Collection 名称
- */
-function getPrefixedCollectionName(baseName: string): string {
-  const env = process.env.NODE_ENV || 'development';
-  const prefix = env === 'production' ? 'prod:' : 'dev:';
-  return `${prefix}${baseName}`;
-}
-
-/**
  * 素材向量存储类
  */
 class MaterialVectorStorage {
-  private collectionName = getPrefixedCollectionName('materials');
+  private collectionName = 'prod_materials'; // 使用下划线前缀，与 chroma-connection-manager 一致
   private collection: Collection | null = null;
   private initialized: boolean = false;
 
