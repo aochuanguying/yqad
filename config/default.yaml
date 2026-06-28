@@ -86,6 +86,8 @@ internetSearch:
   xiaohongshuCookie: "${XIAOHONGSHU_COOKIE}"
   # 知乎 Access Secret（从知乎开放平台获取）
   zhihuAccessSecret: "${ZHIHU_ACCESS_SECRET}"
+  # 汽车之家 Cookie（从浏览器获取，登录后获取）
+  autohomeCookie: "${AUTOHOME_COOKIE}"
   # 平台优先级（1 最高，5 最低）
   platforms:
     - name: xiaohongshu
@@ -98,5 +100,5 @@ internetSearch:
       enabled: false
       priority: 2
     - name: autohome
-      enabled: false
-      priority: 1
+      enabled: true
+      priority: 5

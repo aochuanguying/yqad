@@ -1,6 +1,6 @@
 import { MySQLConnectionManager } from '../../utils/mysql-connection-manager';
 import { getLogger } from '../../utils/logger';
-import { parseCookieWithAI } from '../../utils/cookie-parser';
+import { parseCookieSimple } from '../../utils/cookie-parser';
 
 const logger = getLogger('network-post-config-storage');
 
@@ -16,6 +16,10 @@ export interface NetworkPostConfig {
   // 微博配置
   weiboAccessToken?: string;
   weiboEnabled: boolean;
+  
+  // 汽车之家配置
+  autohomeCookie?: string;
+  autohomeEnabled: boolean;
   
   // 通用配置
   maxResults: number;
@@ -74,6 +78,8 @@ export class NetworkPostConfigStorage {
         xiaohongshuEnabled: !!row.xiaohongshu_enabled,
         weiboAccessToken: row.weibo_access_token || '',
         weiboEnabled: !!row.weibo_enabled,
+        autohomeCookie: row.autohome_cookie || '',
+        autohomeEnabled: !!row.autohome_enabled,
         maxResults: row.max_results || 10,
         enabled: !!row.enabled,
       };
@@ -96,9 +102,10 @@ export class NetworkPostConfigStorage {
           id, zhihu_access_secret, zhihu_enabled, 
           xiaohongshu_cookie, xiaohongshu_enabled,
           weibo_access_token, weibo_enabled,
+          autohome_cookie, autohome_enabled,
           max_results, enabled, updated_at
         ) VALUES (
-          1, ?, ?, ?, ?, ?, ?, ?, ?, NOW()
+          1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW()
         ) ON DUPLICATE KEY UPDATE
           zhihu_access_secret = VALUES(zhihu_access_secret),
           zhihu_enabled = VALUES(zhihu_enabled),
@@ -106,6 +113,8 @@ export class NetworkPostConfigStorage {
           xiaohongshu_enabled = VALUES(xiaohongshu_enabled),
           weibo_access_token = VALUES(weibo_access_token),
           weibo_enabled = VALUES(weibo_enabled),
+          autohome_cookie = VALUES(autohome_cookie),
+          autohome_enabled = VALUES(autohome_enabled),
           max_results = VALUES(max_results),
           enabled = VALUES(enabled),
           updated_at = NOW()
@@ -117,6 +126,8 @@ export class NetworkPostConfigStorage {
           config.xiaohongshuEnabled ? 1 : 0,
           config.weiboAccessToken || '',
           config.weiboEnabled ? 1 : 0,
+          config.autohomeCookie || '',
+          config.autohomeEnabled ? 1 : 0,
           config.maxResults || 10,
           config.enabled ? 1 : 0,
         ]
@@ -174,9 +185,9 @@ export class NetworkPostConfigStorage {
    */
   async testXiaohongshuConnection(cookie: string): Promise<{ success: boolean; resultCount?: number; error?: string }> {
     try {
-      // 1. 使用公共 AI 方法解析 Cookie
-      logger.info('正在使用 AI 解析 Cookie...');
-      const parseResult = await parseCookieWithAI(cookie);
+      // 1. 解析 Cookie（直接使用简单解析，Cookie 本身就是 key=value 格式）
+      logger.info('正在解析 Cookie...');
+      const parseResult = parseCookieSimple(cookie);
       
       if (!parseResult.a1Value) {
         return {
@@ -240,6 +251,78 @@ export class NetworkPostConfigStorage {
       });
     } catch (error) {
       logger.error('测试小红书连接失败', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : '未知错误',
+      };
+    }
+  }
+
+  /**
+   * 测试汽车之家连接
+   */
+  async testAutohomeConnection(cookie: string): Promise<{ success: boolean; resultCount?: number; error?: string }> {
+    try {
+      logger.info('正在测试汽车之家连接...');
+      
+      const { spawn } = require('child_process');
+      const path = require('path');
+      
+      return new Promise((resolve) => {
+        const scriptPath = path.join(__dirname, '../../../scripts/test_autohome.py');
+        const pythonExecutable = process.env.PYTHON_EXECUTABLE || 'python3';
+        
+        const args = [scriptPath, '奥迪', '5'];
+        if (cookie) {
+          args.push(cookie);
+        }
+        
+        const pyProcess = spawn(pythonExecutable, args);
+        let output = '';
+        let errorOutput = '';
+
+        pyProcess.stdout.on('data', (data: Buffer) => {
+          output += data.toString();
+        });
+
+        pyProcess.stderr.on('data', (data: Buffer) => {
+          errorOutput += data.toString();
+        });
+
+        pyProcess.on('close', (code: number) => {
+          if (code !== 0) {
+            resolve({
+              success: false,
+              error: errorOutput || `Python 进程退出码：${code}`,
+            });
+            return;
+          }
+
+          try {
+            const result = JSON.parse(output);
+            resolve({
+              success: result.success,
+              resultCount: result.total || result.results?.length || 0,
+              error: result.error,
+            });
+          } catch (e) {
+            resolve({
+              success: false,
+              error: `解析响应失败：${output}`,
+            });
+          }
+        });
+
+        setTimeout(() => {
+          pyProcess.kill();
+          resolve({
+            success: false,
+            error: '测试超时（15 秒）',
+          });
+        }, 15000);
+      });
+    } catch (error) {
+      logger.error('测试汽车之家连接失败', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : '未知错误',

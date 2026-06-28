@@ -45,6 +45,8 @@ router.post('/network-post-config', async (req: Request, res: Response) => {
       xiaohongshuEnabled: req.body.xiaohongshuEnabled || false,
       weiboAccessToken: req.body.weiboAccessToken || '',
       weiboEnabled: req.body.weiboEnabled || false,
+      autohomeCookie: req.body.autohomeCookie || '',
+      autohomeEnabled: req.body.autohomeEnabled || false,
       maxResults: req.body.maxResults || 10,
       enabled: req.body.enabled !== undefined ? req.body.enabled : true,
     };
@@ -136,6 +138,37 @@ router.post('/network-post-config/test-xiaohongshu', async (req: Request, res: R
     }
   } catch (error) {
     logger.error('测试小红书连接失败:', error instanceof Error ? error.message : String(error));
+    res.status(500).json({ 
+      success: false, 
+      error: error instanceof Error ? error.message : '测试失败' 
+    });
+  }
+});
+
+/**
+ * POST /api/network-post-config/test-autohome - 测试汽车之家连接
+ */
+router.post('/network-post-config/test-autohome', async (req: Request, res: Response) => {
+  try {
+    const { cookie } = req.body;
+    
+    const storage = NetworkPostConfigStorage.getInstance();
+    const result = await storage.testAutohomeConnection(cookie || '');
+    
+    if (result.success) {
+      res.json({ 
+        success: true, 
+        message: '汽车之家连接测试成功',
+        resultCount: result.resultCount,
+      });
+    } else {
+      res.status(400).json({ 
+        success: false, 
+        error: result.error || '测试失败',
+      });
+    }
+  } catch (error) {
+    logger.error('测试汽车之家连接失败:', error instanceof Error ? error.message : String(error));
     res.status(500).json({ 
       success: false, 
       error: error instanceof Error ? error.message : '测试失败' 

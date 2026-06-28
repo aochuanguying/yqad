@@ -216,6 +216,7 @@ export interface AppConfig {
     enabled?: boolean;
     xiaohongshuCookie?: string;
     zhihuAccessSecret?: string;
+    autohomeCookie?: string;
     platforms?: Array<{
       name: string;
       enabled: boolean;
