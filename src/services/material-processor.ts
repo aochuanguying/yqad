@@ -191,7 +191,7 @@ export async function generateTags(filePath: string, metadata: MaterialMetadata)
     const systemPrompt = `你是标签生成专家。为图片生成 3-5 个标签。
 要求：
 1. 涵盖场景、物体、情感维度
-2. 输出 JSON 数组格式：["标签 1", "标签 2", ...]
+2. 每个标签单独一行
 3. 只保留中文、英文、数字
 4. 不要其他文字`;
 
@@ -199,27 +199,25 @@ export async function generateTags(filePath: string, metadata: MaterialMetadata)
 格式：${metadata.format}
 尺寸：${metadata.width}x${metadata.height}
 
-请生成 3-5 个标签。`;
+请生成 3-5 个标签，每个标签一行。`;
 
     const response = await generateContent({ systemPrompt, userPrompt });
+    logger.debug(`AI 响应：${response}`);
     
-    // 尝试解析 JSON
-    const jsonMatch = response.match(/\[[\s\S]*\]/);
-    if (jsonMatch) {
-      const tags = JSON.parse(jsonMatch[0]);
-      if (Array.isArray(tags)) {
-        // 清洗标签
-        const cleanedTags = tags
-          .map((t: string) => String(t).replace(/[^\u4e00-\u9fa5a-zA-Z0-9]/g, ''))
-          .filter((t: string) => t.trim().length > 0)
-          .slice(0, 5);
-        
-        logger.debug(`生成标签：${cleanedTags.join(', ')}`);
-        return cleanedTags;
-      }
+    // 按换行符或逗号分割响应
+    const splitTags = response.split(/[\n\r,,]/)
+      .map((t: string) => t.trim().replace(/^"|"$/g, '').replace(/^'|'$/g, '').replace(/^\[|\]$/g, ''))
+      .map((t: string) => t.replace(/[^\u4e00-\u9fa5a-zA-Z0-9]/g, ''))
+      .filter((t: string) => t.trim().length > 0)
+      .slice(0, 5);
+    
+    if (splitTags.length > 0) {
+      logger.debug(`生成标签：${splitTags.join(', ')}`);
+      return splitTags;
     }
     
     // 降级方案：使用文件名分词
+    logger.debug(`使用降级方案：文件名分词`);
     return [path.basename(filePath, path.extname(filePath))];
   } catch (error) {
     logger.warn(`生成标签失败：${error instanceof Error ? error.message : String(error)}`);
@@ -246,21 +244,17 @@ export async function processMaterial(fileInfo: MaterialFileInfo): Promise<Mater
     
     // 3. AI 生成标签
     const tags = await generateTags(fileInfo.path, metadata);
+    logger.debug(`生成标签：${tags.join(', ')}`);
     
     // 4. 录入数据库
     const input: CreateMaterialRecordInput = {
-      originalPath: fileInfo.path,
-      processedPath: metadata.convertedPath || fileInfo.path, // 如果有转换后的路径则使用
-      originalHash: fileInfo.hash,
-      processedHash: fileInfo.hash,
-      fileSize: fileInfo.size,
-      width: metadata.width,
-      height: metadata.height,
-      format: metadata.format,
-      isWatermark: false,
-      description,
-      tags,
-      sourceType: 'local',
+      source: 'local',
+      path: metadata.convertedPath || fileInfo.path,
+      url: undefined,
+      qualityScore: null,
+      matchedKeywords: tags,
+      usageCount: 0,
+      associatedPosts: [],
     };
     
     const record = await materialRecordStorage.upsertMaterialRecord(input);
@@ -269,17 +263,15 @@ export async function processMaterial(fileInfo: MaterialFileInfo): Promise<Mater
     // 5. 生成向量（如果 ChromaDB 已初始化）
     try {
       if (materialVectorStorage.isInitialized) {
-        const vectorText = buildVectorText(description, tags, fileInfo.path);
+        const vectorText = path.basename(fileInfo.path);
         const embedding = await embeddingVectorizer.generateEmbedding(vectorText);
         
         await materialVectorStorage.addVector(
           `material_${record.id}`,
           embedding,
           {
-            file_path: fileInfo.path,
+            file_path: record.path,
             file_name: path.basename(fileInfo.path),
-            description,
-            tags,
           }
         );
         logger.info(`生成向量嵌入：material_${record.id}`);

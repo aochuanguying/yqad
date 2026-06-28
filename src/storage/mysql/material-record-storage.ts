@@ -12,44 +12,27 @@ const logger = getLogger('material-record-storage');
 
 export interface MaterialRecord {
   id: string;
-  original_path: string;
-  processed_path: string;
-  original_hash?: string;
-  processed_hash?: string;
-  file_size?: number;
-  width?: number;
-  height?: number;
-  format?: string;
-  is_watermark: boolean;
-  ocr_text?: string;
-  description?: string;
-  tags?: string;
-  source_type: 'local' | 'internet';
-  internet_url?: string;
-  used_count: number;
-  last_used_at?: Date;
-  status: 'available' | 'used' | 'archived';
+  source: 'local' | 'internet';
+  path: string;
+  url?: string;
+  quality_score?: any;
+  matched_keywords?: any;
+  usage_count: number;
+  last_used_date?: Date;
+  associated_posts?: any;
   created_at: Date;
   updated_at: Date;
 }
 
 export interface CreateMaterialRecordInput {
   id?: string;
-  originalPath: string;
-  processedPath: string;
-  originalHash?: string;
-  processedHash?: string;
-  fileSize?: number;
-  width?: number;
-  height?: number;
-  format?: string;
-  isWatermark?: boolean;
-  ocrText?: string;
-  description?: string;
-  tags?: string[];
-  sourceType?: 'local' | 'internet';
-  internetUrl?: string;
-  usedCount?: number;
+  source: 'local' | 'internet';
+  path: string;
+  url?: string;
+  qualityScore?: any;
+  matchedKeywords?: any;
+  usageCount?: number;
+  associatedPosts?: any;
 }
 
 export class MaterialRecordStorage extends BaseDAO {
@@ -59,40 +42,54 @@ export class MaterialRecordStorage extends BaseDAO {
   async upsertMaterialRecord(input: CreateMaterialRecordInput): Promise<MaterialRecord> {
     return await this.executeInTransaction<MaterialRecord>(async (conn) => {
       const id = input.id || uuidv4();
-      const tags = input.tags ? JSON.stringify(input.tags) : null;
       
       const sql = `
         INSERT INTO material_records (
-          id, original_path, processed_path, original_hash, processed_hash,
-          file_size, width, height, format, is_watermark, ocr_text, description,
-          tags, source_type, internet_url, used_count
+          id, source, path, url, quality_score, matched_keywords, usage_count, associated_posts
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
-          original_path = VALUES(original_path),
-          processed_path = VALUES(processed_path),
-          used_count = VALUES(used_count),
-          last_used_at = CURRENT_TIMESTAMP,
+          source = VALUES(source),
+          path = VALUES(path),
+          url = VALUES(url),
+          quality_score = VALUES(quality_score),
+          matched_keywords = VALUES(matched_keywords),
+          usage_count = VALUES(usage_count),
+          last_used_date = CURRENT_TIMESTAMP,
           updated_at = CURRENT_TIMESTAMP
       `;
       
+      // 确保是数组
+      let matchedKeywordsArray: any = input.matchedKeywords;
+      if (matchedKeywordsArray && !Array.isArray(matchedKeywordsArray)) {
+        // 如果是字符串，按逗号分割
+        if (typeof matchedKeywordsArray === 'string') {
+          matchedKeywordsArray = matchedKeywordsArray.split(/[,，]/).map((t: string) => t.trim()).filter((t: string) => t.length > 0);
+          logger.warn(`matchedKeywords 是字符串，已转换为数组`);
+        } else {
+          matchedKeywordsArray = [matchedKeywordsArray];
+        }
+      }
+      
+      let associatedPostsArray = input.associatedPosts;
+      if (associatedPostsArray && !Array.isArray(associatedPostsArray)) {
+        if (typeof associatedPostsArray === 'string') {
+          associatedPostsArray = associatedPostsArray.split(/[,，]/).map((t: string) => t.trim()).filter((t: string) => t.length > 0);
+        } else {
+          associatedPostsArray = [associatedPostsArray];
+        }
+        logger.warn(`associatedPosts 不是数组，已转换：${JSON.stringify(associatedPostsArray)}`);
+      }
+      
       await conn.execute(sql, [
         id,
-        input.originalPath,
-        input.processedPath,
-        input.originalHash || null,
-        input.processedHash || null,
-        input.fileSize || null,
-        input.width || null,
-        input.height || null,
-        input.format || null,
-        input.isWatermark || false,
-        input.ocrText || null,
-        input.description || null,
-        tags,
-        input.sourceType || 'local',
-        input.internetUrl || null,
-        input.usedCount || 0,
+        input.source,
+        input.path,
+        input.url || null,
+        input.qualityScore ? JSON.stringify(input.qualityScore) : null,
+        matchedKeywordsArray ? JSON.stringify(matchedKeywordsArray) : null,
+        input.usageCount || 0,
+        associatedPostsArray ? JSON.stringify(associatedPostsArray) : null,
       ]);
       
       const record = await this.getMaterialRecordByIdWithConnection(conn, id);
@@ -136,7 +133,7 @@ export class MaterialRecordStorage extends BaseDAO {
       const embedding = await embeddingVectorizer.generateEmbedding(vectorText);
       
       // 检查是否已存在
-      const existingId = await materialVectorStorage.findByFilePath(record.processed_path);
+      const existingId = await materialVectorStorage.findByFilePath(record.path);
       
       if (existingId) {
         // 更新现有向量
@@ -144,10 +141,8 @@ export class MaterialRecordStorage extends BaseDAO {
           existingId,
           embedding,
           {
-            file_path: record.processed_path,
-            file_name: record.original_path.split('/').pop() || '',
-            description: record.description || '',
-            tags: record.tags ? record.tags.split(',').filter(t => t.trim()) : [],
+            file_path: record.path,
+            file_name: record.path.split('/').pop() || '',
           }
         );
         logger.debug(`更新 ChromaDB 向量：${existingId}`);
@@ -157,10 +152,8 @@ export class MaterialRecordStorage extends BaseDAO {
           `material_${record.id}`,
           embedding,
           {
-            file_path: record.processed_path,
-            file_name: record.original_path.split('/').pop() || '',
-            description: record.description || '',
-            tags: record.tags ? record.tags.split(',').filter(t => t.trim()) : [],
+            file_path: record.path,
+            file_name: record.path.split('/').pop() || '',
           }
         );
         logger.debug(`添加 ChromaDB 向量：material_${record.id}`);
@@ -175,13 +168,7 @@ export class MaterialRecordStorage extends BaseDAO {
    * 构建向量文本
    */
   private buildVectorText(record: MaterialRecord): string {
-    const parts = [
-      record.original_path.split('/').pop() || '',
-      record.description || '',
-      record.ocr_text || '',
-      record.tags || '',
-    ];
-    return parts.filter(p => p.trim()).join(' ');
+    return record.path.split('/').pop() || '';
   }
 
   /**
@@ -198,25 +185,69 @@ export class MaterialRecordStorage extends BaseDAO {
    * 映射数据库记录到接口
    */
   private mapToMaterialRecord(row: any): MaterialRecord {
+    let qualityScore = null;
+    let matchedKeywords = null;
+    let associatedPosts = null;
+    
+    // 安全解析 JSON 字段，处理旧数据格式
+    if (row.quality_score) {
+      try {
+        qualityScore = JSON.parse(row.quality_score);
+      } catch (e) {
+        logger.warn(`解析 quality_score 失败，使用原值`);
+        qualityScore = row.quality_score;
+      }
+    }
+    
+    if (row.matched_keywords) {
+      // MySQL JSON 类型会自动解析为数组，不需要 JSON.parse
+      if (Array.isArray(row.matched_keywords)) {
+        matchedKeywords = row.matched_keywords;
+      } else {
+        try {
+          matchedKeywords = JSON.parse(row.matched_keywords);
+          // 确保是数组
+          if (!Array.isArray(matchedKeywords)) {
+            matchedKeywords = [matchedKeywords];
+          }
+        } catch (e) {
+          // 可能是旧格式的逗号分隔字符串
+          if (typeof row.matched_keywords === 'string') {
+            matchedKeywords = row.matched_keywords.split(/[,,]/)
+              .map((t: string) => t.trim())
+              .filter((t: string) => t.length > 0);
+          } else {
+            matchedKeywords = [row.matched_keywords];
+          }
+          logger.warn(`matched_keywords JSON 解析失败，使用逗号分隔解析：${matchedKeywords.join(',')}`);
+        }
+      }
+    }
+    
+    if (row.associated_posts) {
+      // MySQL JSON 类型会自动解析为数组，不需要 JSON.parse
+      if (Array.isArray(row.associated_posts)) {
+        associatedPosts = row.associated_posts;
+      } else {
+        try {
+          associatedPosts = JSON.parse(row.associated_posts);
+        } catch (e) {
+          logger.warn(`解析 associated_posts 失败，使用原值`);
+          associatedPosts = row.associated_posts;
+        }
+      }
+    }
+    
     return {
       id: row.id,
-      original_path: row.original_path,
-      processed_path: row.processed_path,
-      original_hash: row.original_hash,
-      processed_hash: row.processed_hash,
-      file_size: row.file_size,
-      width: row.width,
-      height: row.height,
-      format: row.format,
-      is_watermark: row.is_watermark === 1,
-      ocr_text: row.ocr_text,
-      description: row.description,
-      tags: row.tags,
-      source_type: row.source_type,
-      internet_url: row.internet_url,
-      used_count: row.used_count,
-      last_used_at: row.last_used_at,
-      status: row.status,
+      source: row.source,
+      path: row.path,
+      url: row.url,
+      quality_score: qualityScore,
+      matched_keywords: matchedKeywords,
+      usage_count: row.usage_count,
+      last_used_date: row.last_used_date,
+      associated_posts: associatedPosts,
       created_at: row.created_at,
       updated_at: row.updated_at,
     };
@@ -236,8 +267,7 @@ export class MaterialRecordStorage extends BaseDAO {
   async queryMaterialRecords(options?: {
     page?: number;
     pageSize?: number;
-    sourceType?: string;
-    status?: string;
+    source?: string;
     usedCount?: number;
   }): Promise<{
     data: MaterialRecord[];
@@ -249,20 +279,16 @@ export class MaterialRecordStorage extends BaseDAO {
     let sql = `SELECT * FROM material_records WHERE 1=1`;
     const params: any[] = [];
 
-    if (options?.sourceType) {
-      sql += ` AND source_type = ?`;
-      params.push(options.sourceType);
-    }
-    if (options?.status) {
-      sql += ` AND status = ?`;
-      params.push(options.status);
+    if (options?.source) {
+      sql += ` AND source = ?`;
+      params.push(options.source);
     }
     if (options?.usedCount !== undefined) {
-      sql += ` AND used_count >= ?`;
+      sql += ` AND usage_count >= ?`;
       params.push(options.usedCount);
     }
 
-    sql += ` ORDER BY used_count ASC, created_at DESC`;
+    sql += ` ORDER BY usage_count ASC, created_at DESC`;
 
     return await this.queryPaginated<MaterialRecord>(sql, params, options?.page || 1, options?.pageSize || 50);
   }
@@ -271,7 +297,7 @@ export class MaterialRecordStorage extends BaseDAO {
    * 获取所有素材记录
    */
   async getAllMaterialRecords(): Promise<MaterialRecord[]> {
-    const sql = `SELECT * FROM material_records ORDER BY used_count ASC, created_at DESC`;
+    const sql = `SELECT * FROM material_records ORDER BY usage_count ASC, created_at DESC`;
     return await this.queryMany<MaterialRecord>(sql, []);
   }
 
@@ -279,16 +305,8 @@ export class MaterialRecordStorage extends BaseDAO {
    * 更新使用次数
    */
   async incrementUsedCount(id: string): Promise<void> {
-    const sql = `UPDATE material_records SET used_count = used_count + 1, last_used_at = CURRENT_TIMESTAMP WHERE id = ?`;
+    const sql = `UPDATE material_records SET usage_count = usage_count + 1, last_used_date = CURRENT_TIMESTAMP WHERE id = ?`;
     await this.update(sql, [id]);
-  }
-
-  /**
-   * 更新状态
-   */
-  async updateStatus(id: string, status: 'available' | 'used' | 'archived'): Promise<void> {
-    const sql = `UPDATE material_records SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`;
-    await this.update(sql, [status, id]);
   }
 
   /**

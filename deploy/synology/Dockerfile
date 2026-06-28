@@ -31,6 +31,7 @@ RUN npm ci --omit=dev \
 
 COPY config ./config
 COPY --from=builder /app/dist ./dist
+COPY stealth.min.js ./
 
 RUN mkdir -p /app/data/materials/raw /app/data/materials/processed /app/logs
 

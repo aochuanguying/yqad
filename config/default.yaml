@@ -1,4 +1,4 @@
-env: "test"
+env: "production"
 mysql:
   test:
     host: "192.168.50.50"
@@ -67,12 +67,3 @@ materials:
       command: "auto"
       timeoutMs: 30000
 logLevel: "info"
-
-# 注意：业务配置（如车辆监控、互联网搜索、发帖配置等）已迁移到数据库
-# 请在数据库中配置以下表：
-# - vehicle_monitor_config: 车辆监控配置
-# - internet_reference_config: 互联网参考配置
-# - internet_reference_platforms: 互联网平台配置
-# - post_config: 发帖配置
-# - comment_config: 评论配置
-# - 其他配置表查看 src/db/migrations/ 中的 *_config 表

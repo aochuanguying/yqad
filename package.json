@@ -9,7 +9,8 @@
     "dev": "node -r dotenv/config -r ts-node/register src/index.ts",
     "test": "jest --passWithNoTests",
     "generate-password-hash": "ts-node scripts/generate-password-hash.ts",
-    "init-db": "tsx scripts/init-database.ts"
+    "init-db": "tsx scripts/init-database.ts",
+    "safe-init-db": "tsx scripts/safe-init-database.ts"
   },
   "keywords": [
     "audi",

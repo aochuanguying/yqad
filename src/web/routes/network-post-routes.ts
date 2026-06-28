@@ -19,9 +19,24 @@ router.get('/network-post-config', async (req: Request, res: Response) => {
     const storage = NetworkPostConfigStorage.getInstance();
     const config = await storage.getConfig();
     
-    logger.info('获取网络发帖配置:', config ? '找到配置' : '未找到配置 (返回 null)');
+    logger.info('获取网络发帖配置:', config ? '找到配置' : '未找到配置 (返回默认配置)');
     
-    res.json({ success: true, config });
+    // 如果没有配置，返回默认配置
+    const defaultConfig: NetworkPostConfig = {
+      zhihuAccessSecret: '',
+      zhihuEnabled: false,
+      xiaohongshuCookie: '',
+      xiaohongshuEnabled: false,
+      autohomeCookie: '',
+      autohomeEnabled: false,
+      maxResults: 10,
+      enabled: true,
+    };
+    
+    res.json({ 
+      success: true, 
+      config: config || defaultConfig 
+    });
   } catch (error) {
     logger.error('获取网络发帖配置失败:', error instanceof Error ? error.message : String(error));
     res.status(500).json({ 

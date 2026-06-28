@@ -123,9 +123,9 @@ export async function syncHistoricalMaterials(options?: {
 async function processSingleRecord(record: MaterialRecord, force: boolean): Promise<void> {
   // 检查是否已存在向量（非强制模式）
   if (!force) {
-    const existingId = await materialVectorStorage.findByFilePath(record.processed_path);
+    const existingId = await materialVectorStorage.findByFilePath(record.path);
     if (existingId) {
-      logger.debug(`跳过已存在向量：${record.processed_path}`);
+      logger.debug(`跳过已存在向量：${record.path}`);
       return;
     }
   }
@@ -156,10 +156,8 @@ async function processSingleRecord(record: MaterialRecord, force: boolean): Prom
     vectorId,
     embedding,
     {
-      file_path: record.processed_path,
-      file_name: path.basename(record.processed_path),
-      description: record.description || '',
-      tags: record.tags ? record.tags.split(',').filter(t => t.trim()) : [],
+      file_path: record.path,
+      file_name: path.basename(record.path),
     }
   );
   
@@ -167,17 +165,11 @@ async function processSingleRecord(record: MaterialRecord, force: boolean): Prom
 }
 
 /**
- * 构建向量��本
+ * 构建向量文本
  */
 function buildVectorText(record: MaterialRecord): string {
-  const fileName = path.basename(record.processed_path);
-  const parts = [
-    fileName,
-    record.description || '',
-    record.tags || '',
-    record.ocr_text || '',
-  ];
-  return parts.filter(p => p.trim()).join(' ');
+  const fileName = path.basename(record.path);
+  return fileName;
 }
 
 /**

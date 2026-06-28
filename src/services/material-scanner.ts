@@ -182,13 +182,10 @@ async function loadExistingHashes(): Promise<Set<string>> {
     const allRecords = await materialRecordStorage.getAllMaterialRecords();
     const hashSet = new Set<string>();
     
-    // 收集所有哈希（original_hash 和 processed_hash）
+    // 收集所有路径（使用 path 字段）
     for (const record of allRecords) {
-      if (record.original_hash) {
-        hashSet.add(record.original_hash);
-      }
-      if (record.processed_hash) {
-        hashSet.add(record.processed_hash);
+      if (record.path) {
+        hashSet.add(record.path);
       }
     }
     
@@ -201,16 +198,14 @@ async function loadExistingHashes(): Promise<Set<string>> {
 }
 
 /**
- * 检查是否为新素材（通过哈希检查）
+ * 检查是否为新素材（通过路径检查）
  * @deprecated 已废弃，使用 loadExistingHashes 批量加载
  */
-export async function isNewMaterial(hash: string): Promise<boolean> {
+export async function isNewMaterial(filePath: string): Promise<boolean> {
   try {
     const allRecords = await materialRecordStorage.getAllMaterialRecords();
-    // 检查是否有相同哈希的记录
-    return allRecords.some(record => 
-      record.original_hash === hash || record.processed_hash === hash
-    );
+    // 检查是否有相同路径的记录
+    return allRecords.some(record => record.path === filePath);
   } catch (error) {
     logger.warn(`检查素材是否已存在失败：${error instanceof Error ? error.message : String(error)}`);
     // 查询失败时假设为新素材

@@ -178,14 +178,14 @@ class HybridMaterialService {
         for (const result of searchResults) {
           try {
             const dbRecord = await materialRecordStorage.getMaterialRecordById(result.id);
-            if (dbRecord && dbRecord.status === 'available') {
+            if (dbRecord) {
               // 转换 MySQL 记录到服务接口
               const record: MaterialRecord = {
                 id: dbRecord.id,
-                source: dbRecord.source_type,
-                path: dbRecord.processed_path || dbRecord.original_path,
-                url: dbRecord.internet_url,
-                qualityScore: {
+                source: dbRecord.source,
+                path: dbRecord.path,
+                url: dbRecord.url,
+                qualityScore: dbRecord.quality_score || {
                   totalScore: 0,
                   clarity: 0,
                   composition: 0,
@@ -193,10 +193,11 @@ class HybridMaterialService {
                   relevance: 0,
                   freshness: 0,
                 },
-                usageCount: 0,
-                lastUsedDate: undefined,
-                associatedPosts: [],
-                createdAt: new Date().toISOString(),
+                matchedKeywords: dbRecord.matched_keywords,
+                usageCount: dbRecord.usage_count,
+                lastUsedDate: dbRecord.last_used_date?.toISOString(),
+                associatedPosts: dbRecord.associated_posts || [],
+                createdAt: dbRecord.created_at.toISOString(),
               };
               materials.push(record);
             }
@@ -276,15 +277,15 @@ class HybridMaterialService {
       const allRecords = await materialRecordStorage.getAllMaterialRecords();
       
       for (const dbRecord of allRecords) {
-        if (dbRecord.source_type === 'local' && dbRecord.status === 'available') {
+        if (dbRecord.source === 'local') {
           const record: MaterialRecord = {
             id: dbRecord.id,
             source: 'local',
-            path: dbRecord.processed_path || dbRecord.original_path,
-            url: dbRecord.internet_url,
-            usageCount: dbRecord.used_count,
-            lastUsedDate: dbRecord.last_used_at?.toISOString(),
-            associatedPosts: [],
+            path: dbRecord.path,
+            url: dbRecord.url,
+            usageCount: dbRecord.usage_count,
+            lastUsedDate: dbRecord.last_used_date?.toISOString(),
+            associatedPosts: dbRecord.associated_posts || [],
             createdAt: dbRecord.created_at.toISOString(),
           };
           materials.push(record);
@@ -713,9 +714,9 @@ class HybridMaterialService {
     averageUsagePerMaterial: number;
   }> {
     const allRecords = await materialRecordStorage.getAllMaterialRecords();
-    const localCount = allRecords.filter(m => m.source_type === 'local').length;
-    const internetCount = allRecords.filter(m => m.source_type === 'internet').length;
-    const totalUsage = allRecords.reduce((sum, m) => sum + m.used_count, 0);
+    const localCount = allRecords.filter(m => m.source === 'local').length;
+    const internetCount = allRecords.filter(m => m.source === 'internet').length;
+    const totalUsage = allRecords.reduce((sum, m) => sum + m.usage_count, 0);
     
     return {
       totalMaterials: allRecords.length,
