@@ -126,6 +126,7 @@
           <div class="submenu-item" data-subgroup="post">📤 发帖设置</div>
           <div class="submenu-item" data-subgroup="scheduler">⏰ 调度设置</div>
           <div class="submenu-item" data-subgroup="contentLimits">📏 长度设置</div>
+          <div class="submenu-item" data-subgroup="network-post">🌐 网络发帖</div>
         </div>
         
         <!-- Left submenu for Log Settings -->
@@ -731,6 +732,13 @@
         manualPostBtn.style.display = 'none';
         saveBtn.style.display = '';
         renderForm('contentLimits');
+      } else if (subgroup === 'network-post') {
+        // 网络发帖配置
+        currentGroup = 'network-post';
+        manualCommentBtn.style.display = 'none';
+        manualPostBtn.style.display = 'none';
+        saveBtn.style.display = '';
+        renderNetworkPostConfig();
       }
     }
 
@@ -1406,6 +1414,45 @@
         return;
       }
 
+      // 检查是否在网络发帖配置页面
+      const isNetworkPostPage = !!document.getElementById('zhihu-access-secret');
+
+      // 如果是在网络发帖页面，保存网络发帖配置
+      if (isNetworkPostPage) {
+        try {
+          const config = {
+            zhihuAccessSecret: document.getElementById('zhihu-access-secret').value.trim(),
+            zhihuEnabled: document.getElementById('zhihu-enabled').checked,
+            xiaohongshuCookie: document.getElementById('xiaohongshu-cookie').value.trim(),
+            xiaohongshuEnabled: document.getElementById('xiaohongshu-enabled').checked,
+            weiboAccessToken: document.getElementById('weibo-access-token')?.value.trim() || '',
+            weiboEnabled: document.getElementById('weibo-enabled')?.checked || false,
+            maxResults: 10,
+            enabled: true,
+          };
+          
+          const resp = await fetch('/api/network-post-config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(config),
+          });
+          
+          const data = await resp.json();
+          
+          if (data.success) {
+            showToast('✅ 配置保存成功', 'success');
+          } else {
+            showToast('❌ 保存失败：' + (data.error || '未知错误'), 'error');
+          }
+        } catch (e) {
+          showToast('保存失败：' + e.message, 'error');
+        } finally {
+          saveBtn.disabled = false;
+          saveBtn.textContent = '保存配置';
+        }
+        return;
+      }
+
       // 保存其他配置
       try {
         const data = collectFormData();
@@ -1580,8 +1627,8 @@
 
         const result = await resp.json();
 
-        if (result.success && result.data) {
-          showToast(`发帖成功：${result.data.title}`, 'success');
+        if (result.success) {
+          showToast('发帖任务已启动，请稍后查看日志', 'success');
           // 自动切换到日志记录页签的发帖日志子菜单查看结果
           setTimeout(() => {
             document.querySelector('[data-group="log-settings"]').click();
@@ -5685,6 +5732,288 @@
         alert('保存失败：' + error.message);
       }
     }
+
+    // ==================== 网络发帖配置功能 ====================
+
+    // 渲染网络发帖配置页面
+    function renderNetworkPostConfig() {
+      const container = document.getElementById('main-content-area');
+      
+      container.innerHTML = `
+        <div class="space-y-6">
+          <div>
+            <h3 class="text-xl font-semibold text-gray-800">🌐 网络发帖配置</h3>
+            <p class="text-sm text-gray-500 mt-1">配置互联网搜索平台 Token 和参数（知乎、小红书等）</p>
+          </div>
+          
+          <div id="network-post-config-container">
+            <p class="text-gray-500 text-sm">加载中...</p>
+          </div>
+        </div>
+      `;
+      
+      // 加载网络发帖配置
+      loadNetworkPostConfig();
+    }
+
+    // 加载网络发帖配置
+    async function loadNetworkPostConfig() {
+      const container = document.getElementById('network-post-config-container');
+      
+      try {
+        const resp = await fetch('/api/network-post-config');
+        const data = await resp.json();
+        
+        if (data.success) {
+          renderNetworkPostConfigContent(data.config);
+        } else {
+          container.innerHTML = '<p class="text-red-500">加载失败</p>';
+        }
+      } catch (error) {
+        container.innerHTML = '<p class="text-red-500">加载失败：' + error.message + '</p>';
+      }
+    }
+
+    // 渲染网络发帖配置内容
+    function renderNetworkPostConfigContent(config) {
+      const container = document.getElementById('network-post-config-container');
+      
+      container.innerHTML = `
+        <!-- 知乎配置 -->
+        <div class="bg-white rounded-lg shadow-sm border mb-6">
+          <div class="px-6 py-4 border-b bg-gray-50">
+            <h4 class="text-lg font-semibold text-gray-800">📚 知乎 API 配置</h4>
+            <p class="text-sm text-gray-500 mt-1">知乎官方数据开放平台 API，每天免费 1000 次调用</p>
+          </div>
+          <div class="p-6 space-y-4">
+            <div>
+              <label for="zhihu-access-secret" class="block text-sm font-medium text-gray-700 mb-1">
+                Access Secret <span class="text-red-500">*</span>
+              </label>
+              <input type="text" id="zhihu-access-secret" name="zhihuAccessSecret" 
+                value="${config.zhihuAccessSecret || ''}" 
+                placeholder="11d78a6c28453c03f047552bc588d03ad227db52"
+                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <p class="text-xs text-gray-500 mt-1">
+                在 <a href="https://developer.zhihu.com/profile" target="_blank" class="text-blue-600 hover:underline">知乎开放平台个人中心</a> 获取
+              </p>
+            </div>
+            
+            <div class="flex items-center gap-2">
+              <input type="checkbox" id="zhihu-enabled" name="zhihuEnabled" 
+                ${config.zhihuEnabled ? 'checked' : ''}
+                class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+              <label for="zhihu-enabled" class="text-sm text-gray-700">启用知乎搜索</label>
+            </div>
+            
+            <div class="p-4 bg-green-50 border border-green-200 rounded-md">
+              <p class="text-sm text-green-800">
+                <strong>✅ 状态：</strong>
+                ${config.zhihuAccessSecret ? '已配置 Access Secret，可以点击"测试连接"验证' : '未配置 Access Secret'}
+              </p>
+            </div>
+            
+            <button type="button" onclick="testZhihuConnection()" 
+              class="px-4 py-2 bg-green-600 text-white text-sm rounded-md hover:bg-green-700 transition-colors">
+              🔌 测试连接
+            </button>
+          </div>
+        </div>
+        
+        <!-- 小红书配置 -->
+        <div class="bg-white rounded-lg shadow-sm border mb-6">
+          <div class="px-6 py-4 border-b bg-gray-50">
+            <h4 class="text-lg font-semibold text-gray-800">📕 小红书配置</h4>
+            <p class="text-sm text-gray-500 mt-1">通过 Cookie 访问小红书 Web API，完全免费</p>
+          </div>
+          <div class="p-6 space-y-4">
+            <!-- Cookie 输入框 -->
+            <div>
+              <label for="xiaohongshu-cookie" class="block text-sm font-medium text-gray-700 mb-1">
+                Cookie <span class="text-red-500">*</span>
+              </label>
+              <textarea id="xiaohongshu-cookie" name="xiaohongshuCookie" 
+                rows="4"
+                placeholder="abRequestId=xxx; web_session=xxx; a1=xxx; id_token=xxx; ..."
+                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-xs">${config.xiaohongshuCookie || ''}</textarea>
+              <p class="text-xs text-gray-500 mt-1">
+                按 F12 打开开发者工具 → Network 标签 → 刷新页面 → 复制请求头中的 Cookie 字段
+                <button type="button" onclick="toggleXiaohongshuGuide()" class="text-blue-600 hover:underline ml-2">📖 查看详细教程</button>
+              </p>
+              
+              <!-- F12 抓包指南（默认隐藏） -->
+              <div id="xiaohongshu-guide" class="hidden mt-3 p-4 bg-blue-50 border border-blue-200 rounded-md">
+                <h5 class="text-sm font-semibold text-blue-900 mb-2">📝 如何获取小红书 Cookie</h5>
+                <ol class="text-xs text-blue-800 space-y-2 list-decimal list-inside">
+                  <li>打开浏览器（推荐 Chrome 或 Edge）</li>
+                  <li>访问 <a href="https://www.xiaohongshu.com" target="_blank" class="text-blue-600 hover:underline">小红书网页版</a> 并扫码登录</li>
+                  <li>按 <kbd class="px-1 py-0.5 bg-gray-200 rounded text-xs">F12</kbd> 打开开发者工具</li>
+                  <li>切换到 <strong>Network（网络）</strong> 标签，勾选 <strong>Preserve log（保留日志）</strong></li>
+                  <li>刷新页面（<kbd class="px-1 py-0.5 bg-gray-200 rounded text-xs">F5</kbd>）</li>
+                  <li>在左侧请求列表中找到任意请求（如 <code>explore</code> 或 <code>api</code> 开头的）</li>
+                  <li>点击该请求 → 右侧 <strong>Headers（请求头）</strong> 标签 → 找到 <code>Cookie</code> 字段</li>
+                  <li>复制整个 Cookie 值并粘贴到上方输入框</li>
+                </ol>
+                <div class="mt-3 p-2 bg-white rounded border border-blue-200">
+                  <p class="text-xs font-semibold text-blue-900 mb-1">关键字段检查：</p>
+                  <ul class="text-xs text-blue-800 space-y-1">
+                    <li>✅ <code>web_session</code> - 会话标识（必需）</li>
+                    <li>✅ <code>a1</code> - 设备指纹（用于签名算法）</li>
+                    <li>✅ <code>id_token</code> - 用户身份令牌</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+            
+            <!-- 启用开关 -->
+            <div class="flex items-center gap-2">
+              <input type="checkbox" id="xiaohongshu-enabled" name="xiaohongshuEnabled" 
+                ${config.xiaohongshuEnabled ? 'checked' : ''}
+                class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+              <label for="xiaohongshu-enabled" class="text-sm text-gray-700">启用小红书搜索</label>
+            </div>
+            
+            <!-- 状态显示 -->
+            <div class="p-4 bg-green-50 border border-green-200 rounded-md">
+              <p class="text-sm text-green-800">
+                <strong>✅ 状态：</strong>
+                ${config.xiaohongshuCookie ? '已配置 Cookie，可以点击"测试连接"验证' : '未配置 Cookie'}
+              </p>
+              <p class="text-xs text-green-700 mt-1">
+                💡 使用 Python xhshow 库（mns0301 签名算法）自动处理签名
+              </p>
+            </div>
+            
+            <!-- 测试连接按钮 -->
+            <button type="button" onclick="testXiaohongshuConnection()" 
+              class="px-4 py-2 bg-green-600 text-white text-sm rounded-md hover:bg-green-700 transition-colors">
+              🔍 测试连接
+            </button>
+          </div>
+        </div>
+        
+        <!-- 微博配置 -->
+        <div class="bg-white rounded-lg shadow-sm border mb-6">
+          <div class="px-6 py-4 border-b bg-gray-50">
+            <h4 class="text-lg font-semibold text-gray-800">📢 微博 API 配置（待实现）</h4>
+            <p class="text-sm text-gray-500 mt-1">微博开放平台 API，需要申请开发者账号</p>
+          </div>
+          <div class="p-6 space-y-4">
+            <div>
+              <label for="weibo-access-token" class="block text-sm font-medium text-gray-700 mb-1">
+                Access Token
+              </label>
+              <input type="text" id="weibo-access-token" name="weiboAccessToken" 
+                value="${config.weiboAccessToken || ''}" 
+                placeholder="微博开发者 Access Token"
+                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <p class="text-xs text-gray-500 mt-1">
+                在微博开放平台开发者中心获取
+              </p>
+            </div>
+            
+            <div class="flex items-center gap-2">
+              <input type="checkbox" id="weibo-enabled" name="weiboEnabled" 
+                ${config.weiboEnabled ? 'checked' : ''}
+                class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+              <label for="weibo-enabled" class="text-sm text-gray-700">启用微博搜索</label>
+            </div>
+            
+            <div class="p-4 bg-yellow-50 border border-yellow-200 rounded-md">
+              <p class="text-sm text-yellow-800">
+                <strong>⏳ 状态：</strong>功能开发中，需要申请微博开发者账号
+              </p>
+            </div>
+          </div>
+        </div>
+        
+
+      `;
+    }
+
+    // 测试知乎连接
+    async function testZhihuConnection() {
+      const accessSecret = document.getElementById('zhihu-access-secret').value.trim();
+      const statusSpan = document.getElementById('network-post-save-status');
+      
+      if (!accessSecret) {
+        showToast('请先填写 Access Secret', 'warning');
+        return;
+      }
+      
+      if (statusSpan) statusSpan.textContent = '测试中...';
+      
+      try {
+        const resp = await fetch('/api/network-post-config/test-zhihu', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ accessSecret }),
+        });
+        
+        const data = await resp.json();
+        
+        if (data.success) {
+          showToast(`✅ 测试成功！找到 ${data.resultCount || 0} 条结果`, 'success');
+          if (statusSpan) statusSpan.textContent = '测试成功';
+        } else {
+          showToast('❌ 测试失败：' + (data.error || '未知错误'), 'error');
+          if (statusSpan) statusSpan.textContent = '测试失败';
+        }
+      } catch (error) {
+        showToast('测试失败：' + error.message, 'error');
+        if (statusSpan) statusSpan.textContent = '测试失败';
+      }
+    }
+
+    // 切换小红书抓包指南显示/隐藏
+    function toggleXiaohongshuGuide() {
+      const guide = document.getElementById('xiaohongshu-guide');
+      if (guide.classList.contains('hidden')) {
+        guide.classList.remove('hidden');
+      } else {
+        guide.classList.add('hidden');
+      }
+    }
+
+    // 测试小红书连接
+    async function testXiaohongshuConnection() {
+      const cookie = document.getElementById('xiaohongshu-cookie').value.trim();
+      const statusSpan = document.getElementById('network-post-save-status');
+      
+      if (!cookie) {
+        showToast('请先填写 Cookie', 'warning');
+        return;
+      }
+      
+      // 检查 Cookie 是否包含关键字段
+      if (!cookie.includes('web_session') || !cookie.includes('a1=')) {
+        showToast('Cookie 可能不完整，请确保包含 web_session 和 a1 字段', 'warning');
+      }
+      
+      if (statusSpan) statusSpan.textContent = '测试中...';
+      
+      try {
+        const resp = await fetch('/api/network-post-config/test-xiaohongshu', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cookie }),
+        });
+        
+        const data = await resp.json();
+        
+        if (data.success) {
+          showToast(`✅ 测试成功！找到 ${data.resultCount || 0} 条结果`, 'success');
+          if (statusSpan) statusSpan.textContent = '测试成功';
+        } else {
+          showToast('❌ 测试失败：' + (data.error || '未知错误'), 'error');
+          if (statusSpan) statusSpan.textContent = '测试失败';
+        }
+      } catch (error) {
+        showToast('测试失败：' + error.message, 'error');
+        if (statusSpan) statusSpan.textContent = '测试失败';
+      }
+    }
+
 
     // ==================== 手机配置功能 ====================
 
