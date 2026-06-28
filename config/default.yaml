@@ -67,35 +67,12 @@ materials:
       command: "auto"
       timeoutMs: 30000
 logLevel: "info"
-vehicleMonitor:
-  enabled: false
-  intervalMinutes: 15
-  quickIntervalMinutes: 5
-  safeDistanceMeters: 50
-  moveThresholdMeters: 50
-  minBatteryVolt: 11.5
-  alertPhone: "18953272532"
-  haBaseUrl: "https://ha.hxfssc.com:8088"
-  haToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiI3OWY2OGIxZmVjZGY0NTE3YjE2ZDI5NjgxN2I0ODJjYyIsImlhdCI6MTc4MTQ4Mzc4MiwiZXhwIjoyMDk2ODQzNzgyfQ.B4MZVRCLwc6w3cvftSNJWW2ZyzZY5jmj1NRcefnj-2g"
-  deviceTrackerEntity: "device_tracker.iphone"
 
-# 互联网搜索配置
-internetSearch:
-  enabled: true
-  # 小红书 Cookie（从浏览器获取，不需要登录账号）
-  xiaohongshuCookie: "${XIAOHONGSHU_COOKIE}"
-  # 知乎 Access Secret（从知乎开放平台获取）
-  zhihuAccessSecret: "${ZHIHU_ACCESS_SECRET}"
-  # 汽车之家 Cookie（从浏览器获取，登录后获取）
-  autohomeCookie: "${AUTOHOME_COOKIE}"
-  # 平台优先级（1 最高，5 最低）
-  platforms:
-    - name: xiaohongshu
-      enabled: true
-      priority: 4
-    - name: zhihu
-      enabled: true
-      priority: 3
-    - name: autohome
-      enabled: true
-      priority: 5
+# 注意：业务配置（如车辆监控、互联网搜索、发帖配置等）已迁移到数据库
+# 请在数据库中配置以下表：
+# - vehicle_monitor_config: 车辆监控配置
+# - internet_reference_config: 互联网参考配置
+# - internet_reference_platforms: 互联网平台配置
+# - post_config: 发帖配置
+# - comment_config: 评论配置
+# - 其他配置表查看 src/db/migrations/ 中的 *_config 表
