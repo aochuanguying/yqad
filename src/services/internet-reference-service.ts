@@ -13,6 +13,7 @@
 import { getLogger } from '../utils/logger';
 import { getInternetReferenceStorage } from '../storage/mysql/internet-reference-storage';
 import { internetSearchManager, SearchResult } from './internet-search';
+import { XiaohongshuSearch } from './internet-search/xiaohongshu-search';
 
 const logger = getLogger('internet-reference-service');
 
@@ -115,6 +116,51 @@ export async function search(): Promise<SearchResult[]> {
   } catch (error) {
     logger.error('查询互联网参考素材失败:', error instanceof Error ? error.message : String(error));
     return [];
+  }
+}
+
+/**
+ * 获取小红书笔记详情
+ * @param noteId 笔记 ID
+ * @param xsecToken 可选的 xsec_token
+ */
+export async function getXiaohongshuNoteDetail(
+  noteId: string,
+  xsecToken?: string
+): Promise<{
+  success: boolean;
+  data?: {
+    id: string;
+    title: string;
+    content: string;
+    author: string;
+    likes: number;
+    collects: number;
+    comments: number;
+    images: string[];
+    url: string;
+  };
+  error?: string;
+}> {
+  try {
+    logger.info(`开始获取小红书笔记详情：${noteId}`);
+    
+    const xiaohongshu = new XiaohongshuSearch();
+    const result = await xiaohongshu.getNoteDetail(noteId, xsecToken);
+    
+    if (result.success) {
+      logger.info(`笔记详情获取成功：${result.data?.title}`);
+    } else {
+      logger.warn(`笔记详情获取失败：${result.error}`);
+    }
+    
+    return result;
+  } catch (error) {
+    logger.error('获取小红书笔记详情失败:', error instanceof Error ? error.message : String(error));
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : '获取详情失败',
+    };
   }
 }
 

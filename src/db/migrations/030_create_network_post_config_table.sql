@@ -9,11 +9,11 @@ CREATE TABLE IF NOT EXISTS `network_post_config` (
   `zhihu_enabled` TINYINT(1) DEFAULT 0 COMMENT '是否启用知乎搜索',
   
   -- 小红书配置
-  `xiaohongshu_cookie` TEXT DEFAULT '' COMMENT '小红书 Cookie（包含 web_session 和 a1）',
+  `xiaohongshu_cookie` TEXT COMMENT '小红书 Cookie（包含 web_session 和 a1）',
   `xiaohongshu_enabled` TINYINT(1) DEFAULT 0 COMMENT '是否启用小红书搜索',
   
   -- 汽车之家配置
-  `autohome_cookie` TEXT DEFAULT '' COMMENT '汽车之家 Cookie（登录后获取）',
+  `autohome_cookie` TEXT COMMENT '汽车之家 Cookie（登录后获取）',
   `autohome_enabled` TINYINT(1) DEFAULT 0 COMMENT '是否启用汽车之家搜索',
   
   -- 通用配置

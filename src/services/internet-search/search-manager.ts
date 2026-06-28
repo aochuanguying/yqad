@@ -88,13 +88,29 @@ export class PlatformAwareKeywordSelector implements ISearchKeywordSelector {
   }
 
   /**
-   * 汽车之家搜索词选择（任务 2.5）
-   * 特点：使用单个高频论坛术语
+   * 汽车之家搜索词选择
+   * 特点：使用精准的论坛术语，优先返回 card 类型结果
+   * 策略：
+   * - 包含"提车"、"作业"、"用车"等词优先（容易返回 card）
+   * - 2-4 字短词优先
+   * - 避免太宽泛的词（如"奥迪"会返回 box）
    */
   private selectAutohomeKeyword(keywords: string[]): string {
     if (keywords.length === 0) return '';
     
-    // 优先选择短词、论坛术语（2-4 字）
+    // 优先选择包含论坛术语的词
+    const forumKeywords = keywords.filter(k => 
+      k.includes('提车') || k.includes('作业') || k.includes('用车') || 
+      k.includes('试驾') || k.includes('保养') || k.includes('油耗')
+    );
+    
+    if (forumKeywords.length > 0) {
+      const keyword = forumKeywords[0];
+      logger.debug(`汽车之家搜索词选择（论坛术语）：${keyword}`);
+      return keyword;
+    }
+    
+    // 其次选择 2-4 字短词
     const shortKeywords = keywords.filter(k => k.length >= 2 && k.length <= 4);
     
     if (shortKeywords.length > 0) {

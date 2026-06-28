@@ -163,10 +163,8 @@ router.post('/network-post-config/test-xiaohongshu', async (req: Request, res: R
  */
 router.post('/network-post-config/test-autohome', async (req: Request, res: Response) => {
   try {
-    const { cookie } = req.body;
-    
     const storage = NetworkPostConfigStorage.getInstance();
-    const result = await storage.testAutohomeConnection(cookie || '');
+    const result = await storage.testAutohomeConnection();
     
     if (result.success) {
       res.json({ 

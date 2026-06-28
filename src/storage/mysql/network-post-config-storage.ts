@@ -192,9 +192,10 @@ export class NetworkPostConfigStorage {
       const path = require('path');
       
       return new Promise((resolve) => {
-        // 使用独立的 Python 脚本文件（已修改为简单解析）
-        const scriptPath = path.join(__dirname, '../../scripts/test_xiaohongshu.py');
-        const pyProcess = spawn('python3.10', [scriptPath, cookie]);
+        // 使用独立的 Python 脚本文件
+        const scriptPath = path.join(__dirname, '../../../scripts/test_xiaohongshu.py');
+        const pythonExecutable = process.env.PYTHON_EXECUTABLE || 'python3.10';
+        const pyProcess = spawn(pythonExecutable, [scriptPath, '测试', '5', cookie]);
         let output = '';
         let errorOutput = '';
 
@@ -248,9 +249,9 @@ export class NetworkPostConfigStorage {
   }
 
   /**
-   * 测试汽车之家连接
+   * 测试汽车之家连接（使用搜索 API，无需 Cookie）
    */
-  async testAutohomeConnection(cookie: string): Promise<{ success: boolean; resultCount?: number; error?: string }> {
+  async testAutohomeConnection(): Promise<{ success: boolean; resultCount?: number; error?: string }> {
     try {
       logger.info('正在测试汽车之家连接...');
       
@@ -261,12 +262,7 @@ export class NetworkPostConfigStorage {
         const scriptPath = path.join(__dirname, '../../../scripts/test_autohome.py');
         const pythonExecutable = process.env.PYTHON_EXECUTABLE || 'python3';
         
-        const args = [scriptPath, '奥迪', '5'];
-        if (cookie) {
-          args.push(cookie);
-        }
-        
-        const pyProcess = spawn(pythonExecutable, args);
+        const pyProcess = spawn(pythonExecutable, [scriptPath, '奥迪', '5']);
         let output = '';
         let errorOutput = '';
 

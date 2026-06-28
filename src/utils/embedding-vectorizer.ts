@@ -84,7 +84,7 @@ export class EmbeddingVectorizer {
     
     // 从配置文件加载数据库配置
     const config = await import('../utils/config').then(m => m.loadConfig());
-    const mysqlConfig = config.mysql.production;
+    const mysqlConfig = (config as any).mysql?.production || (config as any).database?.production;
     
     logger.info(`数据库配置：host=${mysqlConfig.host}, user=${mysqlConfig.user}, database=${mysqlConfig.database}`);
     
@@ -408,12 +408,3 @@ export async function batchGenerateEmbeddings(texts: string[], batchSize?: numbe
 
 // 兼容旧代码（废弃）
 export const embeddingVectorizer = getEmbeddingVectorizer();
-
-// 导出便捷函数
-export async function generateEmbedding(text: string): Promise<number[]> {
-  return embeddingVectorizer.generateEmbedding(text);
-}
-
-export async function batchGenerateEmbeddings(texts: string[], batchSize?: number): Promise<number[][]> {
-  return embeddingVectorizer.batchGenerateEmbeddings(texts, batchSize);
-}
