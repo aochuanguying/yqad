@@ -20,6 +20,8 @@ import { postHistoryStorage, CreatePostHistoryInput } from '../storage/mysql/pos
 import { getPostConfigStorage } from '../storage/mysql/post-config-storage';
 import { getFeaturedPostingStorage } from '../storage/mysql/featured-posting-storage';
 import { getSchedulerConfigStorage } from '../storage/mysql/scheduler-config-storage';
+import { ErrorTracker, PerformanceMonitor, SensitiveDataSanitizer } from '../utils/post-log-utils';
+import type { PipelineTimings, ResourceUsage, ContextSnapshot } from '../types/post-logging';
 
 // CommonJS 模块导入（用于编译后的 JS 文件）
 let internetReferenceService: any;
@@ -183,71 +185,296 @@ export class AutoPostService {
    * @param triggerType 触发方式（可选，默认'auto'）
    */
   private async postWithTopic(topic: Topic, mode?: PostingMode, triggerType: 'auto' | 'manual' = 'auto'): Promise<PostResult> {
+    const pipelineTimings: PipelineTimings = {};
+    const startTime = Date.now();
+    let contextSnapshot: ContextSnapshot | undefined;
+    
+    // 从数据库读取配置
+    const featuredConfig = await getFeaturedPostingStorage().getConfig();
+    const featuredEnabled = featuredConfig?.enabled ?? false;
+
+    // 初始化 Pipeline 上下文
+    const ctx: PostPipelineContext = {
+      topic,
+      mode: mode ?? (featuredEnabled ? 'featured' : 'normal'),
+      triggerType,
+      featuredEnabled,
+      config: null,
+      imagePaths: [],
+      imageUrls: [],
+      matchedTopics: [],
+      finalTitle: '',
+      finalContent: '',
+      materialSelectionResult: null,
+    };
+    
     try {
       logger.info(`使用预配置主题发帖："${topic.title}"`);
-      // 从数据库读取配置
-      const featuredConfig = await getFeaturedPostingStorage().getConfig();
-      const featuredEnabled = featuredConfig?.enabled ?? false;
 
-      // 初始化 Pipeline 上下文
-      const ctx: PostPipelineContext = {
-        topic,
-        mode: mode ?? (featuredEnabled ? 'featured' : 'normal'),
+      // 初始化上下文快照
+      contextSnapshot = ErrorTracker.createContextSnapshot({
+        pipelineStep: 'init',
+        topicId: topic.id,
+        mode: ctx.mode,
         triggerType,
-        featuredEnabled,
-        config: null,
-        imagePaths: [],
-        imageUrls: [],
-        matchedTopics: [],
-        finalTitle: '',
-        finalContent: '',
-        materialSelectionResult: null,
-      };
+        postType: 'topic',
+        title: topic.title,
+      });
 
       // Pipeline 步骤 1：选择子方向和提纲
-      await this.selectSubDirectionAndOutline(ctx);
+      const step1Start = Date.now();
+      try {
+        await this.selectSubDirectionAndOutline(ctx);
+        pipelineTimings.subDirectionSelection = {
+          startTime: step1Start,
+          endTime: Date.now(),
+          duration: Date.now() - step1Start,
+          status: 'success',
+          metadata: { selectedSubDirectionIndex: ctx.selectedSubDirectionIndex },
+        };
+      } catch (error: any) {
+        pipelineTimings.subDirectionSelection = {
+          startTime: step1Start,
+          endTime: Date.now(),
+          duration: Date.now() - step1Start,
+          status: 'failed',
+          metadata: { error: error.message },
+        };
+        throw error;
+      }
 
       // Pipeline 步骤 2：生成内容并去重
-      const contentGenerated = await this.generateContentWithDedup(ctx);
-      if (!contentGenerated) {
-        return { 
-          success: false, 
-          error: ctx.error || '标题去重失败', 
-          source: 'topic', 
-          mode: featuredEnabled ? 'featured' : 'normal',
-          complianceReportId: ctx.complianceReportId,
+      const step2Start = Date.now();
+      try {
+        const contentGenerated = await this.generateContentWithDedup(ctx);
+        pipelineTimings.contentGeneration = {
+          startTime: step2Start,
+          endTime: Date.now(),
+          duration: Date.now() - step2Start,
+          status: contentGenerated ? 'success' : 'failed',
+          metadata: { generated: !!contentGenerated, title: ctx.generated?.title },
         };
+        if (!contentGenerated) {
+          return { 
+            success: false, 
+            error: ctx.error || '标题去重失败', 
+            source: 'topic', 
+            mode: featuredEnabled ? 'featured' : 'normal',
+            complianceReportId: ctx.complianceReportId,
+          };
+        }
+      } catch (error: any) {
+        pipelineTimings.contentGeneration = {
+          startTime: step2Start,
+          endTime: Date.now(),
+          duration: Date.now() - step2Start,
+          status: 'failed',
+          metadata: { error: error.message },
+        };
+        throw error;
       }
 
       // Pipeline 步骤 3：选择素材
-      await this.selectMaterials(ctx);
+      const step3Start = Date.now();
+      try {
+        await this.selectMaterials(ctx);
+        pipelineTimings.materialSelection = {
+          startTime: step3Start,
+          endTime: Date.now(),
+          duration: Date.now() - step3Start,
+          status: 'success',
+          metadata: { 
+            imageCount: ctx.imagePaths.length,
+            hasLocalMaterials: !!ctx.materialSelectionResult,
+          },
+        };
+      } catch (error: any) {
+        pipelineTimings.materialSelection = {
+          startTime: step3Start,
+          endTime: Date.now(),
+          duration: Date.now() - step3Start,
+          status: 'failed',
+          metadata: { error: error.message },
+        };
+        throw error;
+      }
 
       // Pipeline 步骤 4：上传图片
-      await this.uploadImagesToCDN(ctx);
+      const step4Start = Date.now();
+      try {
+        await this.uploadImagesToCDN(ctx);
+        pipelineTimings.imageUpload = {
+          startTime: step4Start,
+          endTime: Date.now(),
+          duration: Date.now() - step4Start,
+          status: 'success',
+          metadata: { uploadedCount: ctx.imageUrls.length },
+        };
+      } catch (error: any) {
+        pipelineTimings.imageUpload = {
+          startTime: step4Start,
+          endTime: Date.now(),
+          duration: Date.now() - step4Start,
+          status: 'failed',
+          metadata: { error: error.message },
+        };
+        throw error;
+      }
 
       // Pipeline 步骤 5：匹配热门话题
-      await this.matchHotTopics(ctx);
+      const step5Start = Date.now();
+      try {
+        await this.matchHotTopics(ctx);
+        pipelineTimings.topicMatching = {
+          startTime: step5Start,
+          endTime: Date.now(),
+          duration: Date.now() - step5Start,
+          status: 'success',
+          metadata: { matchedTopicsCount: ctx.matchedTopics.length },
+        };
+      } catch (error: any) {
+        pipelineTimings.topicMatching = {
+          startTime: step5Start,
+          endTime: Date.now(),
+          duration: Date.now() - step5Start,
+          status: 'failed',
+          metadata: { error: error.message },
+        };
+        throw error;
+      }
 
       // Pipeline 步骤 6：应用多样化变换
-      await this.applyDiversityTransforms(ctx);
+      const step6Start = Date.now();
+      try {
+        await this.applyDiversityTransforms(ctx);
+        pipelineTimings.diversityTransform = {
+          startTime: step6Start,
+          endTime: Date.now(),
+          duration: Date.now() - step6Start,
+          status: 'success',
+          metadata: { finalTitle: ctx.finalTitle, finalContentLength: ctx.finalContent.length },
+        };
+      } catch (error: any) {
+        pipelineTimings.diversityTransform = {
+          startTime: step6Start,
+          endTime: Date.now(),
+          duration: Date.now() - step6Start,
+          status: 'failed',
+          metadata: { error: error.message },
+        };
+        throw error;
+      }
 
       // Pipeline 步骤 7：合规性检查
-      const compliancePassed = await this.performComplianceCheck(ctx);
-      if (!compliancePassed) {
-        return {
-          success: false,
-          error: ctx.error || '合规性检查未通过',
-          source: 'topic',
-          mode: featuredEnabled ? 'featured' : 'normal',
-          complianceReportId: ctx.complianceReportId,
+      const step7Start = Date.now();
+      try {
+        const compliancePassed = await this.performComplianceCheck(ctx);
+        pipelineTimings.complianceCheck = {
+          startTime: step7Start,
+          endTime: Date.now(),
+          duration: Date.now() - step7Start,
+          status: compliancePassed ? 'success' : 'failed',
+          metadata: { passed: compliancePassed, reportId: ctx.complianceReportId },
         };
+        if (!compliancePassed) {
+          return {
+            success: false,
+            error: ctx.error || '合规性检查未通过',
+            source: 'topic',
+            mode: featuredEnabled ? 'featured' : 'normal',
+            complianceReportId: ctx.complianceReportId,
+          };
+        }
+      } catch (error: any) {
+        pipelineTimings.complianceCheck = {
+          startTime: step7Start,
+          endTime: Date.now(),
+          duration: Date.now() - step7Start,
+          status: 'failed',
+          metadata: { error: error.message },
+        };
+        throw error;
       }
 
       // Pipeline 步骤 8：发布并记录结果
-      return await this.publishAndRecord(ctx);
-    } catch (error) {
+      const step8Start = Date.now();
+      try {
+        const result = await this.publishAndRecord(ctx);
+        pipelineTimings.publish = {
+          startTime: step8Start,
+          endTime: Date.now(),
+          duration: Date.now() - step8Start,
+          status: result.success ? 'success' : 'failed',
+          metadata: { postId: result.postId, success: result.success },
+        };
+        
+        // 记录资源使用情况
+        const resourceUsage: ResourceUsage = {
+          imageCount: ctx.imageUrls.length,
+          apiCallCount: 0, // 可以在各步骤中累加
+          materialLocalCount: ctx.materialSelectionResult?.selectedMaterials.filter((m: any) => m.source === 'local').length || 0,
+          materialInternetCount: ctx.materialSelectionResult?.selectedMaterials.filter((m: any) => m.source === 'internet').length || 0,
+        };
+        
+        // 更新日志，添加性能指标
+        if (result.postId) {
+          const log = await postLoggingService.findByTaskId(result.postId);
+          if (log) {
+            await postLoggingService.update(log.id, {
+              pipelineTimings,
+              totalDuration: Date.now() - startTime,
+              resourceUsage,
+            });
+          }
+        }
+        
+        return result;
+      } catch (error: any) {
+        pipelineTimings.publish = {
+          startTime: step8Start,
+          endTime: Date.now(),
+          duration: Date.now() - step8Start,
+          status: 'failed',
+          metadata: { error: error.message },
+        };
+        throw error;
+      }
+    } catch (error: any) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       logger.error(`主题发帖失败 (${topic.title}): ${errorMsg}`);
+      
+      // 错误追踪
+      const errorStack = SensitiveDataSanitizer.sanitizeErrorStack(error.stack || '');
+      const errorType = ErrorTracker.identifyErrorType(error);
+      const severity = ErrorTracker.identifyErrorSeverity(error);
+      
+      // 更新上下文快照
+      if (contextSnapshot) {
+        contextSnapshot.pipelineStep = errorType === 'compliance' ? 'complianceCheck' : 'unknown';
+      }
+      
+      // 记录失败的日志（包含错误追踪信息）
+      try {
+        postLoggingService.log({
+          timestamp: Date.now(),
+          triggerType,
+          postType: 'topic',
+          mode: mode ?? (featuredEnabled ? 'featured' : 'normal'),
+          topicId: topic.id,
+          topicName: topic.title,
+          title: ctx.finalTitle || topic.title,
+          content: ctx.finalContent || '',
+          imageUrls: ctx.imageUrls || [],
+          status: 'failed',
+          errorMessage: errorMsg,
+          errorStack,
+          contextSnapshot,
+          taskId: undefined,
+        });
+      } catch (logError: any) {
+        logger.warn(`记录失败日志失败：${logError.message}`);
+      }
+      
       return { success: false, error: errorMsg, source: 'topic' };
     }
   }

@@ -17,6 +17,8 @@ import { apiConfigStorage } from './storage/mysql/api-config-storage';
 import { loadAIProvidersFromDB } from './utils/config';
 import { initFallbackChain } from './ai';
 import { organizeMaterials } from './services/material-organizer';
+import { pendingPostService } from './services/pending-post-service';
+import { getCommentLogStorage } from './storage/mysql/comment-log-storage';
 
 const logger = getLogger('main');
 
@@ -105,6 +107,27 @@ async function main() {
 
   // 启动调度器
   scheduler.start();
+
+  // 启动待确认发帖超时清理定时任务（每 10 分钟执行一次）
+  setInterval(() => {
+    pendingPostService.cleanupExpired().catch((error) => {
+      logger.error(`待确认发帖超时清理异常：${error.message}`);
+    });
+  }, 10 * 60 * 1000);
+  logger.info('已启动待确认发帖超时清理定时器（每 10 分钟执行一次）');
+
+  // 启动评论日志定期清理定时任务（每天凌晨 2 点执行，清理 30 天前的日志）
+  const commentLogStorage = getCommentLogStorage();
+  setInterval(() => {
+    const now = new Date();
+    const shouldRun = now.getHours() === 2 && now.getMinutes() === 0;
+    if (shouldRun) {
+      commentLogStorage.deleteExpiredLogs(30).catch((error) => {
+        logger.error(`评论日志清理异常：${error.message}`);
+      });
+    }
+  }, 60 * 60 * 1000); // 每小时检查一次，在凌晨 2 点执行
+  logger.info('已启动评论日志定期清理定时器（每天凌晨 2 点清理 30 天前的日志）');
 
   // 启动 Web 管理界面
   startWebServer();

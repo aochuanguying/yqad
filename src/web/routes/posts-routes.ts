@@ -1002,6 +1002,167 @@ router.get('/logs/:id', async (req, res) => {
 });
 
 /**
+ * POST /api/posts/logs/cleanup
+ * 手动触发清理过期发帖日志（管理接口）
+ */
+router.post('/logs/cleanup', async (req, res) => {
+  try {
+    const { maxAgeDays = 30 } = req.body;
+    logger.info(`收到手动清理发帖日志请求：保留${maxAgeDays}天`);
+    
+    const cleanedCount = await postLoggingService.triggerCleanup(maxAgeDays);
+    
+    res.json({
+      success: true,
+      data: {
+        cleanedCount,
+        maxAgeDays,
+      },
+    });
+  } catch (error: any) {
+    logger.error(`手动清理发帖日志异常：${error.message}`);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      code: 'CLEANUP_ERROR',
+    });
+  }
+});
+
+/**
+ * GET /api/posts/logs/stats
+ * 获取发帖日志统计信息
+ */
+router.get('/logs/stats', async (req, res) => {
+  try {
+    logger.info('获取发帖日志统计信息');
+    
+    const stats = await postLoggingService.getStats();
+    
+    res.json({
+      success: true,
+      data: stats,
+    });
+  } catch (error: any) {
+    logger.error(`获取统计信息异常：${error.message}`);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      code: 'STATS_ERROR',
+    });
+  }
+});
+
+/**
+ * GET /api/posts/logs/performance
+ * 获取性能指标（包含 P50/P90/P99）
+ */
+router.get('/logs/performance', async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    logger.info('获取性能指标');
+    
+    const metrics = await postLoggingService.getPerformanceMetrics({
+      startDate: startDate ? new Date(startDate as string).toISOString() : undefined,
+      endDate: endDate ? new Date(endDate as string).toISOString() : undefined,
+    });
+    
+    res.json({
+      success: true,
+      data: metrics,
+    });
+  } catch (error: any) {
+    logger.error(`获取性能指标异常：${error.message}`);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      code: 'PERFORMANCE_ERROR',
+    });
+  }
+});
+
+/**
+ * GET /api/posts/logs/conversion
+ * 获取环节转化率
+ */
+router.get('/logs/conversion', async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    logger.info('获取环节转化率');
+    
+    const rates = await postLoggingService.getConversionRates({
+      startDate: startDate ? new Date(startDate as string).toISOString() : undefined,
+      endDate: endDate ? new Date(endDate as string).toISOString() : undefined,
+    });
+    
+    res.json({
+      success: true,
+      data: rates,
+    });
+  } catch (error: any) {
+    logger.error(`获取环节转化率异常：${error.message}`);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      code: 'CONVERSION_ERROR',
+    });
+  }
+});
+
+/**
+ * GET /api/posts/logs/realtime
+ * 获取实时监控指标
+ */
+router.get('/logs/realtime', async (req, res) => {
+  try {
+    logger.info('获取实时监控指标');
+    
+    const metrics = await postLoggingService.getRealTimeMetrics();
+    
+    res.json({
+      success: true,
+      data: metrics,
+    });
+  } catch (error: any) {
+    logger.error(`获取实时监控指标异常：${error.message}`);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      code: 'REALTIME_ERROR',
+    });
+  }
+});
+
+/**
+ * GET /api/posts/logs/alerts
+ * 检查异常告警
+ */
+router.get('/logs/alerts', async (req, res) => {
+  try {
+    const { minSuccessRate, maxAverageDuration, maxErrorCount } = req.query;
+    logger.info('检查异常告警');
+    
+    const alerts = await postLoggingService.checkAlerts({
+      minSuccessRate: minSuccessRate ? parseInt(minSuccessRate as string) : undefined,
+      maxAverageDuration: maxAverageDuration ? parseInt(maxAverageDuration as string) : undefined,
+      maxErrorCount: maxErrorCount ? parseInt(maxErrorCount as string) : undefined,
+    });
+    
+    res.json({
+      success: true,
+      data: alerts,
+    });
+  } catch (error: any) {
+    logger.error(`检查异常告警异常：${error.message}`);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      code: 'ALERTS_ERROR',
+    });
+  }
+});
+
+/**
  * GET /api/posts/autojs/scripts
  * 获取 AutoJS 服务器上的脚本列表（代理接口）
  */
