@@ -76,10 +76,12 @@ describe('ZhihuPromptBuilder', () => {
     expect(result.userPrompt).toBeDefined();
     
     // 知乎风格应该包含专业术语要求
-    expect(result.systemPrompt).toMatch(/(专业 | 术语 | 数据 | 分析)/);
+    expect(result.systemPrompt).toContain('专业');
+    expect(result.systemPrompt).toContain('数据');
     
     // 应该包含逻辑结构要求
-    expect(result.systemPrompt).toMatch(/(逻辑 | 结构 | 论证)/);
+    expect(result.systemPrompt).toContain('逻辑');
+    expect(result.systemPrompt).toContain('结构');
     
     // 应该包含字数要求（800-2000 字）
     expect(result.systemPrompt).toMatch(/800.*2000|2000.*800/);
@@ -90,7 +92,8 @@ describe('ZhihuPromptBuilder', () => {
     
     const result = builder.build(topic);
     
-    expect(result.systemPrompt).toMatch(/(对比 | 评测 | 参数 | 配置)/);
+    expect(result.systemPrompt).toContain('对比');
+    expect(result.systemPrompt).toContain('参数');
   });
 });
 
@@ -110,10 +113,12 @@ describe('AutohomePromptBuilder', () => {
     expect(result.userPrompt).toBeDefined();
     
     // 汽车之家风格应该包含真实车主要求
-    expect(result.systemPrompt).toMatch(/(真实车主 | 用车体验 | 实际)/);
+    expect(result.systemPrompt).toContain('真实车主');
+    expect(result.systemPrompt).toContain('用车体验');
     
     // 应该包含配置和价格信息要求
-    expect(result.systemPrompt).toMatch(/(配置 | 价格 | 落地价)/);
+    expect(result.systemPrompt).toContain('配置');
+    expect(result.systemPrompt).toContain('价格');
     
     // 应该包含字数要求（500-1500 字）
     expect(result.systemPrompt).toMatch(/500.*1500|1500.*500/);
@@ -124,7 +129,8 @@ describe('AutohomePromptBuilder', () => {
     
     const result = builder.build(topic);
     
-    expect(result.systemPrompt).toMatch(/(实用 | 建议 | 改装 | 心得)/);
+    expect(result.systemPrompt).toContain('实用建议');
+    expect(result.systemPrompt).toContain('改装');
   });
 });
 

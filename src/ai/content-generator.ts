@@ -12,14 +12,14 @@ const logger = getLogger('content-gen');
 /**
  * 任务 3.1: 提示词构建器接口
  */
-interface IPromptBuilder {
+export interface IPromptBuilder {
   build(topic: string, references?: InternetReference[]): { systemPrompt: string; userPrompt: string };
 }
 
 /**
  * 任务 3.2: 小红书风格提示词构建器
  */
-class XiaohongshuPromptBuilder implements IPromptBuilder {
+export class XiaohongshuPromptBuilder implements IPromptBuilder {
   build(topic: string, references?: InternetReference[]): { systemPrompt: string; userPrompt: string } {
     const systemPrompt = `你是小红书汽车博主，擅长分享真实用车体验。
 
@@ -57,7 +57,7 @@ ${references && references.length > 0 ? `参考素材：${references.map(r => r.
 /**
  * 任务 3.3: 知乎风格提示词构建器
  */
-class ZhihuPromptBuilder implements IPromptBuilder {
+export class ZhihuPromptBuilder implements IPromptBuilder {
   build(topic: string, references?: InternetReference[]): { systemPrompt: string; userPrompt: string } {
     const systemPrompt = `你是知乎汽车领域优秀答主，擅长深度分析和技术解读。
 
@@ -99,7 +99,7 @@ ${references && references.length > 0 ? `参考素材：${references.map(r => r.
 /**
  * 任务 3.4: 汽车之家风格提示词构建器
  */
-class AutohomePromptBuilder implements IPromptBuilder {
+export class AutohomePromptBuilder implements IPromptBuilder {
   build(topic: string, references?: InternetReference[]): { systemPrompt: string; userPrompt: string } {
     const systemPrompt = `你是汽车之家认证车主，擅长分享真实用车体验和改装案例。
 
@@ -141,7 +141,7 @@ ${references && references.length > 0 ? `参考素材：${references.map(r => r.
 /**
  * 任务 3.5: 根据参考素材来源选择提示词风格
  */
-function selectPromptBuilder(references?: InternetReference[]): IPromptBuilder {
+export function selectPromptBuilder(references?: InternetReference[]): IPromptBuilder {
   if (!references || references.length === 0) {
     // 默认使用小红书风格
     return new XiaohongshuPromptBuilder();
@@ -160,10 +160,23 @@ function selectPromptBuilder(references?: InternetReference[]): IPromptBuilder {
     else if (ref.source.includes('汽车之家')) platformCount.autohome++;
   }
 
-  // 选择占比最高的平台风格
-  const maxPlatform = Object.keys(platformCount).reduce(
-    (a, b) => platformCount[a as keyof typeof platformCount] > platformCount[b as keyof typeof platformCount] ? a : b
-  );
+  // 选择占比最高的平台风格（平局时优先选择小红书）
+  let maxPlatform = 'xiaohongshu';
+  let maxCount = 0;
+  
+  // 按优先级顺序检查：小红书 > 知乎 > 汽车之家
+  if (platformCount.xiaohongshu > maxCount) {
+    maxCount = platformCount.xiaohongshu;
+    maxPlatform = 'xiaohongshu';
+  }
+  if (platformCount.zhihu > maxCount) {
+    maxCount = platformCount.zhihu;
+    maxPlatform = 'zhihu';
+  }
+  if (platformCount.autohome > maxCount) {
+    maxCount = platformCount.autohome;
+    maxPlatform = 'autohome';
+  }
 
   logger.debug(`选择提示词风格：${maxPlatform} (小红书:${platformCount.xiaohongshu}, 知乎:${platformCount.zhihu}, 汽车之家:${platformCount.autohome})`);
 

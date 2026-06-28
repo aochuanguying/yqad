@@ -53,7 +53,7 @@ describe('PlatformAwareKeywordSelector', () => {
       const result = selector.select(keywords, 'zhihu');
       
       // 应该选择专业问句
-      expect(result).toMatch(/(如何 | 评价 | 值得 | vs)/);
+      expect(result).toContain('如何');
     });
 
     test('没有专业问句时选择最长的关键词', () => {

@@ -42,6 +42,9 @@ export interface ReferencePost {
   processedImageUrls?: string[];  // 去水印处理后的图片 URL 列表
 }
 
+// 为测试兼容性添加别名
+export type InternetReference = ReferencePost;
+
 /**
  * 发帖历史摘要（主题复用去重使用）
  */

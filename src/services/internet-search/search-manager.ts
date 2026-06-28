@@ -26,7 +26,7 @@ interface ISearchKeywordSelector {
 /**
  * 平台感知的搜索词选择器（任务 2.2）
  */
-class PlatformAwareKeywordSelector implements ISearchKeywordSelector {
+export class PlatformAwareKeywordSelector implements ISearchKeywordSelector {
   /**
    * 根据平台选择搜索词
    */

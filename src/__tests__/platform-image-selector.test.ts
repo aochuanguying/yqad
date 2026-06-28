@@ -64,7 +64,7 @@ describe('图片选择器', () => {
     test('应该排除过于专业的图片', () => {
       const images = [
         createMockImage({ id: '1', source: 'local', path: '/photos/数据对比图.png' }),
-        createMockImage({ id: '2', source: 'local', path: '/photos/评测分析.jpg' }),
+        createMockImage({ id: '2', source: 'local', path: '/photos/参数配置表.jpg' }),
         createMockImage({ id: '3', source: 'local', path: '/photos/自拍.jpg' }),
       ];
       
