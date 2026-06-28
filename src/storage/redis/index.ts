@@ -66,3 +66,10 @@ export {
   getImageCacheStorage,
   type ImageCacheData,
 } from './image-cache-storage';
+
+export {
+  // 互联网参考配置缓存
+  InternetReferenceCache,
+  internetReferenceCache,
+  type CacheStatistics,
+} from './internet-reference-cache';

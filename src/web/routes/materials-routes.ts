@@ -9,6 +9,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { loadConfig } from '../../utils/config';
 import { getLogger } from '../../utils/logger';
+import { manualOrganizeMaterials } from '../../services/material-organizer';
 
 const logger = getLogger('materials-routes');
 const router = Router();
@@ -237,11 +238,13 @@ router.delete('/file', async (req: Request, res: Response) => {
  */
 router.post('/process', async (req: Request, res: Response) => {
   try {
-    // TODO: 调用素材处理服务
     logger.info('素材整理请求已接收');
+    const stats = await manualOrganizeMaterials();
+    
     res.json({
       success: true,
-      message: '素材整理功能暂未实现',
+      message: '素材整理完成',
+      data: stats,
     });
   } catch (error: any) {
     logger.error(`素材整理失败：${error.message}`);

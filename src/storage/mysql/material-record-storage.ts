@@ -114,10 +114,15 @@ export class MaterialRecordStorage extends BaseDAO {
    */
   private async syncToChromaDB(conn: any, record: MaterialRecord): Promise<void> {
     try {
-      // 检查 ChromaDB 是否已初始化
+      // 检查 ChromaDB 是否已初始化，如果未初始化则尝试初始化
       if (!materialVectorStorage.isInitialized) {
-        logger.debug('ChromaDB 未初始化，跳过同步');
-        return;
+        try {
+          await materialVectorStorage.initialize();
+          logger.info('MaterialVectorStorage 延迟初始化成功');
+        } catch (initError) {
+          logger.debug('MaterialVectorStorage 初始化失败，跳过同步:', initError instanceof Error ? initError.message : String(initError));
+          return;
+        }
       }
       
       // 构建向量文本

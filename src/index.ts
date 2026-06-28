@@ -18,6 +18,7 @@ import { schedulerConfigStorage } from './storage/mysql/scheduler-config-storage
 import { apiConfigStorage } from './storage/mysql/api-config-storage';
 import { loadAIProvidersFromDB } from './utils/config';
 import { initFallbackChain } from './ai';
+import { organizeMaterials } from './services/material-organizer';
 
 const logger = getLogger('main');
 
@@ -120,7 +121,7 @@ async function main() {
         logger.debug('素材整理已禁用，跳过');
         return;
       }
-      logger.info('素材整理功能暂未实现，跳过');
+      await organizeMaterials();
     },
   });
 

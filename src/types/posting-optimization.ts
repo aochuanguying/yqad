@@ -67,6 +67,7 @@ export interface PostGenerationOptions {
   globalPrompt?: GlobalPostPrompt;     // 全局人设
   topicHistory?: PostSummary[];        // 同主题历史（去重参考）
   referenceTexts?: ReferencePost[];    // 互联网参考素材
+  references?: any[];                  // 任务 3.6: 互联网参考素材（用于分平台提示词生成）
   mode?: PostingMode;
 }
 

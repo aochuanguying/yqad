@@ -11,9 +11,108 @@ import { XiaohongshuSearch } from './xiaohongshu-search';
 import { ZhihuSearch } from './zhihu-search';
 import { AutohomeSearch } from './autohome-search';
 import { getInternetReferencePlatformStorage } from '../../storage/mysql/internet-reference-platform-storage';
+import { getInternetReferenceStorage, InternetReferenceConfig } from '../../storage/mysql/internet-reference-storage';
 import { getLogger } from '../../utils/logger';
 
 const logger = getLogger('internet-search-manager');
+
+/**
+ * 搜索词选择器接口（任务 2.1）
+ */
+interface ISearchKeywordSelector {
+  select(keywords: string[], platform: string): string;
+}
+
+/**
+ * 平台感知的搜索词选择器（任务 2.2）
+ */
+class PlatformAwareKeywordSelector implements ISearchKeywordSelector {
+  /**
+   * 根据平台选择搜索词
+   */
+  select(keywords: string[], platform: string): string {
+    switch (platform) {
+      case 'xiaohongshu':
+        return this.selectXiaohongshuKeyword(keywords);
+      case 'zhihu':
+        return this.selectZhihuKeyword(keywords);
+      case 'autohome':
+        return this.selectAutohomeKeyword(keywords);
+      default:
+        return keywords[0] || '';
+    }
+  }
+
+  /**
+   * 小红书搜索词选择（任务 2.3）
+   * 特点：从预配置词库选择，避免频繁更换
+   */
+  private selectXiaohongshuKeyword(keywords: string[]): string {
+    if (keywords.length === 0) return '';
+    
+    // 从预配置词库中选择，避免频繁更换触发风控
+    // 使用小时级切换，每小时使用同一个搜索词
+    const hour = Math.floor(Date.now() / 3600000);
+    const index = hour % keywords.length;
+    
+    // 优先选择"车型 + 场景"组合词（2-5 字）
+    const keyword = keywords[index];
+    logger.debug(`小红书搜索词选择：${keyword} (索引：${index})`);
+    
+    return keyword;
+  }
+
+  /**
+   * 知乎搜索词选择（任务 2.4）
+   * 特点：使用专业术语和问题形式
+   */
+  private selectZhihuKeyword(keywords: string[]): string {
+    if (keywords.length === 0) return '';
+    
+    // 优先选择包含"如何"、"评价"、"对比"的专业问句
+    const professionalKeywords = keywords.filter(
+      k => k.includes('如何') || k.includes('评价') || k.includes('vs') || k.includes('对比')
+    );
+    
+    if (professionalKeywords.length > 0) {
+      const keyword = professionalKeywords[0];
+      logger.debug(`知乎专业搜索词选择：${keyword}`);
+      return keyword;
+    }
+    
+    // 如果没有专业问句，选择最长的搜索词（充分利用 API 字符限制）
+    const longestKeyword = keywords.reduce((a, b) => a.length > b.length ? a : b);
+    logger.debug(`知乎搜索词选择（最长）：${longestKeyword}`);
+    
+    return longestKeyword;
+  }
+
+  /**
+   * 汽车之家搜索词选择（任务 2.5）
+   * 特点：使用单个高频论坛术语
+   */
+  private selectAutohomeKeyword(keywords: string[]): string {
+    if (keywords.length === 0) return '';
+    
+    // 优先选择短词、论坛术语（2-4 字）
+    const shortKeywords = keywords.filter(k => k.length >= 2 && k.length <= 4);
+    
+    if (shortKeywords.length > 0) {
+      const keyword = shortKeywords[0];
+      logger.debug(`汽车之家搜索词选择（短词）：${keyword}`);
+      return keyword;
+    }
+    
+    // 如果没有短词，选择第一个关键词
+    const keyword = keywords[0];
+    logger.debug(`汽车之家搜索词选择：${keyword}`);
+    
+    return keyword;
+  }
+}
+
+// 导出选择器实例
+export const keywordSelector = new PlatformAwareKeywordSelector();
 
 /**
  * 搜索服务管理器类
@@ -82,7 +181,7 @@ export class InternetSearchManager {
   }
   
   /**
-   * 选择下一个平台（轮询策略）
+   * 选择下一个平台（智能推荐 + 轮询混合策略）（任务 4.1-4.5）
    */
   async selectNextPlatform(): Promise<ISearchPlatform | null> {
     const platforms = await this.getAvailablePlatforms();
@@ -96,28 +195,134 @@ export class InternetSearchManager {
       return platforms[0];
     }
     
-    // 轮询策略：选择与上次不同的平台
-    if (this.lastUsedPlatform) {
-      const otherPlatforms = platforms.filter(p => p.getPlatformName() !== this.lastUsedPlatform);
+    // 任务 4.1: 计算基础优先级
+    const basePriorities = await this.calculateBasePriorities();
+    
+    // 任务 4.2: 根据频率限制调整
+    const adjustedPriorities = this.adjustByRateLimit(basePriorities);
+    
+    // 任务 4.3: 根据成功率调整
+    const finalPriorities = await this.adjustBySuccessRate(adjustedPriorities);
+    
+    // 任务 4.5: 使用优先级 + 轮询混合策略
+    return this.weightedRandomSelect(platforms, finalPriorities);
+  }
+
+  /**
+   * 任务 4.1: 计算基础优先级
+   */
+  private async calculateBasePriorities(): Promise<Map<string, number>> {
+    try {
+      const storage = getInternetReferenceStorage();
+      const priorities = await storage.getPlatformPriorities();
       
-      if (otherPlatforms.length > 0) {
-        // 按优先级排序（需要从数据库获取优先级）
-        const sortedPlatforms = await this.sortByPriority(otherPlatforms);
-        const selected = sortedPlatforms[0];
+      logger.debug(`基础优先级：${JSON.stringify(Object.fromEntries(priorities))}`);
+      return priorities;
+    } catch (error) {
+      logger.warn('获取基础优先级失败，使用默认优先级');
+      // 返回默认优先级
+      return new Map([
+        ['xiaohongshu', 8],
+        ['zhihu', 7],
+        ['autohome', 8]
+      ]);
+    }
+  }
+
+  /**
+   * 任务 4.2: 根据频率限制调整优先级
+   */
+  private adjustByRateLimit(priorities: Map<string, number>): Map<string, number> {
+    const adjusted = new Map<string, number>();
+    
+    for (const [platform, priority] of priorities.entries()) {
+      // TODO: 从 Redis 获取当前小时的查询次数
+      // 这里简化处理，假设没有达到频率限制
+      adjusted.set(platform, priority);
+    }
+    
+    logger.debug(`频率限制调整后优先级：${JSON.stringify(Object.fromEntries(adjusted))}`);
+    return adjusted;
+  }
+
+  /**
+   * 任务 4.3: 根据成功率调整优先级
+   */
+  private async adjustBySuccessRate(priorities: Map<string, number>): Promise<Map<string, number>> {
+    const adjusted = new Map<string, number>();
+    
+    try {
+      const storage = getInternetReferenceStorage();
+      const allPlatforms = await storage.getAllPlatformConfigs();
+      
+      // 创建成功率映射
+      const successRateMap = new Map<string, number>();
+      for (const p of allPlatforms) {
+        successRateMap.set(p.platformName, p.successRate);
+      }
+      
+      for (const [platform, priority] of priorities.entries()) {
+        const successRate = successRateMap.get(platform) || 100.0;
         
-        this.lastUsedPlatform = selected.getPlatformName();
-        logger.info(`选择平台：${selected.getPlatformDisplayName()} (${selected.getPlatformName()})`);
+        // 成功率奖励：成功率 > 90% 时，优先级 +1
+        let adjustedPriority = priority;
+        if (successRate > 90) {
+          adjustedPriority = Math.min(10, priority + 1);
+        } else if (successRate < 50) {
+          // 成功率惩罚：成功率 < 50% 时，优先级 -2
+          adjustedPriority = Math.max(1, priority - 2);
+        }
         
-        return selected;
+        adjusted.set(platform, adjustedPriority);
+        logger.debug(`平台 ${platform} 成功率：${successRate}%, 调整后优先级：${adjustedPriority}`);
+      }
+    } catch (error) {
+      logger.warn('获取成功率失败，使用原始优先级');
+      return priorities;
+    }
+    
+    logger.debug(`成功率调整后优先级：${JSON.stringify(Object.fromEntries(adjusted))}`);
+    return adjusted;
+  }
+
+  /**
+   * 任务 4.4: 权重随机选择算法
+   */
+  private weightedRandomSelect(
+    platforms: ISearchPlatform[],
+    priorities: Map<string, number>
+  ): ISearchPlatform {
+    // 计算总权重
+    let totalWeight = 0;
+    const weights: number[] = [];
+    
+    for (const platform of platforms) {
+      const priority = priorities.get(platform.getPlatformName()) || 5;
+      
+      // 任务 4.5: 最近使用惩罚
+      let weight = priority;
+      if (this.lastUsedPlatform === platform.getPlatformName()) {
+        weight = Math.max(1, priority - 3);  // 刚使用过的平台优先级降低 3
+      }
+      
+      weights.push(weight);
+      totalWeight += weight;
+    }
+    
+    // 权重随机选择
+    let random = Math.random() * totalWeight;
+    let selected = platforms[0];
+    
+    for (let i = 0; i < platforms.length; i++) {
+      random -= weights[i];
+      if (random <= 0) {
+        selected = platforms[i];
+        break;
       }
     }
     
-    // 默认返回优先级最高的平台
-    const sortedPlatforms = await this.sortByPriority(platforms);
-    const selected = sortedPlatforms[0];
-    
     this.lastUsedPlatform = selected.getPlatformName();
-    logger.info(`选择平台：${selected.getPlatformDisplayName()} (${selected.getPlatformName()})`);
+    logger.info(`智能选择平台：${selected.getPlatformDisplayName()} (${selected.getPlatformName()})`);
     
     return selected;
   }
@@ -149,7 +354,7 @@ export class InternetSearchManager {
   }
   
   /**
-   * 搜索（使用轮询策略）
+   * 搜索（使用轮询策略 + 分平台搜索词选择）（任务 2.6）
    */
   async search(keywords: string[], maxResults: number = 5): Promise<SearchResult[]> {
     // 选择平台
@@ -160,22 +365,33 @@ export class InternetSearchManager {
       return [];
     }
     
+    const platformName = platform.getPlatformName();
+    
+    // 任务 2.6: 根据平台选择搜索词
+    const selectedKeyword = keywordSelector.select(keywords, platformName);
+    
     try {
-      logger.info(`开始搜索，平台：${platform.getPlatformDisplayName()}, 关键词：${keywords.join(', ')}`);
+      logger.info(`开始搜索，平台：${platform.getPlatformDisplayName()}, 原始关键词：${keywords.join(', ')}, 优化后搜索词：${selectedKeyword}`);
       
-      // 执行搜索
-      const results = await platform.search(keywords, maxResults);
+      // 执行搜索（使用优化后的搜索词）
+      const results = await platform.search([selectedKeyword], maxResults);
       
       logger.info(`搜索完成，平台：${platform.getPlatformDisplayName()}, 结果数：${results.length}`);
+      
+      // 任务 2.7: 记录搜索效果
+      await this.recordSearchEffect(platformName, true, results.length, selectedKeyword);
       
       return results;
       
     } catch (error) {
       logger.error(`平台 ${platform.getPlatformDisplayName()} 搜索失败:`, error instanceof Error ? error.message : String(error));
       
+      // 任务 2.7: 记录搜索失败
+      await this.recordSearchEffect(platformName, false, 0, selectedKeyword);
+      
       // 降级：尝试其他平台
       logger.warn(`尝试使用其他平台...`);
-      const fallbackResults = await this.searchWithFallback(keywords, maxResults, platform.getPlatformName());
+      const fallbackResults = await this.searchWithFallback(keywords, maxResults, platformName);
       
       return fallbackResults;
     }
@@ -215,6 +431,97 @@ export class InternetSearchManager {
    */
   getPlatformCount(): number {
     return this.platforms.size;
+  }
+
+  /**
+   * 任务 2.7: 记录搜索效果
+   */
+  private async recordSearchEffect(
+    platform: string,
+    success: boolean,
+    resultCount: number,
+    keyword: string
+  ): Promise<void> {
+    try {
+      const storage = getInternetReferenceStorage();
+      
+      // 记录成功率
+      await storage.recordSuccess(platform, success);
+      
+      // TODO: 后续可以添加到数据库的详细记录表
+      logger.debug(`搜索效果记录 - 平台：${platform}, 成功：${success}, 结果数：${resultCount}, 搜索词：${keyword}`);
+    } catch (error) {
+      logger.warn('记录搜索效果失败:', error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  /**
+   * 任务 2.8: 分析搜索词效果
+   */
+  async analyzeKeywordEffectiveness(platform: string): Promise<{
+    keyword: string;
+    successRate: number;
+    avgResultCount: number;
+    usageCount: number;
+  }[]> {
+    try {
+      // TODO: 实现完整的搜索词效果分析
+      // 目前返回空数组，后续需要从数据库查询统计信息
+      logger.info(`分析平台 ${platform} 的搜索词效果（功能待实现）`);
+      
+      return [];
+    } catch (error) {
+      logger.error('分析搜索词效果失败:', error instanceof Error ? error.message : String(error));
+      return [];
+    }
+  }
+
+  /**
+   * 任务 4.6: 记录平台使用统计
+   */
+  private async recordPlatformUsage(
+    platform: string,
+    success: boolean,
+    resultCount: number
+  ): Promise<void> {
+    try {
+      const storage = getInternetReferenceStorage();
+      
+      // 记录成功率
+      await storage.recordSuccess(platform, success);
+      
+      // TODO: 记录查询次数和素材质量
+      logger.debug(`平台使用统计 - 平台：${platform}, 成功：${success}, 结果数：${resultCount}`);
+    } catch (error) {
+      logger.warn('记录平台使用统计失败:', error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  /**
+   * 任务 4.8: 获取平台优先级
+   */
+  async getPlatformPriorities(): Promise<Map<string, number>> {
+    try {
+      const storage = getInternetReferenceStorage();
+      return await storage.getPlatformPriorities();
+    } catch (error) {
+      logger.error('获取平台优先级失败:', error instanceof Error ? error.message : String(error));
+      return new Map();
+    }
+  }
+
+  /**
+   * 任务 4.8: 更新平台优先级
+   */
+  async updatePlatformPriority(platform: string, priority: number): Promise<void> {
+    try {
+      const storage = getInternetReferenceStorage();
+      await storage.updatePlatformPriority(platform, priority);
+      logger.info(`平台 ${platform} 优先级已更新为 ${priority}`);
+    } catch (error) {
+      logger.error('更新平台优先级失败:', error instanceof Error ? error.message : String(error));
+      throw error;
+    }
   }
 }
 
