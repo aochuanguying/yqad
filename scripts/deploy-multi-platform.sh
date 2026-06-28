@@ -27,12 +27,10 @@ if command -v adb &> /dev/null; then
         adb shell "mkdir -p /sdcard/脚本"
         
         # 上传脚本
-        adb push autojs-scripts/audi_search_weibo.js /sdcard/脚本/audi_search_weibo.js
         adb push autojs-scripts/audi_search_zhihu.js /sdcard/脚本/audi_search_zhihu.js
         adb push autojs-scripts/audi_search_autohome.js /sdcard/脚本/audi_search_autohome.js
         
         echo "✅ AutoJS 脚本上传完成"
-        echo "   - audi_search_weibo.js"
         echo "   - audi_search_zhihu.js"
         echo "   - audi_search_autohome.js"
     else
@@ -61,7 +59,6 @@ echo "查看日志命令："
 echo "  pm2 logs yqad | grep '选择平台'"
 echo ""
 echo "预期输出："
-echo "  选择平台：微博 (优先级：8, 脚本：audi_search_weibo.js)"
 echo "  选择平台：知乎 (优先级：8, 脚本：audi_search_zhihu.js)"
 echo "  选择平台：汽车之家 (优先级：7, 脚本：audi_search_autohome.js)"
 echo ""
@@ -77,7 +74,6 @@ echo "3. 检查发帖日志，确认来源平台标记正确"
 echo ""
 echo "📊 平台配置："
 echo "  - 小红书：优先级 10, 权重 1.00"
-echo "  - 微博：优先级 8, 权重 0.80"
 echo "  - 知乎：优先级 8, 权重 0.80"
 echo "  - 汽车之家：优先级 7, 权重 0.60"
 echo ""

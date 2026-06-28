@@ -43,8 +43,6 @@ router.post('/network-post-config', async (req: Request, res: Response) => {
       zhihuEnabled: req.body.zhihuEnabled || false,
       xiaohongshuCookie: req.body.xiaohongshuCookie || '',
       xiaohongshuEnabled: req.body.xiaohongshuEnabled || false,
-      weiboAccessToken: req.body.weiboAccessToken || '',
-      weiboEnabled: req.body.weiboEnabled || false,
       autohomeCookie: req.body.autohomeCookie || '',
       autohomeEnabled: req.body.autohomeEnabled || false,
       maxResults: req.body.maxResults || 10,

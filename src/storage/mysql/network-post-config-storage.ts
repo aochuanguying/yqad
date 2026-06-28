@@ -13,10 +13,6 @@ export interface NetworkPostConfig {
   xiaohongshuCookie?: string;
   xiaohongshuEnabled: boolean;
   
-  // 微博配置
-  weiboAccessToken?: string;
-  weiboEnabled: boolean;
-  
   // 汽车之家配置
   autohomeCookie?: string;
   autohomeEnabled: boolean;
@@ -76,8 +72,6 @@ export class NetworkPostConfigStorage {
         zhihuEnabled: !!row.zhihu_enabled,
         xiaohongshuCookie: row.xiaohongshu_cookie || '',
         xiaohongshuEnabled: !!row.xiaohongshu_enabled,
-        weiboAccessToken: row.weibo_access_token || '',
-        weiboEnabled: !!row.weibo_enabled,
         autohomeCookie: row.autohome_cookie || '',
         autohomeEnabled: !!row.autohome_enabled,
         maxResults: row.max_results || 10,
@@ -101,18 +95,15 @@ export class NetworkPostConfigStorage {
         `INSERT INTO network_post_config (
           id, zhihu_access_secret, zhihu_enabled, 
           xiaohongshu_cookie, xiaohongshu_enabled,
-          weibo_access_token, weibo_enabled,
           autohome_cookie, autohome_enabled,
           max_results, enabled, updated_at
         ) VALUES (
-          1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW()
+          1, ?, ?, ?, ?, ?, ?, ?, ?, NOW()
         ) ON DUPLICATE KEY UPDATE
           zhihu_access_secret = VALUES(zhihu_access_secret),
           zhihu_enabled = VALUES(zhihu_enabled),
           xiaohongshu_cookie = VALUES(xiaohongshu_cookie),
           xiaohongshu_enabled = VALUES(xiaohongshu_enabled),
-          weibo_access_token = VALUES(weibo_access_token),
-          weibo_enabled = VALUES(weibo_enabled),
           autohome_cookie = VALUES(autohome_cookie),
           autohome_enabled = VALUES(autohome_enabled),
           max_results = VALUES(max_results),
@@ -124,8 +115,6 @@ export class NetworkPostConfigStorage {
           config.zhihuEnabled ? 1 : 0,
           config.xiaohongshuCookie || '',
           config.xiaohongshuEnabled ? 1 : 0,
-          config.weiboAccessToken || '',
-          config.weiboEnabled ? 1 : 0,
           config.autohomeCookie || '',
           config.autohomeEnabled ? 1 : 0,
           config.maxResults || 10,

@@ -2,7 +2,7 @@
 
 -- 1. 修改 internet_reference_config 表的 platform 字段，支持多平台
 ALTER TABLE internet_reference_config 
-MODIFY COLUMN platform VARCHAR(500) DEFAULT 'xiaohongshu,douyin,weibo' COMMENT '多平台列表，逗号分隔';
+MODIFY COLUMN platform VARCHAR(500) DEFAULT 'xiaohongshu,douyin' COMMENT '多平台列表，逗号分隔';
 
 -- 2. 创建互联网参考平台配置表
 CREATE TABLE IF NOT EXISTS internet_reference_platforms (
@@ -27,7 +27,6 @@ INSERT INTO internet_reference_platforms
   (platform_name, display_name, enabled, priority, weight, search_script, rate_limit_per_hour, description)
 VALUES
   ('xiaohongshu', '小红书', 1, 10, 1.00, 'audi_search_xiaohongshu.js', 10, '高质量生活方式分享社区，适合用车生活、露营装备内容'),
-  ('weibo', '微博', 1, 8, 0.80, 'audi_search_weibo.js', 15, '社交媒体平台，实时热点话题，适合汽车热点、品牌活动'),
   ('zhihu', '知乎', 1, 8, 0.80, 'audi_search_zhihu.js', 10, '专业问答社区，深度内容，适合用车知识、技术解析'),
   ('autohome', '汽车之家', 1, 7, 0.60, 'audi_search_autohome.js', 8, '专业汽车社区，垂直领域，适合车型对比、改装案例'),
   ('dongchedi', '懂车帝', 0, 7, 0.60, 'audi_search_dongchedi.js', 8, '汽车资讯社区，新车评测、用车心得'),
@@ -44,7 +43,7 @@ ON DUPLICATE KEY UPDATE
 
 -- 4. 更新 internet_reference_config 的默认平台配置
 UPDATE internet_reference_config 
-SET platform = 'xiaohongshu,weibo,zhihu,autohome'
+SET platform = 'xiaohongshu,zhihu,autohome'
 WHERE id = 1;
 
 -- +migrate Down

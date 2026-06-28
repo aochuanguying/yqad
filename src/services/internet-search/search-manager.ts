@@ -8,7 +8,6 @@
 
 import { ISearchPlatform, SearchResult, PlatformConfig } from './platform-base';
 import { XiaohongshuSearch } from './xiaohongshu-search';
-import { WeiboSearch } from './weibo-search';
 import { ZhihuSearch } from './zhihu-search';
 import { AutohomeSearch } from './autohome-search';
 import { getInternetReferencePlatformStorage } from '../../storage/mysql/internet-reference-platform-storage';
@@ -38,13 +37,6 @@ export class InternetSearchManager {
       logger.info('✅ 小红书搜索服务已初始化');
     } catch (error) {
       logger.warn('小红书搜索服务初始化失败:', error instanceof Error ? error.message : String(error));
-    }
-    
-    try {
-      this.platforms.set('weibo', new WeiboSearch());
-      logger.info('✅ 微博搜索服务已初始化');
-    } catch (error) {
-      logger.warn('微博搜索服务初始化失败:', error instanceof Error ? error.message : String(error));
     }
     
     try {

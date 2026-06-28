@@ -6,6 +6,5 @@
 export * from './platform-base';
 export * from './search-manager';
 export * from './xiaohongshu-search';
-export * from './weibo-search';
 export * from './zhihu-search';
 export * from './autohome-search';

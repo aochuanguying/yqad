@@ -1,5 +1,5 @@
 -- 创建网络发帖配置表
--- 用于存储知乎、小红书、微博等平台的 API 配置
+-- 用于存储知乎、小红书、汽车之家等平台的 API 配置
 
 CREATE TABLE IF NOT EXISTS `network_post_config` (
   `id` INT PRIMARY KEY DEFAULT 1 COMMENT '配置 ID，固定为 1',
@@ -12,9 +12,9 @@ CREATE TABLE IF NOT EXISTS `network_post_config` (
   `xiaohongshu_cookie` TEXT DEFAULT '' COMMENT '小红书 Cookie（包含 web_session 和 a1）',
   `xiaohongshu_enabled` TINYINT(1) DEFAULT 0 COMMENT '是否启用小红书搜索',
   
-  -- 微博配置
-  `weibo_access_token` VARCHAR(255) DEFAULT '' COMMENT '微博 Access Token',
-  `weibo_enabled` TINYINT(1) DEFAULT 0 COMMENT '是否启用微博搜索',
+  -- 汽车之家配置
+  `autohome_cookie` TEXT DEFAULT '' COMMENT '汽车之家 Cookie（登录后获取）',
+  `autohome_enabled` TINYINT(1) DEFAULT 0 COMMENT '是否启用汽车之家搜索',
   
   -- 通用配置
   `max_results` INT DEFAULT 10 COMMENT '默认返回结果数量',
