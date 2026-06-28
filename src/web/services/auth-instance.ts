@@ -1,4 +1,4 @@
-import { createApiClientAsync } from '../../api';
+import { apiClient } from '../../api';
 import { RealAudiApi } from '../../api/real-client';
 import { AuthService } from '../../services/auth';
 import { IAudiApi } from '../../api/types';
@@ -10,26 +10,18 @@ import { IAudiApi } from '../../api/types';
  * 这样可以确保 Token 状态在所有路由之间保持一致。
  */
 let authServiceInstance: AuthService | null = null;
-let apiInstance: IAudiApi | null = null;
 
 export async function getAuthService(): Promise<{ authService: AuthService; api: IAudiApi | null }> {
   if (!authServiceInstance) {
-    const api = await createApiClientAsync();
-    authServiceInstance = await AuthService.create(api);
-    apiInstance = api;
+    authServiceInstance = await AuthService.create(apiClient);
   }
   
   return {
     authService: authServiceInstance,
-    api: apiInstance,
+    api: apiClient,
   };
 }
 
 export async function getRealApi(): Promise<RealAudiApi | null> {
-  if (!apiInstance) {
-    // 如果还没有初始化，先初始化
-    const { api } = await getAuthService();
-    return (api instanceof RealAudiApi) ? api : null;
-  }
-  return (apiInstance instanceof RealAudiApi) ? apiInstance : null;
+  return apiClient instanceof RealAudiApi ? apiClient : null;
 }

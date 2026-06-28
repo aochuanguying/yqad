@@ -257,7 +257,6 @@
     // 字段提示词（Tooltip）映射
     const FIELD_TOOLTIPS = {
       // API 设置
-      'api.mode': '选择 API 模式：mock 为模拟数据，real 为真实 API',
       'api.baseUrl': '一汽奥迪 APP 服务器地址，一般无需修改',
       'api.timeout': 'API 请求超时时间，单位毫秒。建议 10000ms 以上',
       'api.deviceId': '设备唯一标识符，用于模拟真实设备请求',
@@ -1284,11 +1283,7 @@
             </div>`;
         }
         inputHtml = `<input id="${inputId}" data-path="${fieldPath}" data-type="number" type="number" value="${value}" min="5" max="1440" class="w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />${quickSelectHtml}`;
-      } else if (key === 'mode') {
-        inputHtml = `<select id="${inputId}" data-path="${fieldPath}" data-type="string" class="w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-          <option value="mock" ${value === 'mock' ? 'selected' : ''}>mock</option>
-          <option value="real" ${value === 'real' ? 'selected' : ''}>real</option>
-        </select>`;
+
       } else if (key === 'level') {
         inputHtml = `<select id="${inputId}" data-path="${fieldPath}" data-type="string" class="w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
           <option value="error" ${value === 'error' ? 'selected' : ''}>error</option>

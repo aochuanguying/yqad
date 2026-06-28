@@ -1,4 +1,4 @@
-import { createApiClientAsync } from './api';
+import { apiClient } from './api';
 import { AuthService } from './services/auth';
 import { AutoCommentService } from './services/auto-comment';
 import { AutoPostService } from './services/auto-post';
@@ -65,8 +65,7 @@ async function main() {
     return [null, null, null];
   });
   
-  const apiMode = apiConfig?.mode || 'mock';
-  logger.info(`API 模式：${apiMode}`);
+  logger.info('API 初始化完成，使用真实 API');
 
   // 启动 ChromaDB 健康监控
   try {
@@ -77,10 +76,9 @@ async function main() {
   }
 
   // 初始化模块
-  const api = await createApiClientAsync();
-  const authService = await AuthService.create(api);
-  const commentService = new AutoCommentService(api, authService);
-  const postService = new AutoPostService(api, authService);
+  const authService = await AuthService.create(apiClient);
+  const commentService = new AutoCommentService(apiClient, authService);
+  const postService = new AutoPostService(apiClient, authService);
 
   // 每日结果收集
   let todayCommentResults: any[] = [];

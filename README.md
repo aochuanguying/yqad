@@ -36,7 +36,6 @@ npm install
 ```yaml
 # API 设置
 api:
-  mode: real  # real 或 mock
   baseUrl: https://app.faw-club.com
 
 # 登录凭证

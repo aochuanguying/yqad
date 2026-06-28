@@ -4,7 +4,6 @@
 
 # API 设置
 api:
-  mode: real  # real 或 mock
   nickName: "您的昵称"
   ipRegion: "您的 IP 归属地"
 

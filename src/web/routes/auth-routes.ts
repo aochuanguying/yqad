@@ -39,20 +39,12 @@ router.post('/send-code', async (req: Request, res: Response) => {
       });
     }
     
-    const config = loadConfig();
-    if (config.api.mode !== 'real') {
-      return res.status(400).json({
-        code: 400,
-        message: '仅 real 模式支持登录',
-      });
-    }
-    
     const { authService: auth, api } = await getAuthService();
     
     if (!api) {
       return res.status(500).json({
         code: 500,
-        message: 'API 客户端未初始化为 real 模式',
+        message: 'API 客户端未初始化',
       });
     }
     
@@ -99,19 +91,12 @@ router.post('/login', async (req: Request, res: Response) => {
     
     if (isPhoneLogin) {
       // 手机号验证码登录
-      if (config.api.mode !== 'real') {
-        return res.status(400).json({
-          code: 'INVALID_MODE',
-          message: '仅 real 模式支持手机号登录',
-        });
-      }
-      
       const { authService: auth, api } = await getAuthService();
       
       if (!api) {
         return res.status(500).json({
           code: 'CONFIG_ERROR',
-          message: 'API 客户端未初始化为 real 模式',
+          message: 'API 客户端未初始化',
         });
       }
       

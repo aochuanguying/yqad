@@ -14,9 +14,8 @@ export interface AIProviderConfig {
 
 export interface AppConfig {
   api: {
-    mode: 'mock' | 'real';
-    baseUrl: string;
-    timeout: number;
+    baseUrl?: string;
+    timeout?: number;
     deviceId?: string | null;
     nickName?: string | null;
     ipRegion?: string | null;
@@ -247,11 +246,7 @@ function normalizeAIConfig(config: AppConfig): void {
  */
 function normalizeApiConfig(config: AppConfig): void {
   if (!config.api) {
-    config.api = {
-      mode: 'mock',
-      baseUrl: 'http://127.0.0.1:9000',
-      timeout: 5000,
-    };
+    config.api = {};
   }
 }
 

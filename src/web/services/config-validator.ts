@@ -68,11 +68,19 @@ function requireBoolean(value: any, field: string): string | null {
 const validators: Record<string, (data: any) => string | null> = {
   api(data) {
     if (!data || typeof data !== 'object') return 'api 配置无效';
-    if (!['mock', 'real'].includes(data.mode)) return 'api.mode 必须是 "mock" 或 "real"';
-    let err = requireString(data.baseUrl, 'api.baseUrl');
-    if (err) return err;
-    err = requireNumber(data.timeout, 'api.timeout', 1000, 60000);
-    if (err) return err;
+    // 仅验证用户信息字段
+    if (data.deviceId !== undefined) {
+      let err = requireString(data.deviceId, 'api.deviceId');
+      if (err) return err;
+    }
+    if (data.nickName !== undefined) {
+      let err = requireString(data.nickName, 'api.nickName');
+      if (err) return err;
+    }
+    if (data.ipRegion !== undefined) {
+      let err = requireString(data.ipRegion, 'api.ipRegion');
+      if (err) return err;
+    }
     return null;
   },
 

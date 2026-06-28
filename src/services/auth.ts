@@ -61,25 +61,13 @@ export class AuthService {
       return this.token.accessToken;
     }
 
-    // 尝试使用 refresh_token 刷新（Mock 模式）
-    if (this.token?.refreshToken) {
-      try {
-        logger.info('Token 过期，尝试刷新...');
-        const response = await this.api.refreshToken(this.token.refreshToken);
-        this.saveToken(response);
-        return this.token.accessToken;
-      } catch (error) {
-        logger.warn('刷新 token 失败，尝试重新登录');
-      }
-    }
-
-    // 检查是否有预存的 Token（真实模式下通过 Web UI 登录获取）
+    // 检查是否有预存的 Token（通过 Web UI 登录获取）
     if (this.token?.accessToken) {
       logger.warn('Token 已过期，请通过 Web 管理界面重新登录获取新 Token');
       throw new Error('Token 已过期，请通过 Web UI 重新登录');
     }
 
-    // 重新登录（仅 Mock 模式可自动登录）
+    // 自动登录
     return this.login();
   }
 
