@@ -156,16 +156,7 @@ const validators: Record<string, (data: any) => string | null> = {
     return null;
   },
 
-  post(data) {
-    if (!data || typeof data !== 'object') return 'post 配置无效';
-    let err = requireBoolean(data.enabled, 'post.enabled');
-    if (err) return err;
-    err = requireNumber(data.dailyLimit, 'post.dailyLimit', 1, 10);
-    if (err) return err;
-    err = requireNumber(data.avoidRepeatDays, 'post.avoidRepeatDays', 1, 365);
-    if (err) return err;
-    return null;
-  },
+
 
   featuredPosting(data) {
     if (!data || typeof data !== 'object') return 'featuredPosting 配置无效';
@@ -189,7 +180,6 @@ const validators: Record<string, (data: any) => string | null> = {
     
     // 自动补全缺失的子对象（向后兼容）
     if (!data.comment) data.comment = {};
-    if (!data.post) data.post = {};
     if (!data.materialProcessing) data.materialProcessing = {};
     
     // 验证 comment 任务（仅 Cron 模式）
@@ -213,26 +203,7 @@ const validators: Record<string, (data: any) => string | null> = {
       }
     }
     
-    // 验证 post 任务（仅 Cron 模式）
-    if (data.post && Object.keys(data.post).length > 0) {
-      const task = data.post;
-      if (task.cron !== undefined) {
-        if (!isValidCron(task.cron)) {
-          return `scheduler.post.cron 格式无效："${task.cron}"`;
-        }
-        if (task.randomOffsetMin !== undefined) {
-          let err = requireNumber(task.randomOffsetMin, 'scheduler.post.randomOffsetMin', 0, 1440);
-          if (err) return err;
-          if (task.randomOffsetMax !== undefined && task.randomOffsetMin > task.randomOffsetMax) {
-            return 'scheduler.post.randomOffsetMin 不能大于 randomOffsetMax';
-          }
-        }
-        if (task.randomOffsetMax !== undefined) {
-          const err = requireNumber(task.randomOffsetMax, 'scheduler.post.randomOffsetMax', 0, 1440);
-          if (err) return err;
-        }
-      }
-    }
+
     
     // 验证 materialProcessing 任务（支持 Cron 和 Interval 两种模式）
     if (data.materialProcessing && Object.keys(data.materialProcessing).length > 0) {

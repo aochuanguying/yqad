@@ -70,7 +70,11 @@ export interface AppConfig {
   };
   scheduler: {
     comment: { cron: string; randomOffsetMin: number; randomOffsetMax: number };
-    post: { cron: string; randomOffsetMin: number; randomOffsetMax: number };
+    /**
+     * @deprecated 发帖任务已移除，所有发帖由外部 autojs 脚本通过 API 触发
+     * 此配置字段保留但不再使用，未来版本将删除
+     */
+    post?: { cron: string; randomOffsetMin: number; randomOffsetMax: number };
     materialProcessing: { 
       cron?: string; 
       randomOffsetMin?: number; 

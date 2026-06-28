@@ -2,7 +2,6 @@ import { createApiClientAsync } from './api';
 import { AuthService } from './services/auth';
 import { AutoCommentService } from './services/auto-comment';
 import { AutoPostService } from './services/auto-post';
-import { generateDailySummary, checkAlerts, cleanOldLogs } from './services/daily-summary';
 import { createScheduler } from './scheduler';
 import { getLogger } from './utils/logger';
 import { startWebServer } from './web/server';
@@ -13,7 +12,6 @@ import { disconnectRedis } from './utils/redis-connection-manager';
 import { chromaConnectionManager } from './utils/chroma-connection-manager';
 import MySQLConnectionManager from './utils/mysql-connection-manager';
 import { commentConfigStorage } from './storage/mysql/comment-config-storage';
-import { postConfigStorage } from './storage/mysql/post-config-storage';
 import { schedulerConfigStorage } from './storage/mysql/scheduler-config-storage';
 import { apiConfigStorage } from './storage/mysql/api-config-storage';
 import { loadAIProvidersFromDB } from './utils/config';
@@ -58,14 +56,13 @@ async function main() {
   }
 
   // 4. 从数据库读取配置（必须在 MySQL 初始化之后）
-  const [apiConfig, commentConfig, postConfig, schedulerConfig] = await Promise.all([
+  const [apiConfig, commentConfig, schedulerConfig] = await Promise.all([
     apiConfigStorage.getConfig(),
     commentConfigStorage.getConfig(),
-    postConfigStorage.getConfig(),
     schedulerConfigStorage.getConfig(),
   ]).catch(error => {
     logger.warn('从数据库读取配置失败，将使用默认值:', error instanceof Error ? error.message : String(error));
-    return [null, null, null, null];
+    return [null, null, null];
   });
   
   const apiMode = apiConfig?.mode || 'mock';
@@ -87,7 +84,6 @@ async function main() {
 
   // 每日结果收集
   let todayCommentResults: any[] = [];
-  let todayPostResults: any[] = [];
 
 
 
@@ -99,22 +95,6 @@ async function main() {
         return;
       }
       todayCommentResults = await commentService.performDailyComments();
-    },
-    post: async () => {
-      if (!postConfig?.enabled) {
-        logger.info('自动发帖已禁用，跳过');
-        return;
-      }
-      todayPostResults = await postService.performDailyPosts();
-
-      // 发帖是最后一个任务，完成后生成每日摘要
-      await generateDailySummary(todayCommentResults, todayPostResults);
-      await checkAlerts();
-      await cleanOldLogs();
-
-      // 重置当日计数
-      todayCommentResults = [];
-      todayPostResults = [];
     },
     materialProcessing: async () => {
       if (!schedulerConfig?.materialProcessing.enabled) {

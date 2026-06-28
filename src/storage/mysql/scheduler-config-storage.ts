@@ -9,7 +9,11 @@ export interface SchedulerConfig {
     randomOffsetMin: number;
     randomOffsetMax: number;
   };
-  post: {
+  /**
+   * @deprecated 发帖任务已移除，所有发帖由外部 autojs 脚本通过 API 触发
+   * 此配置字段保留但不再使用，未来版本将删除
+   */
+  post?: {
     cron: string;
     randomOffsetMin: number;
     randomOffsetMax: number;
@@ -104,12 +108,10 @@ class SchedulerConfigStorage extends BaseDAO {
         await this.query(
           `INSERT INTO scheduler_config (
             comment_cron, comment_random_offset_min, comment_random_offset_max,
-            post_cron, post_random_offset_min, post_random_offset_max,
             material_processing_interval_minutes, material_processing_enabled
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?)`,
           [
             config.comment.cron, config.comment.randomOffsetMin, config.comment.randomOffsetMax,
-            config.post.cron, config.post.randomOffsetMin, config.post.randomOffsetMax,
             config.materialProcessing.intervalMinutes, config.materialProcessing.enabled ? 1 : 0
           ]
         );
@@ -118,12 +120,10 @@ class SchedulerConfigStorage extends BaseDAO {
         await this.query(
           `UPDATE scheduler_config 
            SET comment_cron = ?, comment_random_offset_min = ?, comment_random_offset_max = ?,
-               post_cron = ?, post_random_offset_min = ?, post_random_offset_max = ?,
                material_processing_interval_minutes = ?, material_processing_enabled = ?
            WHERE id = ?`,
           [
             config.comment.cron, config.comment.randomOffsetMin, config.comment.randomOffsetMax,
-            config.post.cron, config.post.randomOffsetMin, config.post.randomOffsetMax,
             config.materialProcessing.intervalMinutes, config.materialProcessing.enabled ? 1 : 0,
             rows[0].id
           ]

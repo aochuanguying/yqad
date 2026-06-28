@@ -123,7 +123,6 @@
         <!-- Left submenu for Forum Settings -->
         <div class="w-48 border-r bg-gray-50 p-4 hidden" id="forum-submenu">
           <div class="submenu-item" data-subgroup="comment">💬 评论设置</div>
-          <div class="submenu-item" data-subgroup="post">📤 发帖设置</div>
           <div class="submenu-item" data-subgroup="scheduler">⏰ 调度设置</div>
           <div class="submenu-item" data-subgroup="contentLimits">📏 长度设置</div>
           <div class="submenu-item" data-subgroup="network-post">🌐 网络发帖</div>
@@ -205,11 +204,6 @@
         delayMax: '最大延时 (秒)',
         maxFetchPages: '最大获取页数',
       },
-      post: {
-        enabled: '启用发帖',
-        dailyLimit: '每日发帖上限',
-        avoidRepeatDays: '避免重复天数',
-      },
       featuredPosting: {
         enabled: '启用精选发帖',
         minContentChars: '最小内容字数',
@@ -219,7 +213,6 @@
       },
       scheduler: {
         comment: { cron: '评论定时', randomOffsetMin: '最小偏移 (分钟)', randomOffsetMax: '最大偏移 (分钟)' },
-        post: { cron: '发帖定时', randomOffsetMin: '最小偏移 (分钟)', randomOffsetMax: '最大偏移 (分钟)' },
         materialProcessing: { intervalMinutes: '执行间隔 (分钟)', enabled: '启用间隔模式' },
       },
       web: { enabled: '启用 Web 界面', port: '端口' },
@@ -301,11 +294,6 @@
       'comment.delayMax': '评论后最大随机延时，单位秒',
       'comment.maxFetchPages': '获取帖子列表时最多获取多少页',
 
-      // 发帖设置
-      'post.enabled': '是否启用自动发帖功能',
-      'post.dailyLimit': '每天最多发布多少条帖子',
-      'post.avoidRepeatDays': '避免重复发帖的天数，防止内容重复',
-
       // 精选发帖
       'featuredPosting.enabled': '是否启用精选发帖模式，生成更高质量的内容',
       'featuredPosting.minContentChars': '生成内容的最低字数要求',
@@ -317,9 +305,6 @@
       'scheduler.comment.cron': '评论任务的定时表达式，格式：秒 分 时 日 月 周',
       'scheduler.comment.randomOffsetMin': '评论时间最小随机偏移，单位分钟。让执行时间更自然',
       'scheduler.comment.randomOffsetMax': '评论时间最大随机偏移，单位分钟',
-      'scheduler.post.cron': '发帖任务的定时表达式',
-      'scheduler.post.randomOffsetMin': '发帖时间最小随机偏移，单位分钟',
-      'scheduler.post.randomOffsetMax': '发帖时间最大随机偏移，单位分钟',
       'scheduler.materialProcessing.intervalMinutes': '素材整理任务的执行间隔时间，单位分钟（5-1440 分钟）',
       'scheduler.materialProcessing.enabled': '是否启用间隔模式（启用后按固定间隔执行，禁用则使用 Cron 模式）',
 
@@ -714,12 +699,6 @@
         manualPostBtn.style.display = 'none';
         saveBtn.style.display = '';
         renderCommentTab();
-      } else if (subgroup === 'post') {
-        currentGroup = 'post';
-        manualCommentBtn.style.display = 'none';
-        manualPostBtn.style.display = 'flex';
-        saveBtn.style.display = '';
-        renderForm('post');
       } else if (subgroup === 'scheduler') {
         currentGroup = 'scheduler';
         manualCommentBtn.style.display = 'none';
@@ -1213,8 +1192,8 @@
       if (group === 'ai') {
         filteredData = { providerOrder: data.providerOrder || '', requestTimeout: data.requestTimeout || 30000, providers: data.providers };
       } else if (group === 'scheduler') {
-        // 过滤掉 analysis 字段
-        filteredData = Object.fromEntries(Object.entries(data).filter(([key]) => key !== 'analysis'));
+        // 过滤掉 analysis 和 post 字段（发帖任务已移除，所有发帖由外部 autojs 脚本通过 API 触发）
+        filteredData = Object.fromEntries(Object.entries(data).filter(([key]) => key !== 'analysis' && key !== 'post'));
       } else if (group === 'vehicleMonitor') {
         // 确保车辆监控的所有字段都显示（包括可能缺失的字段）
         filteredData = {
@@ -1349,7 +1328,9 @@
       }
       const data = JSON.parse(JSON.stringify(configData[currentGroup]));
       if (currentGroup === 'scheduler') {
+        // 发帖任务已移除，不保存 post 配置
         delete data.analysis;
+        delete data.post;
       }
       const inputs = document.querySelectorAll('[data-path]');
 

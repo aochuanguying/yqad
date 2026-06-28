@@ -141,10 +141,9 @@ export class Scheduler {
         task.job?.stop();
       }
 
-      // 任务名称到配置键的映射
+      // 任务名称到配置键的映射（发帖任务已移除，仅保留评论和素材）
       const taskConfigMap: Record<string, string> = {
         '自动评论': 'comment',
-        '自动发帖': 'post',
         '素材梳理': 'materialProcessing',
       };
 
@@ -280,7 +279,6 @@ export class Scheduler {
  */
 export async function createScheduler(handlers: {
   comment: TaskHandler;
-  post: TaskHandler;
   materialProcessing: TaskHandler;
 }): Promise<Scheduler> {
   const schedulerConfig = await getSchedulerConfigStorage().getConfig();
@@ -302,21 +300,8 @@ export async function createScheduler(handlers: {
     );
   }
 
-  // 检查发帖模式：API 模式下不注册定时发帖任务
-  const postMode = (schedulerConfig as any)?.post?.mode || 'scheduled';
-  const postSchedCfg = (schedulerConfig as any)?.post;
-  if (postMode === 'scheduled' && postSchedCfg) {
-    scheduler.registerTask(
-      '自动发帖',
-      postSchedCfg.cron,
-      postSchedCfg.randomOffsetMin,
-      postSchedCfg.randomOffsetMax,
-      handlers.post
-    );
-    logger.info('发帖模式：定时任务（已注册自动发帖）');
-  } else {
-    logger.info('发帖模式：API 触发（已禁用自动发帖定时任务）');
-  }
+  // 发帖任务已移除：所有发帖动作由外部 autojs 脚本通过 API 触发
+  logger.info('发帖模式：API 触发（定时发帖任务已移除）');
 
   // 素材整理任务：使用间隔模式或传统 Cron 模式
   if (useIntervalMode && mpCfg.enabled !== false) {
