@@ -23,8 +23,14 @@ export interface SearchResult {
   likes?: number;
   /** 评论数 */
   comments?: number;
+  /** 收藏数 */
+  collects?: number;
   /** 发布时间 */
   publishTime?: string;
+  /** 封面图 */
+  coverImage?: string;
+  /** 小红书 xsec_token（用于获取详情） */
+  xsecToken?: string;
   /** 额外数据 */
   extra?: any;
 }
@@ -58,6 +64,28 @@ export interface ISearchPlatform {
    * @returns 是否可用
    */
   isAvailable?(): Promise<boolean>;
+  
+  /**
+   * 获取内容详情（可选实现）
+   * @param id 内容 ID
+   * @param xsecToken 可选的 xsec_token（小红书专用）
+   * @returns 详情数据
+   */
+  getNoteDetail?(id: string, xsecToken?: string): Promise<{
+    success: boolean;
+    data?: {
+      id: string;
+      title: string;
+      content: string;
+      author: string;
+      likes: number;
+      collects: number;
+      comments: number;
+      images: string[];
+      url: string;
+    };
+    error?: string;
+  }>;
 }
 
 /**

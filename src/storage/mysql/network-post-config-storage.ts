@@ -171,10 +171,11 @@ export class NetworkPostConfigStorage {
 
   /**
    * 测试小红书连接
+   * 使用优化后的 XiaohongshuSearch 类，包含重试机制、频率控制等
    */
   async testXiaohongshuConnection(cookie: string): Promise<{ success: boolean; resultCount?: number; error?: string }> {
     try {
-      // 1. 解析 Cookie（直接使用简单解析，Cookie 本身就是 key=value 格式）
+      // 1. 解析 Cookie 验证
       logger.info('正在解析 Cookie...');
       const parseResult = parseCookieSimple(cookie);
       
@@ -187,63 +188,42 @@ export class NetworkPostConfigStorage {
       
       logger.info(`✓ Cookie 解析成功，a1: ${parseResult.a1Value ? '存在' : '不存在'}`);
       
-      // 2. 使用 Python xhshow 库测试小红书连接（使用最新的 mns0301 签名算法）
-      const { spawn } = require('child_process');
-      const path = require('path');
+      // 2. 临时设置 Cookie 到环境变量
+      const originalCookie = process.env.XIAOHONGSHU_COOKIE;
+      process.env.XIAOHONGSHU_COOKIE = cookie;
       
-      return new Promise((resolve) => {
-        // 使用独立的 Python 脚本文件
-        const scriptPath = path.join(__dirname, '../../../scripts/test_xiaohongshu.py');
-        const pythonExecutable = process.env.PYTHON_EXECUTABLE || 'python3.10';
-        const pyProcess = spawn(pythonExecutable, [scriptPath, '测试', '5', cookie]);
-        let output = '';
-        let errorOutput = '';
-
-        pyProcess.stdout.on('data', (data: Buffer) => {
-          output += data.toString();
-        });
-
-        pyProcess.stderr.on('data', (data: Buffer) => {
-          errorOutput += data.toString();
-        });
-
-        pyProcess.on('close', (code: number) => {
-          if (code !== 0) {
-            resolve({
-              success: false,
-              error: errorOutput || `Python 进程退出码：${code}`,
-            });
-            return;
-          }
-
-          try {
-            const result = JSON.parse(output);
-            resolve({
-              success: result.success,
-              resultCount: result.count,
-              error: result.error,
-            });
-          } catch (e) {
-            resolve({
-              success: false,
-              error: `解析响应失败：${output}`,
-            });
-          }
-        });
-
-        setTimeout(() => {
-          pyProcess.kill();
-          resolve({
-            success: false,
-            error: '测试超时（15 秒）',
-          });
-        }, 15000);
-      });
+      try {
+        // 3. 使用优化后的 XiaohongshuSearch 类测试连接
+        const { XiaohongshuSearch } = require('../../services/internet-search/xiaohongshu-search');
+        const searchService = new XiaohongshuSearch();
+        
+        logger.info('开始测试小红书 API 连接（使用优化后的搜索服务）...');
+        
+        // 4. 调用 testConnection 方法（已包含重试机制和频率控制）
+        const result = await searchService.testConnection();
+        
+        // 5. 恢复原始 Cookie
+        if (originalCookie) {
+          process.env.XIAOHONGSHU_COOKIE = originalCookie;
+        } else {
+          delete process.env.XIAOHONGSHU_COOKIE;
+        }
+        
+        return result;
+      } catch (error) {
+        // 恢复原始 Cookie
+        if (originalCookie) {
+          process.env.XIAOHONGSHU_COOKIE = originalCookie;
+        } else {
+          delete process.env.XIAOHONGSHU_COOKIE;
+        }
+        throw error;
+      }
     } catch (error) {
-      logger.error('测试小红书连接失败', error);
+      logger.error('测试小红书连接失败:', error instanceof Error ? error.message : String(error));
       return {
         success: false,
-        error: error instanceof Error ? error.message : '未知错误',
+        error: error instanceof Error ? error.message : '测试失败',
       };
     }
   }

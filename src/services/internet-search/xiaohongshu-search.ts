@@ -5,9 +5,43 @@ import { loadConfig } from '../../utils/config';
 
 const logger = getLogger('xiaohongshu-search');
 
-// 从环境变量或配置获取 Cookie
-const config = loadConfig();
-const XIAOHONGSHU_COOKIE = process.env.XIAOHONGSHU_COOKIE || config.internetSearch?.xiaohongshuCookie || '';
+/**
+ * 错误类型枚举
+ */
+enum XiaohongshuErrorType {
+  NETWORK_ERROR = 'NETWORK_ERROR',
+  API_ERROR = 'API_ERROR',
+  COOKIE_EXPIRED = 'COOKIE_EXPIRED',
+  NOTE_NOT_FOUND = 'NOTE_NOT_FOUND',
+  RATE_LIMITED = 'RATE_LIMITED',
+  SIGNATURE_ERROR = 'SIGNATURE_ERROR',
+  UNKNOWN = 'UNKNOWN',
+}
+
+/**
+ * 错误分类结果
+ */
+interface XiaohongshuError {
+  type: XiaohongshuErrorType;
+  message: string;
+  shouldRetry: boolean;
+}
+
+/**
+ * 配置接口
+ */
+interface XiaohongshuConfig {
+  cookie: string;
+  requestDelayMin: number;
+  requestDelayMax: number;
+  pageDelayMin: number;
+  pageDelayMax: number;
+  maxRetries: number;
+  retryDelay: number;
+  retryBackoff: number;
+  requestTimeout: number;
+  maxRequestsPerHour: number;
+}
 
 /**
  * 小红书搜索结果
@@ -33,6 +67,7 @@ interface XiaohongshuNote {
   cover: {
     url: string;
   };
+  xsec_token: string;
   url: string;
 }
 
@@ -40,19 +75,174 @@ interface XiaohongshuNote {
  * 小红书搜索服务类
  * 
  * 使用 xhshow Python 库（最新的 mns0301 签名算法）访问小红书 Web API
- * 支持搜索笔记、获取笔记详情等功能
  * 
  * 技术细节：
  * - 使用 xhshow 生成 XYS_ 格式的签名
  * - 搜索 API: POST https://so.xiaohongshu.com/api/sns/web/v2/search/notes
- * - 强制随机休眠 1-10 秒，模拟人工操作
- * - 单次请求后自动结束，避免高频并发
+ * - 详情 API: POST https://edith.xiaohongshu.com/api/sns/web/v1/feed
+ * - 随机延迟模拟人工操作
+ * - 指数退避重试机制
+ * - 智能错误处理和频率控制
+ * 
+ * 优化点：
+ * - ✅ 使用详情 API 替代 Playwright（快速、稳定）
+ * - ✅ xsec_token 支持（详情 API 必需）
+ * - ✅ 重试机制（指数退避）
+ * - ✅ 智能频率控制（随机延迟）
+ * - ✅ 配置集中管理
+ * - ✅ 智能错误处理
  */
 export class XiaohongshuSearch implements ISearchPlatform {
-  private cookie: string;
+  private config: XiaohongshuConfig;
+  private lastRequestTime: number = 0;
+  private requestCount: number = 0;
 
   constructor() {
-    this.cookie = XIAOHONGSHU_COOKIE;
+    this.config = this.loadConfig();
+  }
+
+  /**
+   * 加载配置
+   */
+  private loadConfig(): XiaohongshuConfig {
+    const config = loadConfig();
+    return {
+      cookie: process.env.XIAOHONGSHU_COOKIE || config.internetSearch?.xiaohongshuCookie || '',
+      requestDelayMin: 1000,
+      requestDelayMax: 3000,
+      pageDelayMin: 3000,
+      pageDelayMax: 5000,
+      maxRetries: 3,
+      retryDelay: 2000,
+      retryBackoff: 2,
+      requestTimeout: 30000,
+      maxRequestsPerHour: 10,
+    };
+  }
+
+  /**
+   * 随机延迟
+   */
+  private async randomDelay(min: number, max: number): Promise<void> {
+    const delay = Math.floor(Math.random() * (max - min + 1)) + min;
+    logger.debug(`随机延迟 ${delay}ms`);
+    await new Promise(resolve => setTimeout(resolve, delay));
+  }
+
+  /**
+   * 请求间延迟
+   */
+  private async requestDelay(): Promise<void> {
+    await this.randomDelay(this.config.requestDelayMin, this.config.requestDelayMax);
+  }
+
+  /**
+   * 页面间延迟
+   */
+  private async pageDelay(): Promise<void> {
+    await this.randomDelay(this.config.pageDelayMin, this.config.pageDelayMax);
+  }
+
+  /**
+   * 错误分类
+   */
+  private classifyError(error: Error, statusCode?: number): XiaohongshuError {
+    const message = error.message.toLowerCase();
+    
+    // Cookie 过期
+    if (message.includes('cookie') || message.includes('unauthorized') || statusCode === 401) {
+      return {
+        type: XiaohongshuErrorType.COOKIE_EXPIRED,
+        message: error.message,
+        shouldRetry: false,
+      };
+    }
+    
+    // 笔记不存在
+    if (message.includes('not found') || statusCode === 404) {
+      return {
+        type: XiaohongshuErrorType.NOTE_NOT_FOUND,
+        message: error.message,
+        shouldRetry: false,
+      };
+    }
+    
+    // 频率限制
+    if (message.includes('rate limit') || message.includes('too many') || statusCode === 429) {
+      return {
+        type: XiaohongshuErrorType.RATE_LIMITED,
+        message: error.message,
+        shouldRetry: true,
+      };
+    }
+    
+    // 签名错误
+    if (message.includes('signature') || message.includes('sign')) {
+      return {
+        type: XiaohongshuErrorType.SIGNATURE_ERROR,
+        message: error.message,
+        shouldRetry: false,
+      };
+    }
+    
+    // API 错误
+    if (statusCode && statusCode >= 500) {
+      return {
+        type: XiaohongshuErrorType.API_ERROR,
+        message: error.message,
+        shouldRetry: true,
+      };
+    }
+    
+    // 默认网络错误
+    return {
+      type: XiaohongshuErrorType.NETWORK_ERROR,
+      message: error.message,
+      shouldRetry: true,
+    };
+  }
+
+  /**
+   * 带重试的异步操作
+   */
+  private async retryWithBackoff<T>(
+    operation: () => Promise<T>,
+    operationName: string
+  ): Promise<T> {
+    let lastError: Error | undefined;
+    let delay = this.config.retryDelay;
+    
+    for (let attempt = 0; attempt <= this.config.maxRetries; attempt++) {
+      try {
+        return await operation();
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        const classifiedError = this.classifyError(lastError);
+        
+        logger.warn(
+          `${operationName} 第 ${attempt + 1} 次失败：${classifiedError.type} - ${lastError.message}`
+        );
+        
+        // 不应该重试的错误直接抛出
+        if (!classifiedError.shouldRetry) {
+          logger.error(`${operationName} 失败，不重试：${classifiedError.type}`);
+          throw lastError;
+        }
+        
+        // 最后一次尝试失败
+        if (attempt === this.config.maxRetries) {
+          logger.error(`${operationName} 达到最大重试次数`);
+          break;
+        }
+        
+        // 指数退避
+        logger.info(`${operationName} ${delay}ms 后重试第 ${attempt + 2} 次`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        delay *= this.config.retryBackoff;
+      }
+    }
+    
+    throw lastError || new Error('未知错误');
   }
 
   getPlatformName(): string {
@@ -74,6 +264,9 @@ export class XiaohongshuSearch implements ISearchPlatform {
       const keyword = keywords.join(' ');
       logger.info(`开始搜索小红书："${keyword}"`);
 
+      // 频率控制
+      await this.requestDelay();
+      
       const results = await this.searchViaPython(keyword, maxResults);
       logger.info(`小红书搜索完成，返回 ${results.length} 条结果`);
       
@@ -172,6 +365,7 @@ try:
         try:
             note_data = item.get('note_card', {}) or item.get('model', {})
             note_id = item.get('id', '')
+            xsec_token = item.get('xsec_token', '')
             
             note = {
                 'id': note_id,
@@ -190,6 +384,7 @@ try:
                 'cover': {
                     'url': note_data.get('cover', {}).get('url', '') or ''
                 },
+                'xsec_token': xsec_token,
                 'type': note_data.get('type', 'normal'),
                 'url': f"https://www.xiaohongshu.com/explore/{note_id}" if note_id else ''
             }
@@ -210,7 +405,7 @@ except Exception as e:
       const pyProcess = spawn(pythonExecutable, [
         '-c', 
         pythonScript, 
-        this.cookie, 
+        this.config.cookie, 
         keyword, 
         maxResults.toString()
       ]);
@@ -260,6 +455,7 @@ except Exception as e:
             collects: parseInt(note.interact_info?.collected_count) || 0,
             coverImage: note.cover?.url || undefined,
             publishTime: undefined,
+            xsecToken: note.xsec_token || undefined,
           }));
 
           resolve(searchResults);
@@ -277,7 +473,7 @@ except Exception as e:
   }
 
   /**
-   * 获取小红书笔记详情（使用 Playwright 访问详情页）
+   * 获取小红书笔记详情（使用详情 API）
    * @param noteId 笔记 ID
    * @param xsecToken 可选的 xsec_token（用于访问受限笔记）
    * @returns 笔记详情
@@ -300,7 +496,11 @@ except Exception as e:
     try {
       logger.info(`开始获取笔记详情：${noteId}`);
       
-      const result = await this.getDetailViaPlaywright(noteId, xsecToken);
+      // 使用重试机制调用 API
+      const result = await this.retryWithBackoff(
+        () => this.getDetailViaAPI(noteId, xsecToken),
+        '详情 API 调用'
+      );
       
       if (result.success && result.data) {
         logger.info(`笔记详情获取成功：${result.data.title}`);
@@ -334,9 +534,9 @@ except Exception as e:
   }
 
   /**
-   * 使用 Playwright 获取笔记详情（Python 脚本）
+   * 使用详情 API 获取笔记详情
    */
-  private async getDetailViaPlaywright(noteId: string, xsecToken?: string): Promise<{
+  private async getDetailViaAPI(noteId: string, xsecToken?: string): Promise<{
     success: boolean;
     data?: {
       id: string;
@@ -359,201 +559,135 @@ import json
 import sys
 import time
 import random
-import re
-from pathlib import Path
-from playwright.sync_api import sync_playwright
 import requests
 from xhshow import Xhshow
 
-def get_note_detail_from_page(note_id, xsec_token, cookie):
-    """使用 Playwright 访问详情页，提取完整内容"""
-    playwright = None
-    browser = None
+def get_note_detail_api(note_id, xsec_token, cookie):
+    """使用详情 API 获取笔记内容"""
     try:
-        # 构建 URL
-        url = f"https://www.xiaohongshu.com/explore/{note_id}"
-        if xsec_token:
-            url += f"?xsec_token={xsec_token}"
-        
-        # 启动浏览器
-        playwright = sync_playwright().start()
-        
-        browser = playwright.chromium.launch(
-            headless=True,
-            args=[
-                '--disable-blink-features=AutomationControlled',
-                '--disable-dev-shm-usage',
-                '--no-sandbox',
-                '--disable-web-security',
-                '--disable-features=IsolateOrigins,site-per-process'
-            ]
-        )
-        
         # Cookie 处理
-        cookie = re.sub(r'[\\r\\n\\t]+', ' ', cookie.strip())
-        cookie = re.sub(r'\\s+', ' ', cookie).strip()
-        
+        cookie = cookie.strip()
         cookie_dict = {}
         for item in cookie.split(';'):
             if '=' in item:
                 key, value = item.split('=', 1)
                 cookie_dict[key.strip()] = value.strip()
         
-        # 创建浏览器上下文
-        context = browser.new_context(
-            viewport={'width': 1920, 'height': 1080},
-            user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-            locale='zh-CN',
-            timezone_id='Asia/Shanghai',
+        a1_value = cookie_dict.get('a1')
+        if not a1_value:
+            return {"success": False, "error": "无法从 Cookie 中提取 a1 值"}
+        
+        # 初始化客户端
+        client = Xhshow()
+        
+        # 如果没有提供 xsec_token，尝试从搜索获取
+        if not xsec_token:
+            return {"success": False, "error": "缺少 xsec_token 参数"}
+        
+        # 详情 API 参数
+        url = "https://edith.xiaohongshu.com/api/sns/web/v1/feed"
+        uri = "/api/sns/web/v1/feed"
+        
+        payload = {
+            "source_note_id": note_id,
+            "image_formats": ["jpg", "webp", "avif"],
+            "extra": {"need_body_topic": "1"},
+            "xsec_source": "pc_search",
+            "xsec_token": xsec_token
+        }
+        
+        # 生成签名
+        headers = client.sign_headers(
+            method="POST",
+            uri=uri,
+            cookies=cookie_dict,
+            payload=payload,
+            x_rap=True
         )
         
-        # 设置 Cookie
-        cookies = []
-        for key, value in cookie_dict.items():
-            cookies.append({
-                'name': key,
-                'value': value,
-                'domain': '.xiaohongshu.com',
-                'path': '/',
-            })
+        # 发送请求
+        response = requests.post(
+            url,
+            headers=headers,
+            cookies=cookie_dict,
+            json=payload,
+            timeout=30
+        )
         
-        if cookies:
-            context.add_cookies(cookies)
+        if response.status_code != 200:
+            return {"success": False, "error": f"HTTP {response.status_code}"}
         
-        page = context.new_page()
+        result = response.json()
         
-        # 注入 stealth.js (如果存在)
-        import os
-        stealth_path = Path(os.getcwd()) / 'stealth.min.js'
-        if stealth_path.exists():
-            stealth_content = stealth_path.read_text(encoding='utf-8')
-            page.add_init_script(stealth_content)
+        if not result.get('success'):
+            error_msg = result.get('msg', '请求失败')
+            if '笔记暂时无法浏览' in error_msg or '已删除' in error_msg:
+                return {"success": False, "error": error_msg}
+            return {"success": False, "error": error_msg}
         
-        # 访问页面
-        page.goto(url, wait_until='networkidle', timeout=30000)
+        items = result.get('data', {}).get('items', [])
+        if not items:
+            return {"success": False, "error": "未找到笔记数据"}
         
-        # 等待页面加载
-        time.sleep(3)
+        item = items[0]
+        note_card = item.get('note_card', {})
+        user = note_card.get('user', {})
+        interact = note_card.get('interact_info', {})
         
-        # 检查是否显示"笔记暂时无法浏览"
-        try:
-            error_element = page.query_selector('text=笔记暂时无法浏览')
-            if error_element:
-                browser.close()
-                return {'success': False, 'error': '笔记暂时无法浏览'}
-        except:
-            pass
+        # 提取图片
+        images = []
+        image_list = note_card.get('image_list', [])
+        for img in image_list:
+            img_url = img.get('url', '') or img.get('url_default', '')
+            if img_url:
+                images.append(img_url)
         
-        # 使用 JavaScript 提取内容
-        note_data = page.evaluate('''() => {
-            const data = {
-                title: '',
-                desc: '',
-                user: '',
-                likes: '',
-                collects: '',
-                comments: '',
-                images: []
-            };
-            
-            // 提取标题
-            const titleEl = document.querySelector('.title') || 
-                           document.querySelector('[class*="title"]') ||
-                           document.querySelector('h1');
-            if (titleEl) {
-                data.title = titleEl.textContent.trim();
-            }
-            
-            // 提取描述/内容
-            const descEl = document.querySelector('.desc') || 
-                          document.querySelector('[class*="desc"]') ||
-                          document.querySelector('[class*="content"]') ||
-                          document.querySelector('article');
-            if (descEl) {
-                data.desc = descEl.textContent.trim();
-            }
-            
-            // 提取用户信息
-            const userEl = document.querySelector('.user-name') ||
-                          document.querySelector('[class*="user"]') ||
-                          document.querySelector('[class*="author"]');
-            if (userEl) {
-                data.user = userEl.textContent.trim();
-            }
-            
-            // 提��互动数据
-            const likeEl = document.querySelector('[class*="like"] span') ||
-                          document.querySelector('[class*="interact"] span');
-            if (likeEl) {
-                data.likes = likeEl.textContent.trim();
-            }
-            
-            const collectEl = document.querySelector('[class*="collect"] span');
-            if (collectEl) {
-                data.collects = collectEl.textContent.trim();
-            }
-            
-            const commentEl = document.querySelector('[class*="comment"] span');
-            if (commentEl) {
-                data.comments = commentEl.textContent.trim();
-            }
-            
-            // 提取图片
-            const imgEls = document.querySelectorAll('img[src]');
-            data.images = Array.from(imgEls)
-                .map(img => img.src)
-                .filter(src => src && src.startsWith('http'))
-                .slice(0, 10);
-            
-            return data;
-        }''')
-        
-        browser.close()
-        
-        if not note_data.get('title') and not note_data.get('desc'):
-            return {'success': False, 'error': '无法从页面提取内容'}
+        # 如果没有 image_list，尝试从 track_info 获取
+        if not images:
+            track_info = note_card.get('track_info', {})
+            if isinstance(track_info, dict):
+                img_url = track_info.get('cover_image_url', '')
+                if img_url:
+                    images.append(img_url)
         
         return {
-            'success': True,
-            'note_id': note_id,
-            'data': {
-                'id': note_id,
-                'title': note_data.get('title', ''),
-                'desc': note_data.get('desc', ''),
-                'user': {'nickname': note_data.get('user', '')},
-                'interact_info': {
-                    'liked_count': str(note_data.get('likes', '0')),
-                    'collected_count': str(note_data.get('collects', '0')),
-                    'comment_count': str(note_data.get('comments', '0'))
+            "success": True,
+            "data": {
+                "id": note_id,
+                "title": note_card.get('title', '') or note_card.get('display_title', ''),
+                "desc": note_card.get('desc', ''),
+                "user": {"nickname": user.get('nickname', '')},
+                "interact_info": {
+                    "liked_count": str(interact.get('liked_count', 0)),
+                    "collected_count": str(interact.get('collected_count', 0)),
+                    "comment_count": str(interact.get('comment_count', 0))
                 },
-                'images': note_data.get('images', []),
-                'url': f"https://www.xiaohongshu.com/explore/{note_id}"
+                "images": images,
+                "url": f"https://www.xiaohongshu.com/explore/{note_id}"
             }
         }
         
     except Exception as e:
-        if browser:
-            try:
-                browser.close()
-            except:
-                pass
-        return {'success': False, 'error': f'Playwright 错误：{str(e)}'}
+        import traceback
+        return {"success": False, "error": f"{str(e)}: {traceback.format_exc()}"}
 
 # 主逻辑
 cookie = sys.argv[1]
 note_id = sys.argv[2]
 xsec_token = sys.argv[3] if len(sys.argv) > 3 else ''
 
-result = get_note_detail_from_page(note_id, xsec_token, cookie)
+# 随机延迟 1-3 秒
+time.sleep(random.uniform(1, 3))
+
+result = get_note_detail_api(note_id, xsec_token, cookie)
 print(json.dumps(result, ensure_ascii=False))
 `;
 
-      // 使用 Python 3.10+
       const pythonExecutable = process.env.PYTHON_EXECUTABLE || '/opt/homebrew/bin/python3.10';
       const args = [
         '-c',
         pythonScript,
-        this.cookie,
+        this.config.cookie,
         noteId,
         xsecToken || '',
       ];
@@ -584,26 +718,17 @@ print(json.dumps(result, ensure_ascii=False))
 
         try {
           const result = JSON.parse(output);
-          
-          if (result.error) {
-            resolve({
-              success: false,
-              error: result.error,
-            });
-            return;
-          }
-
           resolve(result);
         } catch (e) {
           reject(new Error(`解析响应失败：${output}`));
         }
       });
 
-      // 设置超时（60 秒，因为 Playwright 需要加载页面）
+      // 设置超时（30 秒）
       setTimeout(() => {
         pyProcess.kill();
-        reject(new Error('获取详情超时（60 秒）'));
-      }, 60000);
+        reject(new Error('获取详情超时（30 秒）'));
+      }, 30000);
     });
   }
 
