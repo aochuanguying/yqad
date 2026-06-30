@@ -209,24 +209,31 @@ export class CookieScanner {
         fs.mkdirSync(qrCodeDir, { recursive: true });
       }
 
-      // 检测是否在 Docker 容器中运行
-      const isDocker = fs.existsSync('/.dockerenv') || process.env.NODE_ENV === 'production';
+      // 检测是否在 Docker 容器中运行（多种检测方式）
+      const isDocker = fs.existsSync('/.dockerenv') || 
+                      fs.existsSync('/proc/1/cgroup') && 
+                      fs.readFileSync('/proc/1/cgroup', 'utf8').includes('docker') ||
+                      process.env.NODE_ENV === 'production';
       
-      this.browser = await chromium.launch({
+      // 浏览器启动超时保护（30 秒）
+      const browserLaunchPromise = chromium.launch({
         headless: isDocker, // Docker 中使用无头模式，本地使用有头模式
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
           '--disable-dev-shm-usage',
           '--disable-blink-features=AutomationControlled', // 隐藏自动化标志
-          '--disable-features=IsolateOrigins,site-per-process',
-          '--disable-web-security',
-          '--disable-features=BlockInsecurePrivateNetworkRequests',
           '--window-size=1920,1080',
           // Docker 中需要的额外参数
           ...(isDocker ? ['--disable-gpu', '--disable-software-rasterizer'] : []),
         ],
       });
+
+      const timeoutPromise = new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error('浏览器启动超时（30 秒）')), 30000)
+      );
+
+      this.browser = await Promise.race([browserLaunchPromise, timeoutPromise]);
       
       logger.info(`浏览器启动成功（模式：${isDocker ? 'Docker 无头' : '本地有头'}）`);
 
@@ -289,30 +296,14 @@ export class CookieScanner {
    * @param isSecondQR 是否是第二个二维码（使用不同的选择器）
    */
   private async captureQRCode(prefix: string, isSecondQR: boolean = false): Promise<{ filepath: string; base64: string }> {
-    // 第一个二维码：.login-container 下的 img.qrcode-img
-    const firstQRSelectors = [
-      '.login-container .qrcode-img',
-      '.login-container img[class*="qrcode"]',
-      '.login-qrcode',
-      '[class*="qrcode"]',
-      'img[src*="qrcode"]',
-      'canvas',
-    ];
-
-    // 第二个二维码：.r-captcha-modal 下的 img.qrcode-img
-    const secondQRSelectors = [
-      '.r-captcha-modal .qrcode-img',
-      '.r-captcha-modal img[class*="qrcode"]',
-      '.r-captcha-modal img',
-      '[class*="captcha"] .qrcode-img',
-      '[class*="captcha"] img[class*="qrcode"]',
-      '[class*="captcha"] img',
-    ];
-
-    const selectors = isSecondQR ? [...secondQRSelectors, ...firstQRSelectors] : firstQRSelectors;
-
+    // 精确选择器：第一个二维码 - .login-container 下的 img.qrcode-img
+    const firstQRSelector = '.login-container img.qrcode-img';
+    
+    // 精确选择器：第二个二维码 - .r-captcha-modal 下的 img.qrcode-img
+    const secondQRSelector = '.r-captcha-modal img.qrcode-img';
+    
+    const selector = isSecondQR ? secondQRSelector : firstQRSelector;
     let qrcodeElement = null;
-    let matchedSelector = '';
     
     // 等待页面稳定
     await this.page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {
@@ -320,22 +311,18 @@ export class CookieScanner {
     });
     await this.page.waitForTimeout(2000);
 
-    for (const selector of selectors) {
-      try {
-        // 等待元素可见
-        await this.page.waitForSelector(selector, { state: 'visible', timeout: 5000 }).catch(() => null);
-        qrcodeElement = await this.page.$(selector);
-        if (qrcodeElement) {
-          matchedSelector = selector;
-          logger.info(`找到${isSecondQR ? '第二个' : '第一个'}二维码：${selector}`);
-          break;
-        }
-      } catch (error) {
-        // 继续尝试下一个选择器
+    // 使用精确选择器查找二维码
+    try {
+      await this.page.waitForSelector(selector, { state: 'visible', timeout: 10000 }).catch(() => null);
+      qrcodeElement = await this.page.$(selector);
+      if (qrcodeElement) {
+        logger.info(`找到${isSecondQR ? '第二个' : '第一个'}二维码：${selector}`);
       }
+    } catch (error) {
+      logger.warn(`未找到二维码元素：${selector}`);
     }
 
-    // 截取二维码
+    // 截取二维码或整个页面
     const filename = `${prefix}_${Date.now()}.png`;
     const filepath = path.join(process.cwd(), 'data', 'qr_codes', filename);
 
@@ -344,7 +331,7 @@ export class CookieScanner {
       try {
         // 确保元素在视图中
         await qrcodeElement.scrollIntoViewIfNeeded({ timeout: 5000 }).catch(() => null);
-        await this.page.waitForTimeout(1000); // 等待滚动完成
+        await this.page.waitForTimeout(500); // 等待滚动完成
         
         // 截图
         const buffer = await qrcodeElement.screenshot({ timeout: 10000 });
@@ -360,7 +347,7 @@ export class CookieScanner {
       }
     } else {
       // 截取整个页面
-      logger.warn(`未找到二维码元素（${matchedSelector || '无匹配'}），截取整个页面`);
+      logger.warn(`未找到二维码元素，截取整个页面`);
       const buffer = await this.page.screenshot({ fullPage: false, timeout: 10000 });
       fs.writeFileSync(filepath, buffer);
       base64 = buffer.toString('base64');
@@ -389,113 +376,109 @@ export class CookieScanner {
       let lastUrl = this.page.url();
       let secondQRDetected = false;
       let checkCount = 0;
+      let consecutiveNotLoginCount = 0; // 连续未登录检测计数
+
+      // 智能轮询间隔：初期快（1 秒），后期慢（3 秒）
+      const getPollingInterval = () => {
+        if (checkCount <= 10) return 1000; // 前 10 秒：每秒检测
+        if (checkCount <= 30) return 2000; // 10-60 秒：每 2 秒检测
+        return 3000; // 60 秒后：每 3 秒检测
+      };
 
       const checkInterval = setInterval(async () => {
         checkCount++;
+        const elapsed = Math.round((Date.now() - startTime) / 1000);
+        
         try {
           const currentUrl = this.page.url();
 
-          // 每 5 次检查（10 秒）输出一次状态
-          if (checkCount % 5 === 0) {
-            logger.debug(`等待中... (${checkCount * 2}秒) URL: ${currentUrl}`);
+          // 定期输出状态（每 10 秒）
+          if (checkCount % (10 / (getPollingInterval() / 1000)) === 0) {
+            logger.debug(`等待中... (${elapsed}秒) URL: ${currentUrl}`);
           }
 
-          // 额外检测：检查页面中是否有二维码相关的元素（每 4 秒检查一次）
-          if (checkCount % 2 === 0) {
-            try {
-              const pageContent = await this.page.content();
-              if (pageContent.includes('qrcode') || pageContent.includes('captcha')) {
-                logger.debug('页面内容包含二维码或验证码相关关键词');
-              }
-            } catch (e) {
-              // 忽略
-            }
-          }
-
-          // 检查是否登录成功（跳转到首页）
+          // 精确登录检测：必须检测到认证 Cookie
           const isLoginPage = currentUrl.includes('/login') || currentUrl.includes('/captcha');
-          const isHomePage = currentUrl.includes('/explore') || 
-                            currentUrl.includes('/profile') ||
-                            currentUrl === 'https://www.xiaohongshu.com/' ||
-                            currentUrl === 'https://www.xiaohongshu.com' ||
-                            currentUrl === 'https://www.xiaohongshu.com/explore';
           
-          if (isHomePage || (!isLoginPage && checkCount > 5)) {
-            // 如果不在登录页且已经检查了 10 秒以上，可能是登录成功了
-            logger.info(`🎉 检测到页面跳转：${currentUrl}（可能已登录）`);
-            
-            // 获取 Cookie 确认是否登录成功
+          if (!isLoginPage) {
+            // 不在登录页，获取 Cookie 确认是否真的登录成功
             try {
               const cookies = await this.page.context().cookies();
+              
+              // 小红书关键 Cookie 字段
               const hasAuthCookie = cookies.some((c: any) => 
-                c.name.includes('session') || 
-                c.name.includes('token') || 
-                c.name.includes('user')
+                c.name === 'a1' || 
+                c.name === 'web_session' || 
+                c.name === 'session_id' ||
+                c.name.includes('session') ||
+                c.name.includes('token')
               );
               
-              if (hasAuthCookie || isHomePage) {
-                logger.info('✅ 确认登录成功，找到认证 Cookie');
+              if (hasAuthCookie) {
+                logger.info(`🎉 确认登录成功（URL: ${currentUrl}），找到认证 Cookie`);
                 clearTimeout(timer);
                 clearInterval(checkInterval);
 
+                // 精确提取 Cookie 关键字段
                 const cookieDict: Record<string, string> = {};
+                const priorityKeys = ['a1', 'web_session', 'session_id', 'gid', 'api_settings', 'iminfo'];
+                
                 cookies.forEach((c: any) => {
                   cookieDict[c.name] = c.value;
                 });
+                
+                // 优先提取关键字段，然后补充其他字段
                 const cookieParts: string[] = [];
+                for (const key of priorityKeys) {
+                  if (cookieDict[key]) {
+                    cookieParts.push(`${key}=${cookieDict[key]}`);
+                    delete cookieDict[key]; // 避免重复
+                  }
+                }
+                // 添加剩余 Cookie
                 for (const [name, value] of Object.entries(cookieDict)) {
                   cookieParts.push(`${name}=${value}`);
                 }
                 const cookieString = cookieParts.join('; ');
 
+                logger.info(`✅ 提取 Cookie 成功，包含 ${cookieParts.length} 个字段`);
                 resolve({ changed: true, loggedIn: true, cookie: cookieString });
                 return;
+              } else {
+                consecutiveNotLoginCount++;
+                // 连续 3 次检测到不在登录页但无认证 Cookie，可能是异常跳转
+                if (consecutiveNotLoginCount >= 3) {
+                  logger.warn('⚠️ 连续检测到不在登录页但无认证 Cookie，可能异常跳转');
+                }
               }
             } catch (err) {
               logger.debug('获取 Cookie 失败:', err);
+              consecutiveNotLoginCount++;
             }
+          } else {
+            consecutiveNotLoginCount = 0; // 重置计数器
           }
 
-          // 检查是否出现第二个二维码（多种选择器）- 只在第一轮检测
+          // 检查是否出现第二个二维码（使用精确选择器）- 只在第一轮检测
           if (!skipSecondQRCheck) {
             try {
-              let secondQR = null;
-              
-              // 尝试多个选择器
-              const secondQRSelectors = [
-                '.r-captcha-modal .qrcode-img',
-                '.r-captcha-modal img',
-                '[class*="captcha"] .qrcode-img',
-                '[class*="captcha"] img',
-                '[class*="code"] .qrcode-img',
-                '[class*="code"] img',
-                'img[class*="qrcode"]',
-              ];
-              
-              for (const selector of secondQRSelectors) {
-                try {
-                  secondQR = await this.page.$(selector);
-                  if (secondQR) {
-                    logger.debug(`尝试选择器 ${selector}: ${secondQR ? '找到' : '未找到'}`);
-                    break;
-                  }
-                } catch (e) {
-                  // 继续尝试下一个
-                }
-              }
+              // 精确选择器：.r-captcha-modal 下的 img.qrcode-img
+              const secondQRSelector = '.r-captcha-modal img.qrcode-img';
+              const secondQR = await this.page.$(secondQRSelector);
               
               if (secondQR && !secondQRDetected) {
                 logger.info('📱 检测到第二个二维码出现');
                 secondQRDetected = true;
+                
                 // 快速等待二维码完全显示
                 try {
-                  // 等待图片加载完成（最多 2 秒）
                   await this.page.waitForLoadState('networkidle', { timeout: 2000 }).catch(() => {
                     logger.debug('等待网络空闲超时，继续');
                   });
                 } catch (e) {
                   // 忽略
                 }
+                
                 // 短暂等待让二维码完全渲染（1 秒足够）
                 await this.page.waitForTimeout(1000);
                 clearTimeout(timer);
@@ -513,27 +496,13 @@ export class CookieScanner {
           if (currentUrl !== lastUrl) {
             logger.info(`📄 页面 URL 已变化：${lastUrl} → ${currentUrl}`);
             lastUrl = currentUrl;
-            // 不立即返回，继续观察
-          }
-
-          // 检查页面内容是否变化（确认按钮出现等，辅助判断）
-          try {
-            const confirmBtn = await this.page.$('[class*="confirm"]');
-            const authBtn = await this.page.$('[class*="auth"]');
-            const submitBtn = await this.page.$('[class*="submit"]');
-            
-            if (confirmBtn || authBtn || submitBtn) {
-              logger.info('🔘 检测到确认/授权按钮');
-              // 不立即返回，继续观察是否是第二个二维码
-            }
-          } catch (err) {
-            // 忽略按钮检测错误
+            consecutiveNotLoginCount = 0; // 重置计数器
           }
         } catch (error) {
           logger.debug('检查出错:', error instanceof Error ? error.message : error);
           // 忽略错误，继续轮询
         }
-      }, 2000); // 每 2 秒检查一次，平衡响应速度和性能
+      }, getPollingInterval());
     });
   }
 
@@ -552,21 +521,35 @@ export class CookieScanner {
   }
 
   /**
-   * 清理浏览器
+   * 清理浏览器（增强错误处理）
    */
   private async cleanup(): Promise<void> {
     try {
+      // 先关闭页面
       if (this.page) {
-        await this.page.close();
+        try {
+          await this.page.close();
+          logger.debug('页面已关闭');
+        } catch (pageError) {
+          logger.debug('关闭页面时出错（可能已关闭）:', pageError instanceof Error ? pageError.message : pageError);
+        }
         this.page = null;
       }
+      
+      // 再关闭浏览器
       if (this.browser) {
-        await this.browser.close();
+        try {
+          await this.browser.close();
+          logger.debug('浏览器已关闭');
+        } catch (browserError) {
+          logger.debug('关闭浏览器时出错（可能已关闭）:', browserError instanceof Error ? browserError.message : browserError);
+        }
         this.browser = null;
       }
+      
       logger.info('🗑️ 浏览器已清理');
     } catch (error) {
-      logger.warn('清理浏览器失败:', error);
+      logger.warn('清理浏览器失败:', error instanceof Error ? error.message : error);
     }
   }
 }
