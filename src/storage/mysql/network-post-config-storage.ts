@@ -7,6 +7,7 @@ const logger = getLogger('network-post-config-storage');
 export interface NetworkPostConfig {
   // 知乎配置
   zhihuAccessSecret?: string;
+  zhihuCookie?: string; // 知乎 Cookie（用于 Playwright）
   zhihuEnabled: boolean;
   
   // 小红书配置
@@ -21,6 +22,11 @@ export interface NetworkPostConfig {
   // 通用配置
   maxResults: number;
   enabled: boolean;
+  
+  // Cookie 刷新相关字段（新增）
+  cookieRefreshEnabled?: boolean;
+  cookieRefreshCron?: string;
+  cookieRefreshAutoEnabled?: boolean;
 }
 
 /**
@@ -92,13 +98,19 @@ export class NetworkPostConfigStorage {
       
       const config = {
         zhihuAccessSecret: row.zhihu_access_secret || '',
+        zhihuCookie: row.zhihu_cookie || '',
         zhihuEnabled: !!row.zhihu_enabled,
         xiaohongshuCookie: row.xiaohongshu_cookie || '',
         xiaohongshuEnabled: !!row.xiaohongshu_enabled,
         autohomeCookie: row.autohome_cookie || '',
         autohomeEnabled: !!row.autohome_enabled,
+        autohomeSelectorWarning: row.autohome_selector_warning || '',
         maxResults: row.max_results || 10,
         enabled: !!row.enabled,
+        // Cookie 刷新相关字段
+        cookieRefreshEnabled: !!row.cookie_refresh_enabled,
+        cookieRefreshCron: row.cookie_refresh_cron || '',
+        cookieRefreshAutoEnabled: !!row.cookie_refresh_auto_enabled,
       };
       
       logger.info('返回的配置:', config);
@@ -116,14 +128,15 @@ export class NetworkPostConfigStorage {
     try {
       await this.conn.execute(
         `INSERT INTO network_post_config (
-          id, zhihu_access_secret, zhihu_enabled, 
+          id, zhihu_access_secret, zhihu_cookie, zhihu_enabled, 
           xiaohongshu_cookie, xiaohongshu_enabled,
           autohome_cookie, autohome_enabled,
           max_results, enabled, updated_at
         ) VALUES (
-          1, ?, ?, ?, ?, ?, ?, ?, ?, NOW()
+          1, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW()
         ) ON DUPLICATE KEY UPDATE
           zhihu_access_secret = VALUES(zhihu_access_secret),
+          zhihu_cookie = VALUES(zhihu_cookie),
           zhihu_enabled = VALUES(zhihu_enabled),
           xiaohongshu_cookie = VALUES(xiaohongshu_cookie),
           xiaohongshu_enabled = VALUES(xiaohongshu_enabled),
@@ -135,6 +148,7 @@ export class NetworkPostConfigStorage {
         `,
         [
           config.zhihuAccessSecret || '',
+          config.zhihuCookie || '',
           config.zhihuEnabled ? 1 : 0,
           config.xiaohongshuCookie || '',
           config.xiaohongshuEnabled ? 1 : 0,

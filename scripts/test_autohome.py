@@ -2,17 +2,34 @@
 # -*- coding: utf-8 -*-
 """
 汽车之家搜索脚本
-1. 使用 sou.api.autohome.com.cn 搜索 API 获取帖子列表
-2. 使用 Playwright 打开帖子 URL 获取正文内容
+参考小红书架构，优化代码结构
+
+技术实现:
+1. 搜索 API: sou.api.autohome.com.cn/v1/search (无需 Cookie)
+2. 正文获取：Playwright 打开帖子 URL，使用 .fn-main .post 选择器提取
+
+优化点:
+- ✅ 代码模块化（函数职责单一）
+- ✅ 并发控制（默认 2 个并发）
+- ✅ 重试机制（指数退避）
+- ✅ 页面监控（选择器失效警告，1 小时去重）
+- ✅ 超时控制（20 秒页面加载）
+- ✅ 日志输出（详细进度和性能统计）
 """
 
 import sys
 import json
 import asyncio
 import requests
+import time
+import random
+import os
+from typing import Dict, List, Tuple, Optional, Any
 
+# API 配置
 SEARCH_API = "https://sou.api.autohome.com.cn/v1/search"
 
+# 请求头
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
     "Accept": "application/json, text/plain, */*",
@@ -20,8 +37,32 @@ HEADERS = {
     "Referer": "https://sou.autohome.com.cn/",
 }
 
+# 配置参数
+CONFIG = {
+    # 延迟控制
+    "search_delay_min": 2000,
+    "search_delay_max": 5000,
+    "page_delay_min": 3000,
+    "page_delay_max": 6000,
+    
+    # 重试机制
+    "max_retries": 2,
+    "retry_delay": 3000,
+    "retry_backoff": 1.5,
+    
+    # 超时控制
+    "page_load_timeout": 20000,
+    "request_timeout": 30000,
+    
+    # 并发控制
+    "max_concurrent": 2,
+    
+    # 其他
+    "max_results": 10,
+}
 
-def is_valid_content_image(src):
+
+def is_valid_content_image(src: str) -> bool:
     """
     判断是否是正文图片（过滤表情、图标、二维码等）
     
@@ -30,10 +71,25 @@ def is_valid_content_image(src):
     
     Returns:
         bool: True 表示是正文图片，False 表示需要过滤
+    
+    优化点：
+        - 增加尺寸判断（避免误杀高清大图）
+        - 增加域名白名单
+        - 优化关键词匹配规则
     """
     src_lower = src.lower()
     
-    # 过滤关键词
+    # ✅ 白名单域名（汽车之家官方图片域名）
+    whitelist_domains = [
+        "autoimg.com",
+        "autohome.com.cn",
+        "127.net",
+    ]
+    
+    # 如果是白名单域名，放宽过滤规则
+    is_whitelisted = any(domain in src_lower for domain in whitelist_domains)
+    
+    # 过滤关键词（更精确的匹配）
     filter_keywords = [
         "icon",           # 图标
         "avatar",         # 头像
@@ -45,6 +101,11 @@ def is_valid_content_image(src):
         "blank",          # 空白占位图
         "loading",        # 加载图
         "default",        # 默认图
+        "placeholder",    # 占位图
+        "spinner",        # 加载动画
+        "arrow",          # 箭头图标
+        "btn_",           # 按钮图片
+        "btn-",           # 按钮图片
     ]
     
     # 如果包含过滤关键词，直接返回 False
@@ -56,6 +117,8 @@ def is_valid_content_image(src):
         "/creator/packages/emoji/",  # 表情符号
         "/fe/common/image/",          # 前端通用图片
         "/bbs/pc/detail/img/",        # 详情页占位图
+        "/static/",                   # 静态资源
+        "/images/",                   # 图片资源
     ]
     
     if any(path in src_lower for path in filter_paths):
@@ -68,19 +131,39 @@ def is_valid_content_image(src):
     # 只保留常见的图片格式
     if not any(src_lower.endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.webp', '.bmp']):
         # 如果没有扩展名，但有 http 开头且包含 autoimg，也认为是图片
-        if 'autoimg' not in src_lower:
+        if 'autoimg' not in src_lower and not is_whitelisted:
             return False
     
     # 过滤太小的图片（可能是图标）
-    # 注意：汽车之家正文图片 URL 中包含尺寸信息（如 1200x90），但这些是真实图片，不应过滤
-    # 只过滤那些明显是图标的小尺寸
-    if '100x100' in src_lower:
-        return False
+    # 但如果是白名单域名，放宽限制
+    if not is_whitelisted:
+        if '100x100' in src_lower or '50x50' in src_lower or '80x80' in src_lower:
+            return False
+    
+    # ✅ 检查 URL 参数中的尺寸信息（避免误杀高清大图）
+    # 例如：/m/240x120/ 表示 240x120 的缩略图，应该过滤
+    import re
+    size_pattern = re.compile(r'/m/(\d+)x(\d+)/')
+    match = size_pattern.search(src_lower)
+    if match:
+        width = int(match.group(1))
+        height = int(match.group(2))
+        # 如果宽或高小于 200，认为是缩略图
+        if width < 200 or height < 200:
+            return False
+    
+    # 检查图片 URL 是否包含尺寸参数（例如：?imageView2/2/w/240/h/160）
+    size_params = ['imageView2', '/w/', '/h/', '/thumbnail/']
+    if any(param in src_lower for param in size_params):
+        # 提取宽度参数
+        width_match = re.search(r'/w/(\d+)', src_lower)
+        if width_match and int(width_match.group(1)) < 200:
+            return False
     
     return True
 
 
-def search_autohome(keyword, limit=50):
+def search_autohome(keyword: str, limit: int = 50) -> Dict[str, Any]:
     """
     搜索汽车之家论坛帖子（仅搜索，不获取正文）
     
@@ -92,7 +175,6 @@ def search_autohome(keyword, limit=50):
         dict: {"success": bool, "results": [...], "total": int, "error": str}
     """
     try:
-        import time
         # 生成 uuid 和时间戳
         import uuid
         req_uuid = str(uuid.uuid4())
@@ -183,7 +265,76 @@ def search_autohome(keyword, limit=50):
         return {"success": False, "error": f"未知错误：{str(e)}"}
 
 
-async def fetch_post_content_with_retry(url, use_new_selector=True, max_retries=2):
+def send_warning_to_api(warning_message: str) -> bool:
+    """
+    发送警告到 API（使用 Redis 去重机制）
+    
+    Args:
+        warning_message: 警告信息
+    
+    Returns:
+        bool: True 表示发送成功，False 表示失败或已发送过
+    """
+    try:
+        import urllib.request
+        import json
+        import redis
+        
+        # 使用 Redis 去重（1 小时内不重复发送相同警告）
+        redis_key = f"autohome:warning:{hash(warning_message)}"
+        should_send = True
+        
+        try:
+            # 连接 Redis（使用项目默认配置）
+            r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+            
+            # 检查是否已存在
+            if r.exists(redis_key):
+                ttl = r.ttl(redis_key)
+                print(f"⚠️ 警告已在 {ttl} 秒内发送过，跳过")
+                should_send = False
+            else:
+                # 设置 1 小时过期
+                r.setex(redis_key, 3600, str(time.time()))
+        
+        except redis.exceptions.ConnectionError as e:
+            print(f"⚠️ Redis 连接失败，降级使用文件锁：{e}")
+            # Fallback 到文件锁
+            warning_cache_file = "/tmp/autohome_warning_sent.txt"
+            current_time = time.time()
+            if os.path.exists(warning_cache_file):
+                with open(warning_cache_file, 'r') as f:
+                    last_sent_time = float(f.read().strip())
+                    if current_time - last_sent_time < 3600:
+                        should_send = False
+                        print(f"⚠️ 警告已在 1 小时内发送过，跳过")
+            if should_send:
+                with open(warning_cache_file, 'w') as f:
+                    f.write(str(current_time))
+        
+        if should_send:
+            api_url = "http://localhost:8080/api/network-post-config/autohome-warning"
+            warning_data = json.dumps({
+                "warning": warning_message,
+                "timestamp": __import__('datetime').datetime.now().isoformat()
+            }).encode('utf-8')
+            
+            req = urllib.request.Request(api_url, data=warning_data, method='POST')
+            req.add_header('Content-Type', 'application/json')
+            urllib.request.urlopen(req, timeout=5)  # 不等待响应
+            print(f"✓ 警告已发送到配置页面")
+        
+        return True
+    except Exception as e:
+        print(f"⚠️ 发送警告到 API 失败：{e}")
+        return False
+
+
+async def fetch_post_content_with_retry(
+    url: str, 
+    use_new_selector: bool = True, 
+    max_retries: int = 2
+) -> Tuple[str, str, List[str]]:
     """
     带重试机制的正文获取函数
     
@@ -220,7 +371,7 @@ async def fetch_post_content_with_retry(url, use_new_selector=True, max_retries=
     return "", "", []
 
 
-async def fetch_post_content(url, use_new_selector=True):
+async def fetch_post_content(url: str, use_new_selector: bool = True) -> Tuple[str, str, List[str]]:
     """
     使用 Playwright 打开帖子 URL，提取标题、正文和正文中的图片
 
@@ -233,7 +384,7 @@ async def fetch_post_content(url, use_new_selector=True):
     
     技术说明:
         - 使用 .fn-main .post 选择器直接定位正文（已验证有效）
-        - 自动过滤表情、图标、二维码等非正文图片
+        - 自动过滤表情、图标、二维码等非���文图片
         - 支持懒加载图片（滚动页面触发）
         - 包含页面结构监控和 fallback 机制
     """
@@ -251,7 +402,6 @@ async def fetch_post_content(url, use_new_selector=True):
         page = await context.new_page()
 
         # 注入 stealth 反检测脚本
-        import os
         stealth_paths = [
             os.path.join(os.path.dirname(os.path.abspath(__file__)), "../stealth.min.js"),
             os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../stealth.min.js"),
@@ -264,15 +414,15 @@ async def fetch_post_content(url, use_new_selector=True):
                 break
 
         try:
-            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-            await asyncio.sleep(5)  # 等待更多内容加载
+            await page.goto(url, wait_until="domcontentloaded", timeout=20000)
+            await asyncio.sleep(3)  # 等待更多内容加载
             
             # 尝试滚动页面以触发懒加载的图片
             try:
                 await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                await asyncio.sleep(2)
-                await page.evaluate("window.scrollTo(0, 0)")
                 await asyncio.sleep(1)
+                await page.evaluate("window.scrollTo(0, 0)")
+                await asyncio.sleep(0.5)
             except Exception:
                 pass
 
@@ -331,22 +481,10 @@ async def fetch_post_content(url, use_new_selector=True):
                     print(warning_msg)
                     print(f"   可能页面结构已变更，尝试 fallback 选择器...")
                     
-                    # 发送警告到 API（异步，不阻塞）
-                    try:
-                        import urllib.request
-                        import json
-                        api_url = "http://localhost:8080/api/network-post-config/autohome-warning"
-                        warning_data = json.dumps({
-                            "warning": f"页面结构可能已变更，主选择器 '.fn-main .post' 失效，已自动使用 fallback 选择器",
-                            "timestamp": __import__('datetime').datetime.now().isoformat()
-                        }).encode('utf-8')
-                        
-                        req = urllib.request.Request(api_url, data=warning_data, method='POST')
-                        req.add_header('Content-Type', 'application/json')
-                        urllib.request.urlopen(req, timeout=5)  # 不等待响应
-                        print(f"✓ 警告已发送到配置页面")
-                    except Exception as api_error:
-                        print(f"⚠️ 发送警告到 API 失败：{api_error}")
+                    # 发送警告到 API（带去重）
+                    send_warning_to_api(
+                        "页面结构可能已变更，主选择器 '.fn-main .post' 失效，已自动使用 fallback 选择器"
+                    )
                     
                     # Fallback: 尝试其他选择器
                     fallback_selectors = [
@@ -383,8 +521,6 @@ async def fetch_post_content(url, use_new_selector=True):
                     else:
                         print(f"❌ 所有 fallback 选择器都失败了")
             
-
-
             content = "\n".join(content_lines)
 
         except Exception as e:
@@ -397,34 +533,40 @@ async def fetch_post_content(url, use_new_selector=True):
         return title, content, images
 
 
-async def fetch_multiple_posts_concurrently(urls, max_concurrent=3):
+async def fetch_multiple_posts_concurrently(
+    urls: List[str], 
+    max_concurrent: int = 2
+) -> Dict[str, Tuple[str, str, List[str]]]:
     """
     并发获取多个帖子的正文内容
     
     Args:
         urls: URL 列表
-        max_concurrent: 最大并发数（默认 3，避免资源占用过高）
+        max_concurrent: 最大并发数（默认 2，降低资源占用）
     
     Returns:
         dict: {url: (title, content, images)}
     """
-    import asyncio
-    
     # 创建信号量控制并发数
     semaphore = asyncio.Semaphore(max_concurrent)
     
-    async def fetch_with_semaphore(url):
+    async def fetch_with_semaphore(url: str, index: int, total: int):
         async with semaphore:
             try:
+                print(f"📄 [{index+1}/{total}] 开始获取：{url[:60]}...")
                 # 使用带重试的函数
                 result = await fetch_post_content_with_retry(url, max_retries=2)
+                if result[1]:  # content 不为空
+                    print(f"✅ [{index+1}/{total}] 获取成功，{len(result[1])} 字")
+                else:
+                    print(f"⚠️ [{index+1}/{total}] 未获取到内容")
                 return url, result
             except Exception as e:
-                print(f"❌ 获取 {url} 失败：{e}")
+                print(f"❌ [{index+1}/{total}] 获取 {url[:50]}... 失败：{e}")
                 return url, ("", "", [])
     
     # 并发获取所有 URL
-    tasks = [fetch_with_semaphore(url) for url in urls]
+    tasks = [fetch_with_semaphore(url, i, len(urls)) for i, url in enumerate(urls)]
     results = await asyncio.gather(*tasks, return_exceptions=True)
     
     # 整理结果
@@ -439,7 +581,12 @@ async def fetch_multiple_posts_concurrently(urls, max_concurrent=3):
     return content_dict
 
 
-async def search_with_content(keyword, limit=5, fetch_content=False, max_concurrent=3):
+async def search_with_content(
+    keyword: str, 
+    limit: int = 5, 
+    fetch_content: bool = False,
+    max_concurrent: int = 2
+) -> Dict[str, Any]:
     """
     搜索并可选获取帖子正文
 
@@ -447,7 +594,7 @@ async def search_with_content(keyword, limit=5, fetch_content=False, max_concurr
         keyword: 搜索关键词
         limit: 返回结果数量
         fetch_content: 是否获取帖子正文（需要 Playwright）
-        max_concurrent: 最大并发数（默认 3）
+        max_concurrent: 最大并发数（默认 2）
 
     Returns:
         dict: {"success": bool, "results": [...], "total": int, "error": str}
@@ -468,15 +615,24 @@ async def search_with_content(keyword, limit=5, fetch_content=False, max_concurr
             url_to_item[url] = item
     
     if urls_to_fetch:
-        print(f"🚀 开始并发获取 {len(urls_to_fetch)} 条帖子的正文...")
-        import time
+        print(f"\n{'='*60}")
+        print(f"🚀 开始并发获取 {len(urls_to_fetch)} 条帖子的正文（并发数：{max_concurrent}）...")
+        print(f"{'='*60}\n")
+        
         start_time = time.time()
         
         # 并发获取所有帖子的正文
         content_dict = await fetch_multiple_posts_concurrently(urls_to_fetch, max_concurrent)
         
         elapsed = time.time() - start_time
-        print(f"✅ 正文获取完成，耗时：{elapsed:.1f}秒")
+        success_count = sum(1 for _, (t, c, img) in content_dict.items() if c)
+        
+        print(f"\n{'='*60}")
+        print(f"✅ 正文获取完成")
+        print(f"   - 总耗时：{elapsed:.1f}秒")
+        print(f"   - 成功：{success_count}/{len(urls_to_fetch)}")
+        print(f"   - 平均速度：{elapsed/len(urls_to_fetch):.1f}秒/条")
+        print(f"{'='*60}\n")
         
         # 将内容填充回结果
         for url, (title, content, images) in content_dict.items():
@@ -492,6 +648,7 @@ async def search_with_content(keyword, limit=5, fetch_content=False, max_concurr
 
 
 def main():
+    """主函数"""
     if len(sys.argv) < 2:
         print(json.dumps({"success": False, "error": "缺少参数：keyword"}, ensure_ascii=False))
         sys.exit(0)

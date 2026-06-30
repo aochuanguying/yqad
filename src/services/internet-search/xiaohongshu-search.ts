@@ -97,6 +97,7 @@ export class XiaohongshuSearch implements ISearchPlatform {
   private config: XiaohongshuConfig;
   private lastRequestTime: number = 0;
   private requestCount: number = 0;
+  private requestTimestamps: number[] = []; // 滑动窗口时间戳
 
   constructor() {
     this.config = this.loadConfig();
@@ -118,14 +119,17 @@ export class XiaohongshuSearch implements ISearchPlatform {
       
       const cookie = status.cookie;
       
-      // 验证 Cookie 格式（简化版，只检查是否包含 a1 和 web_session）
-      if (!cookie.includes('a1=') || !cookie.includes('web_session=')) {
-        logger.error('[XiaohongshuSearch] Cookie 格式验证失败：缺少 a1 或 web_session 字段');
+      // 验证 Cookie 格式（使用完整的验证逻辑）
+      const validation = this.validateCookieFormat(cookie);
+      if (!validation.valid) {
+        logger.error(
+          `[XiaohongshuSearch] Cookie 格式验证失败：缺少 ${validation.missingFields?.join(', ')} 字段`
+        );
         return;
       }
       
       this.config.cookie = cookie;
-      logger.info('[XiaohongshuSearch] Cookie 加载成功');
+      logger.info('[XiaohongshuSearch] Cookie 加载成功并验证通过');
     } catch (error) {
       logger.error('[XiaohongshuSearch] 加载 Cookie 失败:', error);
     }
@@ -194,6 +198,31 @@ export class XiaohongshuSearch implements ISearchPlatform {
    */
   private async pageDelay(): Promise<void> {
     await this.randomDelay(this.config.pageDelayMin, this.config.pageDelayMax);
+  }
+
+  /**
+   * 频率限制检查（滑动窗口）
+   */
+  private async checkRateLimit(): Promise<void> {
+    const now = Date.now();
+    const oneHourAgo = now - 3600000; // 1 小时前
+    
+    // 移除 1 小时前的时间戳
+    this.requestTimestamps = this.requestTimestamps.filter(ts => ts > oneHourAgo);
+    
+    // 检查是否超过限制
+    if (this.requestTimestamps.length >= this.config.maxRequestsPerHour) {
+      const oldestTimestamp = this.requestTimestamps[0];
+      const waitTime = oldestTimestamp + 3600000 - now;
+      if (waitTime > 0) {
+        logger.warn(`频率限制：已达到每小时 ${this.config.maxRequestsPerHour} 次请求，等待 ${Math.ceil(waitTime/1000)} 秒`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+      }
+    }
+    
+    // 记录当前请求时间戳
+    this.requestTimestamps.push(now);
+    logger.debug(`当前小时请求数：${this.requestTimestamps.length}/${this.config.maxRequestsPerHour}`);
   }
 
   /**
@@ -317,7 +346,10 @@ export class XiaohongshuSearch implements ISearchPlatform {
       const keyword = keywords.join(' ');
       logger.info(`开始搜索小红书："${keyword}"`);
 
-      // 频率控制
+      // 频率限制检查（滑动窗口）
+      await this.checkRateLimit();
+      
+      // 搜索间延迟（模拟人工操作）
       await this.requestDelay();
       
       const results = await this.searchViaPython(keyword, maxResults);
@@ -335,6 +367,7 @@ export class XiaohongshuSearch implements ISearchPlatform {
    */
   private async searchViaPython(keyword: string, maxResults: number): Promise<SearchResult[]> {
     return new Promise((resolve, reject) => {
+      const startTime = Date.now();
       const pythonScript = `
 import json
 import sys
@@ -351,6 +384,7 @@ try:
     # 随机休眠 1-5 秒，模拟人工操作
     sleep_time = random.uniform(1, 5)
     time.sleep(sleep_time)
+    print(f"⏳ 随机休眠：{sleep_time:.2f}秒")
     
     # Cookie 处理
     cookie = cookie.strip()
@@ -446,6 +480,7 @@ try:
             continue
     
     print(json.dumps({"success": True, "notes": notes, "total": len(notes)}))
+    print(f"✅ 搜索完成，找到 {len(notes)} 条结果", file=sys.stderr)
     
 except Exception as e:
     import traceback
@@ -476,6 +511,7 @@ except Exception as e:
       });
 
       pyProcess.on('close', (code: number) => {
+        const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
         logger.debug('Python 输出:', output);
         logger.debug('Python 错误输出:', errorOutput);
         logger.debug('Python 退出码:', code);
@@ -495,7 +531,9 @@ except Exception as e:
           }
 
           const notes: XiaohongshuNote[] = result.notes || [];
-          logger.debug('笔记数量:', notes.length);
+          const noteCount = notes.length;
+          
+          logger.info(`小红书 API 调用成功：${noteCount} 条结果，耗时 ${elapsed}秒`);
           
           const searchResults: SearchResult[] = notes.map(note => ({
             title: note.title || '无标题',

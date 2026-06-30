@@ -22,6 +22,41 @@ HEADERS = {
 }
 
 
+def parse_cookie_string(cookie_str):
+    """
+    解析 Cookie 字符串为 Playwright 格式
+    
+    Args:
+        cookie_str: Cookie 字符串，格式如 "key1=value1; key2=value2; ..."
+    
+    Returns:
+        list: Playwright Cookie 列表
+    """
+    if not cookie_str:
+        return []
+    
+    cookies = []
+    parts = cookie_str.split(';')
+    
+    for part in parts:
+        part = part.strip()
+        if '=' in part:
+            key, value = part.split('=', 1)
+            key = key.strip()
+            value = value.strip()
+            
+            # 只添加知乎相关的 Cookie
+            if key.startswith('_') or key in ['z_c0', '__zse_ck', 'captcha_session_v2', 'captcha_ticket_v2']:
+                cookies.append({
+                    'name': key,
+                    'value': value,
+                    'domain': '.zhihu.com',
+                    'path': '/'
+                })
+    
+    return cookies
+
+
 def is_valid_content_image(src):
     """
     判断是否是正文图片（过滤头像、图标、表情、二维码等）
@@ -203,12 +238,13 @@ async def fetch_post_content_with_retry(url, max_retries=2):
     return "", "", []
 
 
-async def fetch_post_content(url):
+async def fetch_post_content(url, cookie_str=None):
     """
     使用 Playwright 打开知乎 URL，提取标题、正文和正文中的图片
     
     Args:
         url: 知乎 URL
+        cookie_str: Cookie 字符串（可选，从数据库读取）
     
     Returns:
         tuple: (title: str, content: str, images: list)
@@ -218,7 +254,7 @@ async def fetch_post_content(url):
         - 自动过滤头像、徽章、表情等非正文图片
         - 支持懒加载图片（滚动页面触发）
         - 包含 fallback 机制
-        - 添加 Cookie 以绕过安全验证
+        - 支持动态 Cookie 以绕过安全验证
     """
     from playwright.async_api import async_playwright
     
@@ -233,38 +269,36 @@ async def fetch_post_content(url):
         )
         
         # 添加 Cookie 以绕过安全验证
-        await context.add_cookies([
-            {
-                'name': '_xsrf',
-                'value': 'aMuDuX6dn2N04PT0brZKeE1Nq2lDc6T7',
-                'domain': '.zhihu.com',
-                'path': '/'
-            },
-            {
-                'name': '_zap',
-                'value': 'afab89c8-fe7f-48db-8401-1a2c061f94ad',
-                'domain': '.zhihu.com',
-                'path': '/'
-            },
-            {
-                'name': 'd_c0',
-                'value': 'fzaYD47FghyPTg84x0tinv6O4MI-CM4uXIk=|1782592277',
-                'domain': '.zhihu.com',
-                'path': '/'
-            },
-            {
-                'name': 'z_c0',
-                'value': '2|1:0|10:1782592323|4:z_c0|92:Mi4xWkF2b0FRQUFBQUJfTnBnUGpzV0NIQ1lBQUFCZ0FsVk5RNEV0YXdEcFJ0SXJ5ejhNZUFQaUZhTUtRMi1wZC1xRnNn|fe4ae0993b90bc517f9a72088bfd465ee86a8a22e5932dd9dca6913fcd6bfd70',
-                'domain': '.zhihu.com',
-                'path': '/'
-            },
-            {
-                'name': '__zse_ck',
-                'value': '005_Fk52dqG9F7ydd6pMKAnaWtxh8vHWmVfE2TeuEc1vK13Z00ytoVkpQ10NbyYO93UeOPxmW2ZZMDGAclpnYNcaZ24WNOJSdic=JIgjm4oHBpyRgnbpZ09nZpwPoTp9hOkE-Qjy2v2+Fj/8dZdPUXU2MmouUFnwRCfIiAPyXycKhtRhJKGirwiHF1sAfBdbD8JhdfGGLnXWKRYoMNFAUWX06g5nM2DZ5qTbxTMIlGnDLLsS9UbLhk1CTBTCcjFhys2/2',
-                'domain': '.zhihu.com',
-                'path': '/'
-            }
-        ])
+        cookies_to_add = []
+        
+        # 如果提供了 Cookie 字符串，解析并使用
+        if cookie_str:
+            cookies_to_add = parse_cookie_string(cookie_str)
+        else:
+            # 使用默认的测试 Cookie（仅用于开发测试）
+            cookies_to_add = [
+                {
+                    'name': '_xsrf',
+                    'value': 'aMuDuX6dn2N04PT0brZKeE1Nq2lDc6T7',
+                    'domain': '.zhihu.com',
+                    'path': '/'
+                },
+                {
+                    'name': 'z_c0',
+                    'value': '2|1:0|10:1782592323|4:z_c0|92:Mi4xWkF2b0FRQUFBQUJfTnBnUGpzV0NIQ1lBQUFCZ0FsVk5RNEV0YXdEcFJ0SXJ5ejhNZUFQaUZhTUtRMi1wZC1xRnNn|fe4ae0993b90bc517f9a72088bfd465ee86a8a22e5932dd9dca6913fcd6bfd70',
+                    'domain': '.zhihu.com',
+                    'path': '/'
+                },
+                {
+                    'name': '__zse_ck',
+                    'value': '005_Fk52dqG9F7ydd6pMKAnaWtxh8vHWmVfE2TeuEc1vK13Z00ytoVkpQ10NbyYO93UeOPxmW2ZZMDGAclpnYNcaZ24WNOJSdic=JIgjm4oHBpyRgnbpZ09nZpwPoTp9hOkE-Qjy2v2+Fj/8dZdPUXU2MmouUFnwRCfIiAPyXycKhtRhJKGirwiHF1sAfBdbD8JhdfGGLnXWKRYoMNFAUWX06g5nM2DZ5qTbxTMIlGnDLLsS9UbLhk1CTBTCcjFhys2/2',
+                    'domain': '.zhihu.com',
+                    'path': '/'
+                }
+            ]
+        
+        if cookies_to_add:
+            await context.add_cookies(cookies_to_add)
         
         page = await context.new_page()
         
@@ -432,13 +466,14 @@ async def fetch_post_content(url):
             await browser.close()
 
 
-async def fetch_multiple_posts(urls, max_concurrent=3):
+async def fetch_multiple_posts(urls, max_concurrent=3, cookie_str=None):
     """
     并发获取多个帖子的内容
     
     Args:
         urls: URL 列表
         max_concurrent: 最大并发数
+        cookie_str: Cookie 字符串（可选）
     
     Returns:
         list: [{"url": str, "title": str, "content": str, "images": list}, ...]
@@ -447,7 +482,7 @@ async def fetch_multiple_posts(urls, max_concurrent=3):
     
     async def fetch_with_semaphore(url):
         async with semaphore:
-            title, content, images = await fetch_post_content_with_retry(url)
+            title, content, images = await fetch_post_content_with_retry(url, cookie_str=cookie_str)
             return {
                 "url": url,
                 "title": title,
@@ -486,12 +521,15 @@ def main():
             data = json.loads(input_data)
             access_secret = data.get("accessSecret", "")
             results = data.get("results", [])
+            cookie = data.get("cookie", "")  # 获取 Cookie
             
             if not access_secret or not results:
                 print(json.dumps({"success": False, "error": "缺少 accessSecret 或 results"}, ensure_ascii=False))
                 sys.exit(1)
             
             print(f"从 stdin 读取到 {len(results)} 条结果，开始提取正文...", file=sys.stderr)
+            if cookie:
+                print(f"使用提供的 Cookie（{len(cookie)} 字符）", file=sys.stderr)
             
             # 并发获取
             urls = [r.get("url", "") or r.get("Url", "") for r in results if (r.get("url") or r.get("Url"))]
@@ -499,7 +537,7 @@ def main():
                 print(json.dumps({"success": False, "error": "没有可用的 URL"}, ensure_ascii=False))
                 sys.exit(1)
             
-            content_results = asyncio.run(fetch_multiple_posts(urls, max_concurrent=3))
+            content_results = asyncio.run(fetch_multiple_posts(urls, max_concurrent=3, cookie_str=cookie))
             
             # 合并结果
             final_results = []

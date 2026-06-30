@@ -7,12 +7,12 @@
  * - 官方 API，稳定可靠
  * - 每天免费 1000 次调用
  * - 高质量内容，专业领域覆盖
- * - Playwright 提取正文和图片
+ * - Playwright 提取正文和图片（需要 Cookie 绕过安全验证）
  * 
  * 使用方法：
  * 1. 访问 https://developer.zhihu.com/ 注册
  * 2. 创建应用获取 Access Secret
- * 3. 设置环境变量 ZHIHU_ACCESS_SECRET
+ * 3. 设置环境变量 ZHIHU_ACCESS_SECRET 和 ZHIHU_COOKIE
  */
 
 import { ISearchPlatform, SearchResult } from './platform-base';
@@ -24,8 +24,9 @@ import * as path from 'path';
 
 const logger = getLogger('zhihu-search');
 
-// 知乎 Access Secret（从知乎开放平台获取）
-const ZHIHU_ACCESS_SECRET = process.env.ZHIHU_ACCESS_SECRET || '';
+// 动态获取环境变量（避免模块加载时固定值）
+const getAccessSecret = () => process.env.ZHIHU_ACCESS_SECRET || '';
+const getCookie = () => process.env.ZHIHU_COOKIE || '';
 
 export class ZhihuSearch implements ISearchPlatform {
   private platformName = 'zhihu';
@@ -43,13 +44,14 @@ export class ZhihuSearch implements ISearchPlatform {
     try {
       logger.info(`开始搜索知乎，关键词：${keywords.join(', ')}, 最大结果数：${maxResults}`);
       
-      if (!ZHIHU_ACCESS_SECRET) {
+      const accessSecret = getAccessSecret();
+      if (!accessSecret) {
         logger.warn('知乎 Access Secret 未配置，跳过搜索');
         return [];
       }
       
       // 使用知乎官方 API + Playwright 正文提取
-      const results = await this.searchViaApiWithContent(keywords, maxResults);
+      const results = await this.searchViaApiWithContent(keywords, maxResults, accessSecret);
       return results;
       
     } catch (error) {
@@ -64,13 +66,17 @@ export class ZhihuSearch implements ISearchPlatform {
    * 1. 调用知乎开放平台 API 获取搜索结果（含 URL）
    * 2. 使用 Python 脚本 + Playwright 打开 URL 提取正文和图片
    */
-  private async searchViaApiWithContent(keywords: string[], maxResults: number): Promise<SearchResult[]> {
+  private async searchViaApiWithContent(
+    keywords: string[], 
+    maxResults: number,
+    accessSecret: string
+  ): Promise<SearchResult[]> {
     try {
       const keyword = keywords[0];
       
       // 步骤 1：调用知乎 API 获取搜索结果
       logger.info(`步骤 1: 调用知乎 API 搜索...`);
-      const searchResults = await this.searchViaApiOnly(keyword, Math.min(maxResults, 10));
+      const searchResults = await this.searchViaApiOnly(keyword, Math.min(maxResults, 10), accessSecret);
       
       if (searchResults.length === 0) {
         logger.warn('知乎 API 搜索结果为空');
@@ -79,7 +85,8 @@ export class ZhihuSearch implements ISearchPlatform {
       
       // 步骤 2：使用 Playwright 提取正文和图片
       logger.info(`步骤 2: 使用 Playwright 提取 ${searchResults.length} 条内容的正文和图片...`);
-      const resultsWithContent = await this.fetchContentViaPython(searchResults);
+      const cookie = getCookie();
+      const resultsWithContent = await this.fetchContentViaPython(searchResults, accessSecret, cookie);
       
       return resultsWithContent;
       
@@ -92,12 +99,12 @@ export class ZhihuSearch implements ISearchPlatform {
   /**
    * 仅调用知乎 API 获取搜索结果（不含正文）
    */
-  private async searchViaApiOnly(keyword: string, count: number): Promise<any[]> {
+  private async searchViaApiOnly(keyword: string, count: number, accessSecret: string): Promise<any[]> {
     const url = `https://developer.zhihu.com/api/v1/content/zhihu_search`;
     const timestamp = Math.floor(Date.now() / 1000);
     
     const headers: any = {
-      'Authorization': `Bearer ${ZHIHU_ACCESS_SECRET}`,
+      'Authorization': `Bearer ${accessSecret}`,
       'X-Request-Timestamp': timestamp.toString(),
       'Content-Type': 'application/json',
     };
@@ -137,15 +144,20 @@ export class ZhihuSearch implements ISearchPlatform {
   /**
    * 使用 Python 脚本 + Playwright 提取正文和图片
    */
-  private async fetchContentViaPython(searchResults: any[]): Promise<SearchResult[]> {
+  private async fetchContentViaPython(
+    searchResults: any[], 
+    accessSecret: string,
+    cookie: string
+  ): Promise<SearchResult[]> {
     return new Promise((resolve) => {
       const scriptPath = path.join(__dirname, '../../../scripts/test_zhihu_content.py');
       const pythonExecutable = process.env.PYTHON_EXECUTABLE || 'python3';
       
       // 准备输入数据
       const inputData = {
-        accessSecret: ZHIHU_ACCESS_SECRET,
+        accessSecret,
         results: searchResults,
+        cookie, // 传递 Cookie 用于绕过安全验证
       };
       
       const pyProcess = spawn(pythonExecutable, [scriptPath, '--from-stdin']);
@@ -165,14 +177,37 @@ export class ZhihuSearch implements ISearchPlatform {
 
       pyProcess.on('close', (code: number) => {
         if (code !== 0) {
-          logger.warn(`Python 脚本退出码：${code}, 错误输出：${errorOutput}`);
+          logger.warn(`Python 脚本退出码：${code}`);
+          if (errorOutput) {
+            logger.debug(`错误输出：${errorOutput}`);
+          }
           // Fallback：只使用 API 搜索结果（无正文图片）
           resolve(this.mapToSearchResult(searchResults));
           return;
         }
 
         try {
-          const result = JSON.parse(output);
+          // 解析 JSON 输出（忽略日志行）
+          const lines = output.split('\n');
+          let jsonStr = '';
+          let jsonStart = -1;
+          
+          // 找到最后一行 JSON（跳过日志输出）
+          for (let i = lines.length - 1; i >= 0; i--) {
+            if (lines[i].trim().startsWith('{')) {
+              jsonStart = i;
+              break;
+            }
+          }
+          
+          if (jsonStart >= 0) {
+            jsonStr = lines.slice(jsonStart).join('\n');
+          } else {
+            jsonStr = output;
+          }
+          
+          const result = JSON.parse(jsonStr);
+          
           if (!result.success || !result.results) {
             logger.warn('Python 脚本返回格式错误');
             resolve(this.mapToSearchResult(searchResults));
@@ -195,20 +230,26 @@ export class ZhihuSearch implements ISearchPlatform {
           }));
 
           logger.info(`Playwright 提取完成，${finalResults.length} 条结果`);
+          
+          // 统计图片数量
+          const totalImages = finalResults.reduce((sum, r) => sum + (r.imageUrls?.length || 0), 0);
+          logger.info(`共提取 ${totalImages} 张图片`);
+          
           resolve(finalResults);
 
         } catch (e) {
-          logger.warn('解析 Python 脚本输出失败:', e);
+          logger.warn('解析 Python 脚本输出失败:', e instanceof Error ? e.message : String(e));
+          logger.debug(`原始输出：${output.substring(0, 500)}`);
           resolve(this.mapToSearchResult(searchResults));
         }
       });
 
-      // 超时处理（60 秒）
+      // 超时处理（90 秒，给 Playwright 更多时间）
       setTimeout(() => {
         pyProcess.kill();
         logger.warn('Python 脚本执行超时，使用 Fallback 结果');
         resolve(this.mapToSearchResult(searchResults));
-      }, 60000);
+      }, 90000);
     });
   }
 
