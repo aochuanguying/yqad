@@ -54,16 +54,18 @@ def is_valid_content_image(src):
     if any(kw in src_lower for kw in filter_keywords):
         return False
     
-    # 过滤特定域名/路径
+    # 过滤特定域名/路径（但保留知乎正文图片的 v2- 路径）
     filter_paths = [
-        "/v2-",                  # 知乎头像/徽章 CDN 路径
-        "/50/v2-",               # 小尺寸头像
         "/creator/packages/",    # 创作者中心资源
         "/fe/common/",           # 前端通用资源
         "/static/",              # 静态资源
     ]
     
     if any(path in src_lower for path in filter_paths):
+        return False
+    
+    # 过滤 50/v2-（这是知乎的缩略图路径，通常是头像）
+    if "/50/v2-" in src_lower:
         return False
     
     # 过滤特定文件类型（非图片）
@@ -216,6 +218,7 @@ async def fetch_post_content(url):
         - 自动过滤头像、徽章、表情等非正文图片
         - 支持懒加载图片（滚动页面触发）
         - 包含 fallback 机制
+        - 添加 Cookie 以绕过安全验证
     """
     from playwright.async_api import async_playwright
     
@@ -228,6 +231,41 @@ async def fetch_post_content(url):
             user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
             viewport={"width": 1920, "height": 1080},
         )
+        
+        # 添加 Cookie 以绕过安全验证
+        await context.add_cookies([
+            {
+                'name': '_xsrf',
+                'value': 'aMuDuX6dn2N04PT0brZKeE1Nq2lDc6T7',
+                'domain': '.zhihu.com',
+                'path': '/'
+            },
+            {
+                'name': '_zap',
+                'value': 'afab89c8-fe7f-48db-8401-1a2c061f94ad',
+                'domain': '.zhihu.com',
+                'path': '/'
+            },
+            {
+                'name': 'd_c0',
+                'value': 'fzaYD47FghyPTg84x0tinv6O4MI-CM4uXIk=|1782592277',
+                'domain': '.zhihu.com',
+                'path': '/'
+            },
+            {
+                'name': 'z_c0',
+                'value': '2|1:0|10:1782592323|4:z_c0|92:Mi4xWkF2b0FRQUFBQUJfTnBnUGpzV0NIQ1lBQUFCZ0FsVk5RNEV0YXdEcFJ0SXJ5ejhNZUFQaUZhTUtRMi1wZC1xRnNn|fe4ae0993b90bc517f9a72088bfd465ee86a8a22e5932dd9dca6913fcd6bfd70',
+                'domain': '.zhihu.com',
+                'path': '/'
+            },
+            {
+                'name': '__zse_ck',
+                'value': '005_Fk52dqG9F7ydd6pMKAnaWtxh8vHWmVfE2TeuEc1vK13Z00ytoVkpQ10NbyYO93UeOPxmW2ZZMDGAclpnYNcaZ24WNOJSdic=JIgjm4oHBpyRgnbpZ09nZpwPoTp9hOkE-Qjy2v2+Fj/8dZdPUXU2MmouUFnwRCfIiAPyXycKhtRhJKGirwiHF1sAfBdbD8JhdfGGLnXWKRYoMNFAUWX06g5nM2DZ5qTbxTMIlGnDLLsS9UbLhk1CTBTCcjFhys2/2',
+                'domain': '.zhihu.com',
+                'path': '/'
+            }
+        ])
+        
         page = await context.new_page()
         
         # 注入 stealth 反检测脚本
@@ -292,14 +330,17 @@ async def fetch_post_content(url):
             images = []
             selector_used = ""
             
-            # 知乎正文选择器（按优先级排序）
+            # 知乎正文选择器（按优先级排序 - 2026 年更新）
             content_selectors = [
-                ".AnswerCard .RichText",            # 回答正文（最常用）
-                ".Post-RichText",                   # 专栏文章正文
-                ".RichText",                        # 通用富文本
-                ".zm-editable-editor-outer",        # 旧版��辑器
-                "article",                          # HTML5 article
-                ".content",                         # 通用 content
+                ".QuestionRichText-new",          # 新版回答富文本
+                ".AnswerCard .RichText",          # 回答正文（常用）
+                ".Post-RichText",                 # 专栏文章正文
+                ".RichText",                      # 通用富文本
+                ".zm-editable-editor-outer",      # 旧版编辑器
+                "article",                        # HTML5 article
+                ".content",                       # 通用 content
+                ".RichText-cms",                  # CMS 富文本
+                ".Post-content",                  # 专栏内容
             ]
             
             for selector in content_selectors:
@@ -322,15 +363,17 @@ async def fetch_post_content(url):
                         
                         for img in img_elements:
                             try:
-                                src = await img.get_attribute("src")
-                                if src and src.startswith("http"):
-                                    if is_valid_content_image(src):
-                                        images.append(src)
-                                # 检查 data-src 属性（懒加载图片）
+                                # 优先使用 data-original 或 data-src（懒加载图片）
+                                data_original = await img.get_attribute("data-original")
                                 data_src = await img.get_attribute("data-src")
-                                if data_src and data_src.startswith("http"):
-                                    if is_valid_content_image(data_src):
-                                        images.append(data_src)
+                                src = await img.get_attribute("src")
+                                
+                                # 选择最合适的图片地址
+                                img_url = data_original or data_src or src
+                                
+                                if img_url and img_url.startswith("http"):
+                                    if is_valid_content_image(img_url):
+                                        images.append(img_url)
                             except Exception as e:
                                 pass
                     except Exception as e:
@@ -340,6 +383,40 @@ async def fetch_post_content(url):
             
             if not selector_used:
                 print(f"⚠️ 警告：所有选择器都失败了，URL: {url}")
+                print(f"   尝试使用 page.content() 解析完整 HTML...")
+                
+                # Fallback: 获取完整 HTML 并用 BeautifulSoup 解析
+                try:
+                    from bs4 import BeautifulSoup
+                    html = await page.content()
+                    soup = BeautifulSoup(html, 'html.parser')
+                    
+                    # 尝试提取正文
+                    for tag in ['article', 'div']:
+                        for className in ['RichText', 'RichText-new', 'Post-RichText', 'content']:
+                            elements = soup.find_all(tag, class_=lambda x: x and className in x if isinstance(x, str) else False)
+                            if elements:
+                                content_lines = [elem.get_text(strip=True) for elem in elements if len(elem.get_text(strip=True)) > 20]
+                                if content_lines:
+                                    print(f"✓ 从 HTML 中解析到 {len(content_lines)} 行文本")
+                                    break
+                        if content_lines:
+                            break
+                    
+                    # 提取图片
+                    img_tags = soup.find_all('img')
+                    for img in img_tags:
+                        src = img.get('src') or img.get('data-src')
+                        if src and src.startswith('http'):
+                            if is_valid_content_image(src):
+                                images.append(src)
+                    
+                    if images:
+                        print(f"✓ 从 HTML 中解析到 {len(images)} 张图片")
+                
+                except Exception as e:
+                    print(f"⚠️ HTML 解析失败：{e}")
+                    pass
             
             content = "\n".join(content_lines)
             
@@ -417,7 +494,7 @@ def main():
             print(f"从 stdin 读取到 {len(results)} 条结果，开始提取正文...", file=sys.stderr)
             
             # 并发获取
-            urls = [r.get("url", "") for r in results if r.get("url")]
+            urls = [r.get("url", "") or r.get("Url", "") for r in results if (r.get("url") or r.get("Url"))]
             if not urls:
                 print(json.dumps({"success": False, "error": "没有可用的 URL"}, ensure_ascii=False))
                 sys.exit(1)

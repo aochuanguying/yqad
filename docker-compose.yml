@@ -4,7 +4,7 @@ services:
   yqad:
     build: .
     container_name: yqad-app
-    restart: unless-stopped
+    restart: always
     ports:
       - "3000:3000"
     environment:
@@ -22,13 +22,10 @@ services:
       - ./data:/app/data
       # 挂载日志
       - ./logs:/app/logs
-    # 共享 X11 socket（用于虚拟显示）
-    volumes:
+      # 共享 X11 socket（用于虚拟显示）
       - /tmp/.X11-unix:/tmp/.X11-unix:ro
     # 增加共享内存（浏览器需要）
     shm_size: '2gb'
     # 安全选项（允许无沙盒运行）
     security_opt:
       - seccomp:unconfined
-    # 重启策略
-    restart: always
