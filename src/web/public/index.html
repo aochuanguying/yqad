@@ -214,6 +214,11 @@
       scheduler: {
         comment: { cron: '评论定时', randomOffsetMin: '最小偏移 (分钟)', randomOffsetMax: '最大偏移 (分钟)' },
         materialProcessing: { intervalMinutes: '执行间隔 (分钟)', enabled: '启用间隔模式' },
+        cookieRefresh: { 
+          enabled: '启用 Cookie 定时刷新', 
+          cron: 'Cookie 刷新定时',
+          autoEnabled: '启用到期自动刷新（提前 1 小时）'
+        },
       },
       web: { enabled: '启用 Web 界面', port: '端口' },
       materials: {
@@ -306,6 +311,9 @@
       'scheduler.comment.randomOffsetMax': '评论时间最大随机偏移，单位分钟',
       'scheduler.materialProcessing.intervalMinutes': '素材整理任务的执行间隔时间，单位分钟（5-1440 分钟）',
       'scheduler.materialProcessing.enabled': '是否启用间隔模式（启用后按固定间隔执行，禁用则使用 Cron 模式）',
+      'scheduler.cookieRefresh.enabled': '是否启用小红书 Cookie 定时自动刷新功能',
+      'scheduler.cookieRefresh.cron': 'Cookie 刷新任务的定时表达式，默认每天凌晨 2 点执行',
+      'scheduler.cookieRefresh.autoEnabled': '是否在 Cookie 即将到期时自动提前 1 小时刷新',
 
       // Web 设置
       'web.enabled': '是否启用 Web 管理界面',

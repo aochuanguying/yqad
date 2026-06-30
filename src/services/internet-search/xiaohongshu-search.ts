@@ -2,6 +2,7 @@ import { getLogger } from '../../utils/logger';
 import { SearchResult, ISearchPlatform } from './platform-base';
 import { spawn } from 'child_process';
 import { loadConfig } from '../../utils/config';
+import { NetworkPostConfigStorage } from '../../storage/mysql/network-post-config-storage';
 
 const logger = getLogger('xiaohongshu-search');
 
@@ -102,21 +103,73 @@ export class XiaohongshuSearch implements ISearchPlatform {
   }
 
   /**
+   * 初始化（异步加载 Cookie）
+   */
+  async initialize(): Promise<void> {
+    try {
+      // 从数据库加载 Cookie
+      const storage = NetworkPostConfigStorage.getInstance();
+      const status = await storage.getCookieStatus();
+      
+      if (!status.hasCookie || !status.cookie) {
+        logger.warn('[XiaohongshuSearch] 数据库中没有 Cookie，请先配置 Cookie');
+        return;
+      }
+      
+      const cookie = status.cookie;
+      
+      // 验证 Cookie 格式（简化版，只检查是否包含 a1 和 web_session）
+      if (!cookie.includes('a1=') || !cookie.includes('web_session=')) {
+        logger.error('[XiaohongshuSearch] Cookie 格式验证失败：缺少 a1 或 web_session 字段');
+        return;
+      }
+      
+      this.config.cookie = cookie;
+      logger.info('[XiaohongshuSearch] Cookie 加载成功');
+    } catch (error) {
+      logger.error('[XiaohongshuSearch] 加载 Cookie 失败:', error);
+    }
+  }
+
+  /**
+   * 验证 Cookie 格式
+   */
+  private validateCookieFormat(cookie: string): { valid: boolean; missingFields?: string[] } {
+    const cookieDict: Record<string, string> = {};
+    cookie.split('; ').forEach(item => {
+      if (item.includes('=')) {
+        const [key, value] = item.split('=', 2);
+        cookieDict[key.trim()] = value.trim();
+      }
+    });
+    
+    const requiredFields = ['a1', 'web_session', 'id_token'];
+    const missingFields = requiredFields.filter(field => !cookieDict[field]);
+    
+    if (missingFields.length > 0) {
+      return { valid: false, missingFields };
+    }
+    
+    return { valid: true };
+  }
+
+  /**
    * 加载配置
    */
   private loadConfig(): XiaohongshuConfig {
     const config = loadConfig();
     return {
       cookie: process.env.XIAOHONGSHU_COOKIE || config.internetSearch?.xiaohongshuCookie || '',
-      requestDelayMin: 1000,
-      requestDelayMax: 3000,
-      pageDelayMin: 3000,
-      pageDelayMax: 5000,
-      maxRetries: 3,
-      retryDelay: 2000,
-      retryBackoff: 2,
+      // 保守模式 - 降低风控风险
+      requestDelayMin: 8000,    // 8 秒 (原 1 秒)
+      requestDelayMax: 15000,   // 15 秒 (原 3 秒)
+      pageDelayMin: 20000,      // 20 秒 (原 3 秒)
+      pageDelayMax: 40000,      // 40 秒 (原 5 秒)
+      maxRetries: 2,            // 减少重试次数
+      retryDelay: 5000,         // 5 秒
+      retryBackoff: 1.5,        // 降低倍数
       requestTimeout: 30000,
-      maxRequestsPerHour: 10,
+      maxRequestsPerHour: 5,    // 每小时最多 5 次 (原 10 次)
     };
   }
 

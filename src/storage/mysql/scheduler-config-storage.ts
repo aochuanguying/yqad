@@ -22,6 +22,11 @@ export interface SchedulerConfig {
     intervalMinutes: number;
     enabled: boolean;
   };
+  cookieRefresh: {
+    enabled: boolean;
+    cron: string;
+    autoEnabled: boolean; // 到期自动刷新（提前 1 小时）
+  };
 }
 
 class SchedulerConfigStorage extends BaseDAO {
@@ -55,6 +60,9 @@ class SchedulerConfigStorage extends BaseDAO {
         post_random_offset_max INT DEFAULT 360,
         material_processing_interval_minutes INT DEFAULT 45,
         material_processing_enabled TINYINT(1) DEFAULT 1,
+        cookie_refresh_enabled TINYINT(1) DEFAULT 0,
+        cookie_refresh_cron VARCHAR(50) DEFAULT '0 2 * * *',
+        cookie_refresh_auto_enabled TINYINT(1) DEFAULT 1,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
@@ -64,9 +72,10 @@ class SchedulerConfigStorage extends BaseDAO {
       INSERT INTO scheduler_config (
         comment_cron, comment_random_offset_min, comment_random_offset_max,
         post_cron, post_random_offset_min, post_random_offset_max,
-        material_processing_interval_minutes, material_processing_enabled
+        material_processing_interval_minutes, material_processing_enabled,
+        cookie_refresh_enabled, cookie_refresh_cron, cookie_refresh_auto_enabled
       )
-      SELECT '0 10 * * *', 0, 600, '0 12 * * *', 0, 360, 45, 1
+      SELECT '0 10 * * *', 0, 600, '0 12 * * *', 0, 360, 45, 1, 0, '0 2 * * *', 1
       WHERE NOT EXISTS (SELECT 1 FROM scheduler_config)
     `);
     logger.info('✅ 默认调度器配置数据插入成功');
@@ -75,7 +84,7 @@ class SchedulerConfigStorage extends BaseDAO {
   async getConfig(): Promise<SchedulerConfig | null> {
     try {
       const rows = await this.query<any[]>(
-        'SELECT comment_cron, comment_random_offset_min, comment_random_offset_max, post_cron, post_random_offset_min, post_random_offset_max, material_processing_interval_minutes, material_processing_enabled FROM scheduler_config LIMIT 1'
+        'SELECT comment_cron, comment_random_offset_min, comment_random_offset_max, post_cron, post_random_offset_min, post_random_offset_max, material_processing_interval_minutes, material_processing_enabled, cookie_refresh_enabled, cookie_refresh_cron, cookie_refresh_auto_enabled FROM scheduler_config LIMIT 1'
       );
       if (rows.length === 0) return null;
       const row = rows[0];
@@ -94,6 +103,11 @@ class SchedulerConfigStorage extends BaseDAO {
           intervalMinutes: row.material_processing_interval_minutes,
           enabled: row.material_processing_enabled === 1,
         },
+        cookieRefresh: {
+          enabled: row.cookie_refresh_enabled === 1,
+          cron: row.cookie_refresh_cron,
+          autoEnabled: row.cookie_refresh_auto_enabled === 1,
+        },
       };
     } catch (error) {
       logger.error('获取调度器配置失败:', error instanceof Error ? error.message : String(error));
@@ -108,11 +122,13 @@ class SchedulerConfigStorage extends BaseDAO {
         await this.query(
           `INSERT INTO scheduler_config (
             comment_cron, comment_random_offset_min, comment_random_offset_max,
-            material_processing_interval_minutes, material_processing_enabled
-          ) VALUES (?, ?, ?, ?, ?)`,
+            material_processing_interval_minutes, material_processing_enabled,
+            cookie_refresh_enabled, cookie_refresh_cron, cookie_refresh_auto_enabled
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             config.comment.cron, config.comment.randomOffsetMin, config.comment.randomOffsetMax,
-            config.materialProcessing.intervalMinutes, config.materialProcessing.enabled ? 1 : 0
+            config.materialProcessing.intervalMinutes, config.materialProcessing.enabled ? 1 : 0,
+            config.cookieRefresh.enabled ? 1 : 0, config.cookieRefresh.cron, config.cookieRefresh.autoEnabled ? 1 : 0
           ]
         );
         logger.info('调度器配置已保存（新增）');
@@ -120,11 +136,13 @@ class SchedulerConfigStorage extends BaseDAO {
         await this.query(
           `UPDATE scheduler_config 
            SET comment_cron = ?, comment_random_offset_min = ?, comment_random_offset_max = ?,
-               material_processing_interval_minutes = ?, material_processing_enabled = ?
+               material_processing_interval_minutes = ?, material_processing_enabled = ?,
+               cookie_refresh_enabled = ?, cookie_refresh_cron = ?, cookie_refresh_auto_enabled = ?
            WHERE id = ?`,
           [
             config.comment.cron, config.comment.randomOffsetMin, config.comment.randomOffsetMax,
             config.materialProcessing.intervalMinutes, config.materialProcessing.enabled ? 1 : 0,
+            config.cookieRefresh.enabled ? 1 : 0, config.cookieRefresh.cron, config.cookieRefresh.autoEnabled ? 1 : 0,
             rows[0].id
           ]
         );

@@ -12,7 +12,8 @@
     "init-db": "tsx scripts/init-database.ts",
     "safe-init-db": "tsx scripts/safe-init-database.ts",
     "cookie:refresh": "tsx scripts/refresh-xiaohongshu-cookie.ts",
-    "cookie:status": "tsx scripts/refresh-xiaohongshu-cookie.ts --status"
+    "cookie:status": "tsx scripts/refresh-xiaohongshu-cookie.ts --status",
+    "migrate:cookie-refresh": "tsx scripts/migrate-cookie-refresh-scheduler.ts"
   },
   "keywords": [
     "audi",

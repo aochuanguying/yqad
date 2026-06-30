@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  xiaohongshu-cookie-refresh:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: xiaohongshu-cookie-refresh
+    hostname: xiaohongshu-cookie
+    restart: unless-stopped
+    environment:
+      # 数据库配置 (根据实际情况修改)
+      - DB_HOST=192.168.50.50
+      - DB_PORT=3306
+      - DB_USER=root
+      - DB_PASSWORD=Wfw7539148@
+      - DB_NAME=yqad_prod_db
+      # 时区设置
+      - TZ=Asia/Shanghai
+    volumes:
+      # 持久化浏览器数据 (重要！)
+      - ./browser_data:/tmp/xiaohongshu_browser_data
+      # 持久化二维码图片
+      - ./qr_codes:/tmp/qr_codes
+      # 日志文件
+      - ./logs:/var/log/xiaohongshu
+    # 定时任务：每天凌晨 2 点运行
+    command: >
+      sh -c "
+      echo '0 2 * * * python3 /app/scripts/auto_refresh_xiaohongshu_cookie_docker.py >> /var/log/xiaohongshu/cookie_refresh.log 2>&1' | crontab -
+      && crond -f -l 2
+      "
+    # 资源限制 (群晖 DS218+ 适用)
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    networks:
+      - xiaohongshu-network
+
+  # 可选：测试服务 (手动运行测试)
+  xiaohongshu-test:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: xiaohongshu-test
+    hostname: xiaohongshu-test
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./browser_data:/tmp/xiaohongshu_browser_data
+      - ./output:/app/output
+    # 运行测试脚本
+    command: ["python3", "/app/scripts/test_audi_export.py"]
+    profiles:
+      - test
+    networks:
+      - xiaohongshu-network
+
+networks:
+  xiaohongshu-network:
+    driver: bridge
