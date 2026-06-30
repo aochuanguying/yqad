@@ -2,7 +2,6 @@
 .trae
 openspec
 node_modules
-dist
 coverage
 logs
 data

@@ -16,10 +16,33 @@ export interface NetworkPostConfig {
   // 汽车之家配置
   autohomeCookie?: string;
   autohomeEnabled: boolean;
+  autohomeSelectorWarning?: string; // 选择器失效警告
   
   // 通用配置
   maxResults: number;
   enabled: boolean;
+}
+
+/**
+ * Cookie 刷新结果
+ */
+export interface CookieRefreshResult {
+  success: boolean;
+  cookieVersion?: number;
+  duration?: number;
+  error?: string;
+}
+
+/**
+ * Cookie 状态
+ */
+export interface CookieStatus {
+  hasCookie: boolean;
+  cookie?: string; // Cookie 字符串
+  version: number;
+  lastRefreshTime: Date | null;
+  nextRefreshTime: Date | null;
+  recentLogs: any[];
 }
 
 export class NetworkPostConfigStorage {
@@ -125,6 +148,42 @@ export class NetworkPostConfigStorage {
     } catch (error) {
       logger.error('保存配置失败', error);
       return false;
+    }
+  }
+
+  /**
+   * 更新汽车之家选择器警告状态
+   */
+  async updateAutohomeSelectorWarning(warningMessage: string | null): Promise<boolean> {
+    try {
+      await this.conn.execute(
+        `INSERT INTO network_post_config (id, autohome_selector_warning, updated_at) 
+         VALUES (1, ?, NOW())
+         ON DUPLICATE KEY UPDATE 
+         autohome_selector_warning = VALUES(autohome_selector_warning),
+         updated_at = NOW()`,
+        [warningMessage || '']
+      );
+      return true;
+    } catch (error) {
+      logger.error('更新汽车之家选择器警告失败:', error);
+      return false;
+    }
+  }
+
+  /**
+   * 获取汽车之家选择器警告状态
+   */
+  async getAutohomeSelectorWarning(): Promise<string | null> {
+    try {
+      const config = await this.getConfig();
+      if (config) {
+        return config.autohomeSelectorWarning || null;
+      }
+      return null;
+    } catch (error) {
+      logger.error('获取汽车之家选择器警告失败:', error);
+      return null;
     }
   }
 
@@ -292,6 +351,200 @@ export class NetworkPostConfigStorage {
         success: false,
         error: error instanceof Error ? error.message : '未知错误',
       };
+    }
+  }
+
+  /**
+   * 获取 Cookie 状态
+   */
+  async getCookieStatus(): Promise<CookieStatus> {
+    try {
+      // 先获取基础字段（兼容旧表结构）
+      const sql = `
+        SELECT 
+          xiaohongshu_cookie,
+          cookie_version,
+          last_refresh_time,
+          next_refresh_time,
+          cookie_refresh_logs
+        FROM network_post_config 
+        WHERE id = 1
+      `;
+      
+      const result = await this.conn.query(sql);
+      const row = Array.isArray(result) ? result[0] : result;
+      
+      if (!row) {
+        return {
+          hasCookie: false,
+          version: 0,
+          lastRefreshTime: null,
+          nextRefreshTime: null,
+          recentLogs: [],
+        };
+      }
+      
+      // 兼容旧表结构（字段可能不存在）
+      const hasCookie = !!row.xiaohongshu_cookie && row.xiaohongshu_cookie.toString().length > 0;
+      const cookie = row.xiaohongshu_cookie ? row.xiaohongshu_cookie.toString() : '';
+      const version = row.cookie_version ? parseInt(row.cookie_version) : 0;
+      const lastRefreshTime = row.last_refresh_time ? new Date(row.last_refresh_time) : null;
+      const nextRefreshTime = row.next_refresh_time ? new Date(row.next_refresh_time) : null;
+      
+      // 安全解析 JSON 日志
+      let recentLogs: any[] = [];
+      try {
+        if (row.cookie_refresh_logs) {
+          const parsed = JSON.parse(row.cookie_refresh_logs);
+          recentLogs = Array.isArray(parsed) ? parsed : [];
+        }
+      } catch (e) {
+        logger.warn('解析 cookie_refresh_logs 失败:', e);
+        recentLogs = [];
+      }
+      
+      return {
+        hasCookie,
+        cookie,
+        version,
+        lastRefreshTime,
+        nextRefreshTime,
+        recentLogs,
+      };
+    } catch (error) {
+      logger.error('获取 Cookie 状态失败:', error);
+      // 如果是字段不存在的错误，尝试只查询 xiaohongshu_cookie 字段
+      try {
+        const sql = `SELECT xiaohongshu_cookie FROM network_post_config WHERE id = 1`;
+        const result = await this.conn.query(sql);
+        const row = Array.isArray(result) ? result[0] : result;
+        
+        if (!row || !row.xiaohongshu_cookie) {
+          return {
+            hasCookie: false,
+            version: 0,
+            lastRefreshTime: null,
+            nextRefreshTime: null,
+            recentLogs: [],
+          };
+        }
+        
+        const hasCookie = !!row.xiaohongshu_cookie && row.xiaohongshu_cookie.toString().length > 0;
+        return {
+          hasCookie,
+          cookie: hasCookie ? row.xiaohongshu_cookie.toString() : '',
+          version: 0,
+          lastRefreshTime: null,
+          nextRefreshTime: null,
+          recentLogs: [],
+        };
+      } catch (retryError) {
+        logger.error('重试获取 Cookie 状态失败:', retryError);
+        return {
+          hasCookie: false,
+          version: 0,
+          lastRefreshTime: null,
+          nextRefreshTime: null,
+          recentLogs: [],
+        };
+      }
+    }
+  }
+
+  /**
+   * 保存 Cookie（用于自动刷新）
+   */
+  async saveCookie(cookie: string, source: 'auto' | 'manual' = 'auto'): Promise<{ success: boolean; version?: number; error?: string }> {
+    try {
+      // 获取当前版本号
+      const status = await this.getCookieStatus();
+      const newVersion = status.version + 1;
+      
+      // 构建刷新日志
+      const refreshLog = {
+        refresh_time: new Date().toISOString(),
+        duration_ms: 0, // 由调用方更新
+        status: 'success' as const,
+        source,
+      };
+      
+      // 更新 Cookie 和辅助字段
+      await this.conn.execute(
+        `UPDATE network_post_config 
+         SET xiaohongshu_cookie = ?, 
+             cookie_version = ?,
+             last_refresh_time = NOW(),
+             next_refresh_time = DATE_ADD(NOW(), INTERVAL 24 HOUR),
+             cookie_refresh_logs = JSON_ARRAY_APPEND(
+               IFNULL(cookie_refresh_logs, JSON_ARRAY()),
+               '$',
+               ?
+             )
+         WHERE id = 1`,
+        [cookie, newVersion, refreshLog]
+      );
+      
+      logger.info(`[CookieStorage] Cookie 保存成功，版本：${newVersion}, 来源：${source}`);
+      return { success: true, version: newVersion };
+    } catch (error) {
+      logger.error('[CookieStorage] Cookie 保存失败:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : '保存失败' 
+      };
+    }
+  }
+
+  /**
+   * 更新刷新日志（用于更新耗时）
+   */
+  async updateRefreshLog(durationMs: number, status: 'success' | 'failed', errorMessage?: string): Promise<void> {
+    try {
+      const logEntry = {
+        refresh_time: new Date().toISOString(),
+        duration_ms: durationMs,
+        status,
+        error_message: errorMessage,
+        source: 'auto',
+      };
+      
+      // 获取当前日志数组
+      const [rows] = await this.conn.query(
+        'SELECT cookie_refresh_logs FROM network_post_config WHERE id = 1'
+      ) as any;
+      
+      const row = Array.isArray(rows) ? rows[0] : rows;
+      // MySQL JSON 字段可能返回字符串或对象，需要兼容处理
+      let logs: any[] = [];
+      if (row?.cookie_refresh_logs) {
+        if (typeof row.cookie_refresh_logs === 'string') {
+          try {
+            logs = JSON.parse(row.cookie_refresh_logs);
+          } catch (e) {
+            logger.warn('解析 cookie_refresh_logs 失败:', e);
+            logs = [];
+          }
+        } else if (Array.isArray(row.cookie_refresh_logs)) {
+          logs = row.cookie_refresh_logs;
+        }
+      }
+      
+      // 更新最后一条日志
+      if (logs.length > 0) {
+        logs[logs.length - 1] = logEntry;
+        
+        // 只保留最近 30 条
+        if (logs.length > 30) {
+          logs = logs.slice(-30);
+        }
+        
+        await this.conn.execute(
+          'UPDATE network_post_config SET cookie_refresh_logs = ? WHERE id = 1',
+          [JSON.stringify(logs)]
+        );
+      }
+    } catch (error) {
+      logger.error('[CookieStorage] 更新刷新日志失败:', error);
     }
   }
 }

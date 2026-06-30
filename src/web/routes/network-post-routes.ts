@@ -187,4 +187,182 @@ router.post('/network-post-config/test-autohome', async (req: Request, res: Resp
   }
 });
 
+/**
+ * GET /api/network-post-config/autohome-warning - 获取汽车之家选择器警告
+ */
+router.get('/network-post-config/autohome-warning', async (req: Request, res: Response) => {
+  try {
+    const storage = NetworkPostConfigStorage.getInstance();
+    const warning = await storage.getAutohomeSelectorWarning();
+    
+    res.json({ 
+      success: true, 
+      warning: warning,
+      hasWarning: !!warning,
+    });
+  } catch (error) {
+    logger.error('获取汽车之家警告失败:', error instanceof Error ? error.message : String(error));
+    res.status(500).json({ 
+      success: false, 
+      error: error instanceof Error ? error.message : '获取警告失败' 
+    });
+  }
+});
+
+/**
+ * POST /api/network-post-config/autohome-warning - 更新汽车之家选择器警告
+ */
+router.post('/network-post-config/autohome-warning', async (req: Request, res: Response) => {
+  try {
+    const storage = NetworkPostConfigStorage.getInstance();
+    const { warning, clear } = req.body;
+    
+    // 如果 clear=true，清除警告；否则设置警告
+    const warningMessage = clear ? null : (warning || '');
+    const success = await storage.updateAutohomeSelectorWarning(warningMessage);
+    
+    if (success) {
+      if (clear) {
+        res.json({ success: true, message: '警告已清除' });
+      } else {
+        res.json({ success: true, message: '警告已更新', warning: warningMessage });
+      }
+    } else {
+      res.status(500).json({ success: false, error: '更新警告失败' });
+    }
+  } catch (error) {
+    logger.error('更新汽车之家警告失败:', error instanceof Error ? error.message : String(error));
+    res.status(500).json({ 
+      success: false, 
+      error: error instanceof Error ? error.message : '更新警告失败' 
+    });
+  }
+});
+
+/**
+ * GET /api/network-post-config/cookie-status - 获取 Cookie 状态
+ */
+router.get('/network-post-config/cookie-status', async (req: Request, res: Response) => {
+  try {
+    const storage = NetworkPostConfigStorage.getInstance();
+    const status = await storage.getCookieStatus();
+    
+    // 确保 recentLogs 是数组
+    const logs = Array.isArray(status.recentLogs) ? status.recentLogs : [];
+    
+    res.json({ 
+      success: true, 
+      data: {
+        hasCookie: status.hasCookie,
+        version: status.version,
+        lastRefreshTime: status.lastRefreshTime ? status.lastRefreshTime.toISOString() : null,
+        nextRefreshTime: status.nextRefreshTime ? status.nextRefreshTime.toISOString() : null,
+        recentLogs: logs.slice(-10), // 最近 10 条记录
+      },
+    });
+  } catch (error) {
+    logger.error('获取 Cookie 状态失败:', error instanceof Error ? error.message : String(error));
+    res.status(500).json({ 
+      success: false, 
+      error: error instanceof Error ? error.message : '获取状态失败' 
+    });
+  }
+});
+
+// 存储刷新任务的状态和二维码
+const refreshTasks: Map<string, {
+  status: 'generating_first' | 'waiting_first_scan' | 'generating_second' | 'waiting_login' | 'success' | 'failed';
+  qrCodeBase64?: string;
+  message?: string;
+  version?: number;
+  error?: string;
+}> = new Map();
+
+/**
+ * POST /api/network-post-config/cookie/refresh - 刷新 Cookie（异步）
+ */
+router.post('/network-post-config/cookie/refresh', async (req: Request, res: Response) => {
+  try {
+    const taskId = `refresh_${Date.now()}`;
+    
+    // 初始化任务状态
+    refreshTasks.set(taskId, {
+      status: 'generating_first',
+      message: '正在生成二维码...',
+    });
+    
+    // 异步执行刷新任务
+    (async () => {
+      try {
+        const { CookieScanner } = await import('../../services/cookie-refresh/cookie-scanner');
+        const scanner = CookieScanner.getInstance();
+        
+        // 设置状态更新回调
+        scanner.setStatusCallback((status: any) => {
+          const currentTask = refreshTasks.get(taskId);
+          refreshTasks.set(taskId, {
+            ...currentTask,
+            status: status.status,
+            qrCodeBase64: status.qrCodeBase64,
+            message: status.message,
+          });
+        });
+        
+        logger.info('🔄 开始刷新 Cookie...');
+        const result = await scanner.refreshCookie();
+        
+        if (result.success) {
+          const currentTask = refreshTasks.get(taskId);
+          refreshTasks.set(taskId, {
+            ...currentTask,
+            status: 'success',
+            version: result.version,
+          });
+        }
+      } catch (error) {
+        const currentTask = refreshTasks.get(taskId);
+        refreshTasks.set(taskId, {
+          ...currentTask,
+          status: 'failed',
+          error: error instanceof Error ? error.message : '刷新失败',
+        });
+      }
+    })();
+    
+    // 立即返回任务 ID
+    res.json({ 
+      success: true, 
+      taskId,
+      message: '开始刷新，请使用 taskId 轮询状态',
+    });
+  } catch (error) {
+    logger.error('刷新 Cookie 失败:', error instanceof Error ? error.message : String(error));
+    res.status(500).json({ 
+      success: false, 
+      error: error instanceof Error ? error.message : '刷新失败' 
+    });
+  }
+});
+
+/**
+ * GET /api/network-post-config/cookie/status/:taskId - 获取刷新任务状态
+ */
+router.get('/network-post-config/cookie/status/:taskId', async (req: Request, res: Response) => {
+  const { taskId } = req.params;
+  
+  const task = refreshTasks.get(taskId);
+  if (!task) {
+    res.status(404).json({ 
+      success: false, 
+      error: '任务不存在',
+    });
+    return;
+  }
+  
+  res.json({ 
+    success: true, 
+    data: task,
+  });
+});
+
 export default router;

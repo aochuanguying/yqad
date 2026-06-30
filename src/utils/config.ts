@@ -343,6 +343,21 @@ export function loadConfig(): AppConfig {
     config.web.auth.enabled = process.env.WEB_AUTH_ENABLED === 'true';
   }
 
+  // MySQL 配置环境变量覆盖（Docker 部署用）
+  const mysqlConfig = (config as any).mysql;
+  if (mysqlConfig && process.env.MYSQL_DATABASE) {
+    // 只覆盖 test 和 production 环境配置
+    ['test', 'production'].forEach(env => {
+      if (mysqlConfig[env] && typeof mysqlConfig[env] === 'object') {
+        mysqlConfig[env].database = process.env.MYSQL_DATABASE;
+        if (process.env.MYSQL_HOST) mysqlConfig[env].host = process.env.MYSQL_HOST;
+        if (process.env.MYSQL_USER) mysqlConfig[env].user = process.env.MYSQL_USER;
+        if (process.env.MYSQL_PASSWORD) mysqlConfig[env].password = process.env.MYSQL_PASSWORD;
+        if (process.env.MYSQL_PORT) mysqlConfig[env].port = parseInt(process.env.MYSQL_PORT, 10);
+      }
+    });
+  }
+
   // 归一化 AI 配置
   normalizeAIConfig(config);
   normalizeApiConfig(config);

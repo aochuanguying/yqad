@@ -1,68 +1,35 @@
-FROM node:20-bookworm-slim AS builder
+# 使用 Playwright 官方镜像（包含所有浏览器依赖）
+FROM mcr.microsoft.com/playwright:v1.40.0-jammy
 
+# 设置工作目录
 WORKDIR /app
 
+# 复制 package.json
 COPY package*.json ./
+
+# 安装依赖（不使用 --only=production 以支持 ESM 模块）
 RUN npm ci
 
-COPY tsconfig*.json ./
-COPY src ./src
-RUN npm run build
-
-# Python 环境构建阶段
-FROM python:3.10-slim AS python-builder
-
-WORKDIR /app
-
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt \
-    && playwright install chromium \
-    && playwright install-deps chromium
-
-FROM node:20-bookworm-slim AS runner
-
-WORKDIR /app
-
-ENV NODE_ENV=production
-ENV TZ=Asia/Shanghai
-
-# 安装 Python 和系统依赖
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    tini \
-    libheif1 \
-    libheif-examples \
-    libvips42 \
-    python3 \
-    python3-pip \
-    python3-venv \
-    curl \
-    gnupg \
-  && rm -rf /var/lib/apt/lists/*
-
-# 安装 Playwright 系统依赖
-RUN curl https://raw.githubusercontent.com/microsoft/playwright/main/packages/playwright-core/bin/install_media_pack | bash \
-  || true
-
-COPY package*.json ./
-RUN npm ci --omit=dev \
-  && npm cache clean --force
-
-COPY requirements.txt ./
-RUN pip3 install --no-cache-dir -r requirements.txt \
-    && playwright install chromium \
-    && playwright install-deps chromium
-
+# 复制应用代码
+COPY dist ./dist
 COPY config ./config
-COPY --from=builder /app/dist ./dist
-COPY --from=python-builder /usr/local/lib/python3.10/site-packages /usr/lib/python3/dist-packages
-COPY stealth.min.js ./
-COPY xiaohongshu_final.py ./
 
-RUN mkdir -p /app/data/materials/raw /app/data/materials/processed /app/logs
+# 安装浏览器依赖和 Xvfb
+USER root
+RUN apt-get update && apt-get install -y xvfb
 
+# 安装 Playwright 浏览器（镜像已包含，只需安装依赖）
+RUN npx playwright install chromium
+
+# 创建二维码目录
+RUN mkdir -p /app/data/qr_codes
+
+# 暴露端口
 EXPOSE 3000
 
-ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["node", "dist/index.js"]
+# 启动脚本
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
+# 启动
+CMD ["/docker-entrypoint.sh"]
