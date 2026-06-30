@@ -79,11 +79,11 @@ export class CookieScanner {
 
       await this.page.goto('https://www.xiaohongshu.com/login', {
         waitUntil: 'domcontentloaded',
-        timeout: 60000,
+        timeout: 30000, // 优化：30 秒足够，避免过长等待
       });
 
       // 等待页面加载
-      await this.page.waitForTimeout(3000);
+      await this.page.waitForTimeout(2000); // 优化：2 秒足够
 
       // 最多尝试 2 次扫码
       for (let scanRound = 1; scanRound <= 2; scanRound++) {
@@ -103,10 +103,11 @@ export class CookieScanner {
           message,
         });
 
-        // 等待扫码或页面变化（5 分钟超时）
+        // 等待扫码或页面变化（优化：第一轮 3 分钟，第二轮 2 分钟）
         // 第二轮扫码时跳过第二个二维码检测，直接等待登录成功
         logger.info(`⏳ 等待第 ${scanRound} 轮扫码...`);
-        const scanResult = await this.waitForScanOrLogin(300000, scanRound === 2);
+        const scanTimeout = scanRound === 1 ? 180000 : 120000; // 3 分钟 / 2 分钟
+        const scanResult = await this.waitForScanOrLogin(scanTimeout, scanRound === 2);
         await this.cleanupQRCode(qrResult.filepath);
 
         if (!scanResult.changed) {
@@ -149,6 +150,22 @@ export class CookieScanner {
             return { success: false, error: saveResult.error };
           }
 
+          // 验证 Cookie 有效性
+          logger.info('🔍 正在验证 Cookie 有效性...');
+          try {
+            const { XiaohongshuSearch } = await import('../../services/internet-search/xiaohongshu-search');
+            const searchService = new XiaohongshuSearch();
+            const testResult = await searchService.testConnection();
+            
+            if (testResult.success) {
+              logger.info(`✅ Cookie 验证成功！获取到 ${testResult.resultCount} 条结果`);
+            } else {
+              logger.warn('⚠️ Cookie 验证失败，但已��存到数据库:', testResult.error);
+            }
+          } catch (error) {
+            logger.warn('⚠️ Cookie 验证过程出错:', error instanceof Error ? error.message : error);
+          }
+
           // 更新日志
           logger.info('📊 更新刷新日志...');
           const duration = Date.now() - startTime;
@@ -170,10 +187,10 @@ export class CookieScanner {
         logger.info(`第 ${scanRound} 轮扫码后页面变化，准备下一轮...`);
         
         // 等待新页面加载
-        await this.page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => {
+        await this.page.waitForLoadState('domcontentloaded', { timeout: 8000 }).catch(() => {
           logger.warn('等待页面加载超时，继续尝试');
         });
-        await this.page.waitForTimeout(10000); // 多等一会，让第二个二维码完全加载并显示倒计时
+        await this.page.waitForTimeout(5000); // 优化：5 秒足够让第二个二维码加载
       }
 
       // 两轮扫码后仍未登录
@@ -197,7 +214,7 @@ export class CookieScanner {
   }
 
   /**
-   * 初始化浏览器
+   * 初始化浏览器（支持持久化用户数据）
    */
   private async initBrowser(): Promise<void> {
     try {
@@ -209,6 +226,13 @@ export class CookieScanner {
         fs.mkdirSync(qrCodeDir, { recursive: true });
       }
 
+      // 浏览器用户数据持久化目录
+      const userDataDir = path.join(process.cwd(), 'data', 'browser_user_data', 'xiaohongshu');
+      if (!fs.existsSync(userDataDir)) {
+        fs.mkdirSync(userDataDir, { recursive: true });
+      }
+      logger.info(`📁 浏览器用户数据目录：${userDataDir}`);
+
       // 检测是否在 Docker 容器中运行（多种检测方式）
       const isDocker = fs.existsSync('/.dockerenv') || 
                       fs.existsSync('/proc/1/cgroup') && 
@@ -216,7 +240,7 @@ export class CookieScanner {
                       process.env.NODE_ENV === 'production';
       
       // 浏览器启动超时保护（30 秒）
-      const browserLaunchPromise = chromium.launch({
+      const browserLaunchPromise = chromium.launchPersistentContext(userDataDir, {
         headless: isDocker, // Docker 中使用无头模式，本地使用有头模式
         args: [
           '--no-sandbox',
@@ -227,18 +251,6 @@ export class CookieScanner {
           // Docker 中需要的额外参数
           ...(isDocker ? ['--disable-gpu', '--disable-software-rasterizer'] : []),
         ],
-      });
-
-      const timeoutPromise = new Promise<never>((_, reject) => 
-        setTimeout(() => reject(new Error('浏览器启动超时（30 秒）')), 30000)
-      );
-
-      this.browser = await Promise.race([browserLaunchPromise, timeoutPromise]);
-      
-      logger.info(`浏览器启动成功（模式：${isDocker ? 'Docker 无头' : '本地有头'}）`);
-
-      // 创建新的上下文，模拟真实浏览器
-      const context = await this.browser.newContext({
         userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         viewport: { width: 1920, height: 1080 },
         locale: 'zh-CN',
@@ -246,6 +258,15 @@ export class CookieScanner {
         permissions: ['geolocation'],
         geolocation: { latitude: 31.2304, longitude: 121.4737 }, // 上海坐标
       });
+
+      const timeoutPromise = new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error('浏览器启动超时（30 秒）')), 30000)
+      );
+
+      // persistentContext 直接返回 BrowserContext，不需要再创建 context
+      const context = await Promise.race([browserLaunchPromise, timeoutPromise]);
+      
+      logger.info(`浏览器启动成功（模式：${isDocker ? 'Docker 无头' : '本地有头'}，持久化：${userDataDir}）`);
 
       this.page = await context.newPage();
 
@@ -283,15 +304,15 @@ export class CookieScanner {
         });
       `);
 
-      logger.info('✅ 浏览器初始化成功（反检测模式）');
+      logger.info('✅ 浏览器初始化成功（反检测模式 + 持久化）');
     } catch (error) {
-      logger.error('❌ 浏览器初始化失败:', error);
+      logger.error('❌ 浏览器���始化失败:', error);
       throw new Error('Playwright 初始化失败，请确保已安装：npm install playwright');
     }
   }
 
   /**
-   * 截取二维码（通用方法）
+   * 截取二维码（通用方法，优化截图时机）
    * @param prefix 文件名前缀
    * @param isSecondQR 是否是第二个二维码（使用不同的选择器）
    */
@@ -305,11 +326,14 @@ export class CookieScanner {
     const selector = isSecondQR ? secondQRSelector : firstQRSelector;
     let qrcodeElement = null;
     
-    // 等待页面稳定
-    await this.page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {
+    // 等待页面稳定（优化超时时间）
+    await this.page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {
       logger.warn('等待网络空闲超时，继续尝试');
     });
-    await this.page.waitForTimeout(2000);
+    
+    // 第二个二维码需要更多等待时间，确保完全渲染
+    const waitTime = isSecondQR ? 2000 : 1500; // 优化：减少等待时间
+    await this.page.waitForTimeout(waitTime);
 
     // 使用精确选择器查找二维码
     try {
@@ -331,7 +355,9 @@ export class CookieScanner {
       try {
         // 确保元素在视图中
         await qrcodeElement.scrollIntoViewIfNeeded({ timeout: 5000 }).catch(() => null);
-        await this.page.waitForTimeout(500); // 等待滚动完成
+        
+        // 第二个二维码需要更多等待时间确保完全渲染
+        await this.page.waitForTimeout(isSecondQR ? 1000 : 500);
         
         // 截图
         const buffer = await qrcodeElement.screenshot({ timeout: 10000 });
@@ -507,13 +533,14 @@ export class CookieScanner {
   }
 
   /**
-   * 清理二维码文件
+   * 清理二维码文件（保留最近的 3 个用于问题排查）
    */
   private async cleanupQRCode(filepath: string): Promise<void> {
     try {
       if (fs.existsSync(filepath)) {
-        fs.unlinkSync(filepath);
-        logger.info(`🗑️ 已清理二维码：${filepath}`);
+        // 不立即删除，保留最近的二维码用于问题排查
+        // 由定时任务清理 7 天前的旧二维码
+        logger.info(`� 二维码已保留：${filepath}（7 天后自动清理）`);
       }
     } catch (error) {
       logger.warn('清理二维码失败:', error);
@@ -521,9 +548,10 @@ export class CookieScanner {
   }
 
   /**
-   * 清理浏览器（增强错误处理）
+   * 清理浏览器（增强错误处理和进程泄漏防护）
    */
   private async cleanup(): Promise<void> {
+    const cleanupStartTime = Date.now();
     try {
       // 先关闭页面
       if (this.page) {
@@ -536,10 +564,17 @@ export class CookieScanner {
         this.page = null;
       }
       
-      // 再关闭浏览器
+      // 再关闭浏览器（使用超时保护）
       if (this.browser) {
         try {
-          await this.browser.close();
+          const closePromise = this.browser.close();
+          const timeoutPromise = new Promise<void>((resolve) => 
+            setTimeout(() => {
+              logger.warn('⚠️ 浏览器关闭超时（5 秒），强制清理');
+              resolve();
+            }, 5000)
+          );
+          await Promise.race([closePromise, timeoutPromise]);
           logger.debug('浏览器已关闭');
         } catch (browserError) {
           logger.debug('关闭浏览器时出错（可能已关闭）:', browserError instanceof Error ? browserError.message : browserError);
@@ -547,9 +582,13 @@ export class CookieScanner {
         this.browser = null;
       }
       
-      logger.info('🗑️ 浏览器已清理');
+      const duration = Date.now() - cleanupStartTime;
+      logger.info(`🗑️ 浏览器已清理（耗时：${duration}ms）`);
     } catch (error) {
       logger.warn('清理浏览器失败:', error instanceof Error ? error.message : error);
+      // 即使失败也要重置引用
+      this.page = null;
+      this.browser = null;
     }
   }
 }

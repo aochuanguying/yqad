@@ -1,12 +1,13 @@
 /**
  * 知乎搜索服务
- * 实现方案：知乎官方数据开放平台 API
+ * 实现方案：知乎官方数据开放平台 API + Playwright 正文提取
  * 
  * API 文档：https://developer.zhihu.com/
  * 特点：
  * - 官方 API，稳定可靠
  * - 每天免费 1000 次调用
  * - 高质量内容，专业领域覆盖
+ * - Playwright 提取正文和图片
  * 
  * 使用方法：
  * 1. 访问 https://developer.zhihu.com/ 注册
@@ -18,6 +19,8 @@ import { ISearchPlatform, SearchResult } from './platform-base';
 import { getLogger } from '../../utils/logger';
 import * as http from 'http';
 import * as https from 'https';
+import { spawn } from 'child_process';
+import * as path from 'path';
 
 const logger = getLogger('zhihu-search');
 
@@ -45,8 +48,8 @@ export class ZhihuSearch implements ISearchPlatform {
         return [];
       }
       
-      // 使用知乎官方 API
-      const results = await this.searchViaApi(keywords, maxResults);
+      // 使用知乎官方 API + Playwright 正文提取
+      const results = await this.searchViaApiWithContent(keywords, maxResults);
       return results;
       
     } catch (error) {
@@ -56,123 +59,187 @@ export class ZhihuSearch implements ISearchPlatform {
   }
   
   /**
-   * 使用知乎官方 API 搜索
-   * API 文档：https://developer.zhihu.com/
-   * 
-   * 请求参数：
-   * - Query: 搜索关键词（必填）
-   * - Count: 结果数量（选填，默认 10，最大 10）
-   * 
-   * 响应参数：
-   * - Code: 错误码（0 表示成功）
-   * - Message: 响应消息
-   * - Data: 搜索数据
-   *   - HasMore: 是否有更多结果
-   *   - SearchHashId: 搜索请求标识
-   *   - Items: 搜索结果列表
-   *   - EmptyReason: 无结果原因
+   * 使用知乎官方 API + Playwright 正文提取
+   * 流程：
+   * 1. 调用知乎开放平台 API 获取搜索结果（含 URL）
+   * 2. 使用 Python 脚本 + Playwright 打开 URL 提取正文和图片
    */
-  private async searchViaApi(keywords: string[], maxResults: number): Promise<SearchResult[]> {
+  private async searchViaApiWithContent(keywords: string[], maxResults: number): Promise<SearchResult[]> {
     try {
       const keyword = keywords[0];
-      const url = `https://developer.zhihu.com/api/v1/content/zhihu_search`;
       
-      // 当前时间戳（秒级）
-      const timestamp = Math.floor(Date.now() / 1000);
+      // 步骤 1：调用知乎 API 获取搜索结果
+      logger.info(`步骤 1: 调用知乎 API 搜索...`);
+      const searchResults = await this.searchViaApiOnly(keyword, Math.min(maxResults, 10));
       
-      // 请求头
-      const headers: any = {
-        'Authorization': `Bearer ${ZHIHU_ACCESS_SECRET}`,
-        'X-Request-Timestamp': timestamp.toString(),
-        'Content-Type': 'application/json',
-      };
-      
-      // 请求参数（Count 最大为 10）
-      const count = Math.min(Math.max(maxResults, 1), 10);
-      const params = new URLSearchParams({
-        'Query': keyword,
-        'Count': count.toString(),
-      });
-      
-      logger.info(`请求知乎 API: ${url}?${params.toString()}`);
-      
-      // 发送 GET 请求
-      const response = await fetch(`${url}?${params.toString()}`, {
-        method: 'GET',
-        headers,
-      });
-      
-      if (!response.ok) {
-        logger.warn(`知乎搜索失败：HTTP ${response.status}`);
+      if (searchResults.length === 0) {
+        logger.warn('知乎 API 搜索结果为空');
         return [];
       }
       
-      const data: any = await response.json();
+      // 步骤 2：使用 Playwright 提取正文和图片
+      logger.info(`步骤 2: 使用 Playwright 提取 ${searchResults.length} 条内容的正文和图片...`);
+      const resultsWithContent = await this.fetchContentViaPython(searchResults);
       
-      // 检查响应码
-      if (data.Code !== 0) {
-        logger.warn(`知乎 API 返回错误：Code=${data.Code}, Message=${data.Message}`);
-        return [];
-      }
-      
-      // 解析搜索结果
-      const searchData = data.Data || {};
-      const items = searchData.Items || [];
-      const emptyReason = searchData.EmptyReason || '';
-      
-      if (items.length === 0 && emptyReason) {
-        logger.info(`知乎搜索无结果：${emptyReason}`);
-      } else {
-        logger.info(`搜索成功，找到 ${items.length} 条结果`);
-      }
-      
-      // 转换为 SearchResult 格式
-      return items.map((item: any) => {
-        // 提取作者信息
-        const authorName = item.AuthorName || '';
-        const authorAvatar = item.AuthorAvatar || '';
-        const authorBadge = item.AuthorBadge || '';
-        const authorBadgeText = item.AuthorBadgeText || '';
-        
-        // 构建作者信息字符串
-        let author = authorName;
-        if (authorBadgeText) {
-          author += ` (${authorBadgeText})`;
-        }
-        
-        // 统计数据
-        const voteUpCount = item.VoteUpCount || 0;
-        const commentCount = item.CommentCount || 0;
-        
-        // 权威等级和排序分数
-        const authorityLevel = item.AuthorityLevel || '';
-        const rankingScore = item.RankingScore || 0;
-        
-        return {
-          title: item.Title || '',
-          content: item.ContentText || '',
-          source: this.platformDisplayName,
-          url: item.Url || '',
-          author: author,
-          likes: voteUpCount,
-          comments: commentCount,
-          // 额外信息（可选）
-          metadata: {
-            contentType: item.ContentType || '',
-            contentId: item.ContentID || '',
-            authorAvatar,
-            authorBadge,
-            editTime: item.EditTime || 0,
-            authorityLevel,
-            rankingScore,
-          },
-        };
-      });
+      return resultsWithContent;
       
     } catch (error) {
-      logger.error('调用知乎 API 失败:', error instanceof Error ? error.message : String(error));
+      logger.error('知乎搜索失败:', error instanceof Error ? error.message : String(error));
       return [];
     }
+  }
+
+  /**
+   * 仅调用知乎 API 获取搜索结果（不含正文）
+   */
+  private async searchViaApiOnly(keyword: string, count: number): Promise<any[]> {
+    const url = `https://developer.zhihu.com/api/v1/content/zhihu_search`;
+    const timestamp = Math.floor(Date.now() / 1000);
+    
+    const headers: any = {
+      'Authorization': `Bearer ${ZHIHU_ACCESS_SECRET}`,
+      'X-Request-Timestamp': timestamp.toString(),
+      'Content-Type': 'application/json',
+    };
+    
+    const params = new URLSearchParams({
+      'Query': keyword,
+      'Count': count.toString(),
+    });
+    
+    logger.info(`请求知乎 API: ${url}?${params.toString()}`);
+    
+    const response = await fetch(`${url}?${params.toString()}`, {
+      method: 'GET',
+      headers,
+    });
+    
+    if (!response.ok) {
+      logger.warn(`知乎搜索失败：HTTP ${response.status}`);
+      return [];
+    }
+    
+    const data: any = await response.json();
+    
+    if (data.Code !== 0) {
+      logger.warn(`知乎 API 返回错误：Code=${data.Code}, Message=${data.Message}`);
+      return [];
+    }
+    
+    const searchData = data.Data || {};
+    const items = searchData.Items || [];
+    
+    logger.info(`搜索成功，找到 ${items.length} 条结果`);
+    
+    return items;
+  }
+
+  /**
+   * 使用 Python 脚本 + Playwright 提取正文和图片
+   */
+  private async fetchContentViaPython(searchResults: any[]): Promise<SearchResult[]> {
+    return new Promise((resolve) => {
+      const scriptPath = path.join(__dirname, '../../../scripts/test_zhihu_content.py');
+      const pythonExecutable = process.env.PYTHON_EXECUTABLE || 'python3';
+      
+      // 准备输入数据
+      const inputData = {
+        accessSecret: ZHIHU_ACCESS_SECRET,
+        results: searchResults,
+      };
+      
+      const pyProcess = spawn(pythonExecutable, [scriptPath, '--from-stdin']);
+      let output = '';
+      let errorOutput = '';
+
+      pyProcess.stdin.write(JSON.stringify(inputData));
+      pyProcess.stdin.end();
+
+      pyProcess.stdout.on('data', (data: Buffer) => {
+        output += data.toString();
+      });
+
+      pyProcess.stderr.on('data', (data: Buffer) => {
+        errorOutput += data.toString();
+      });
+
+      pyProcess.on('close', (code: number) => {
+        if (code !== 0) {
+          logger.warn(`Python 脚本退出码：${code}, 错误输出：${errorOutput}`);
+          // Fallback：只使用 API 搜索结果（无正文图片）
+          resolve(this.mapToSearchResult(searchResults));
+          return;
+        }
+
+        try {
+          const result = JSON.parse(output);
+          if (!result.success || !result.results) {
+            logger.warn('Python 脚本返回格式错误');
+            resolve(this.mapToSearchResult(searchResults));
+            return;
+          }
+
+          // 映射为 SearchResult 格式
+          const finalResults: SearchResult[] = result.results.map((item: any) => ({
+            title: item.title || '',
+            content: item.content || '',
+            source: this.platformDisplayName,
+            url: item.url || '',
+            author: item.author || '',
+            likes: item.likes || 0,
+            comments: item.comments || 0,
+            imageUrls: item.images || [],
+            metadata: {
+              contentType: item.content_type || '',
+            },
+          }));
+
+          logger.info(`Playwright 提取完成，${finalResults.length} 条结果`);
+          resolve(finalResults);
+
+        } catch (e) {
+          logger.warn('解析 Python 脚本输出失败:', e);
+          resolve(this.mapToSearchResult(searchResults));
+        }
+      });
+
+      // 超时处理（60 秒）
+      setTimeout(() => {
+        pyProcess.kill();
+        logger.warn('Python 脚本执行超时，使用 Fallback 结果');
+        resolve(this.mapToSearchResult(searchResults));
+      }, 60000);
+    });
+  }
+
+  /**
+   * 将 API 搜索结果映射为 SearchResult
+   */
+  private mapToSearchResult(items: any[]): SearchResult[] {
+    return items.map((item: any) => {
+      const authorName = item.AuthorName || '';
+      const authorBadgeText = item.AuthorBadgeText || '';
+      let author = authorName;
+      if (authorBadgeText) {
+        author += ` (${authorBadgeText})`;
+      }
+      
+      return {
+        title: item.Title || '',
+        content: item.ContentText || '',
+        source: this.platformDisplayName,
+        url: item.Url || '',
+        author: author,
+        likes: item.VoteUpCount || 0,
+        comments: item.CommentCount || 0,
+        metadata: {
+          contentType: item.ContentType || '',
+          contentId: item.ContentID || '',
+          authorityLevel: item.AuthorityLevel || '',
+          rankingScore: item.RankingScore || 0,
+        },
+      };
+    });
   }
   
   async isAvailable(): Promise<boolean> {
