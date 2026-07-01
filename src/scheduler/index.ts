@@ -280,6 +280,8 @@ export class Scheduler {
 export async function createScheduler(handlers: {
   comment: TaskHandler;
   materialProcessing: TaskHandler;
+  refreshXiaohongshuCookie?: TaskHandler;
+  refreshZhihuCookie?: TaskHandler;
 }): Promise<Scheduler> {
   const schedulerConfig = await getSchedulerConfigStorage().getConfig();
   
@@ -386,6 +388,42 @@ export async function createScheduler(handlers: {
     }, intervalMs));
   } else {
     logger.info('车辆监控：未启用或配置不完整');
+  }
+
+  // Cookie 刷新任务：小红书和知乎（从数据库读取配置）
+  const cookieSchedulerCfg = schedulerConfig?.cookieRefresh;
+  if (cookieSchedulerCfg && cookieSchedulerCfg.enabled !== false) {
+    logger.info(`Cookie 刷新使用 Cron 模式：${cookieSchedulerCfg.cron}`);
+    
+    // 注册小红书 Cookie 刷新
+    if (handlers.refreshXiaohongshuCookie) {
+      scheduler.registerTask(
+        '小红书 Cookie 刷新',
+        cookieSchedulerCfg.cron,
+        cookieSchedulerCfg.randomOffsetMin || 0,
+        cookieSchedulerCfg.randomOffsetMax || 30,
+        handlers.refreshXiaohongshuCookie
+      );
+      logger.info('已注册小红书 Cookie 自动刷新任务');
+    } else {
+      logger.warn('未提供小红书 Cookie 刷新 handler，跳过注册');
+    }
+    
+    // 注册知乎 Cookie 刷新
+    if (handlers.refreshZhihuCookie) {
+      scheduler.registerTask(
+        '知乎 Cookie 刷新',
+        cookieSchedulerCfg.cron,
+        cookieSchedulerCfg.randomOffsetMin || 0,
+        cookieSchedulerCfg.randomOffsetMax || 30,
+        handlers.refreshZhihuCookie
+      );
+      logger.info('已注册知乎 Cookie 自动刷新任务');
+    } else {
+      logger.warn('未提供知乎 Cookie 刷新 handler，跳过注册');
+    }
+  } else {
+    logger.info('Cookie 自动刷新：未启用');
   }
 
   return scheduler;

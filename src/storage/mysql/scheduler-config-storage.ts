@@ -26,6 +26,8 @@ export interface SchedulerConfig {
     enabled: boolean;
     cron: string;
     autoEnabled: boolean; // 到期自动刷新（提前 1 小时）
+    randomOffsetMin?: number; // 最小随机偏移（分钟）
+    randomOffsetMax?: number; // 最大随机偏移（分钟）
   };
 }
 

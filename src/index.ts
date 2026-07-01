@@ -103,6 +103,36 @@ async function main() {
       }
       await organizeMaterials();
     },
+    refreshXiaohongshuCookie: async () => {
+      logger.info('🔄 开始自动刷新小红书 Cookie...');
+      try {
+        const { CookieScanner } = await import('./services/cookie-refresh/cookie-scanner');
+        const scanner = CookieScanner.getInstance();
+        const result = await scanner.refreshCookie();
+        if (result.success) {
+          logger.info(`✅ 小红书 Cookie 自动刷新成功！版本：${result.version}`);
+        } else {
+          logger.error(`❌ 小红书 Cookie 自动刷新失败：${result.error}`);
+        }
+      } catch (error) {
+        logger.error(`❌ 小红书 Cookie 自动刷新异常：${error instanceof Error ? error.message : error}`);
+      }
+    },
+    refreshZhihuCookie: async () => {
+      logger.info('🔄 开始自动刷新知乎 Cookie...');
+      try {
+        const { ZhihuCookieScanner } = await import('./services/cookie-refresh/zhihu-cookie-scanner');
+        const scanner = ZhihuCookieScanner.getInstance();
+        const result = await scanner.refreshCookie();
+        if (result.success) {
+          logger.info(`✅ 知乎 Cookie 自动刷新成功！版本：${result.version}`);
+        } else {
+          logger.error(`❌ 知乎 Cookie 自动刷新失败：${result.error}`);
+        }
+      } catch (error) {
+        logger.error(`❌ 知乎 Cookie 自动刷新异常：${error instanceof Error ? error.message : error}`);
+      }
+    },
   });
 
   // 启动调度器

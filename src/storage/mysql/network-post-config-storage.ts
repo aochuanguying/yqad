@@ -561,4 +561,48 @@ export class NetworkPostConfigStorage {
       logger.error('[CookieStorage] 更新刷新日志失败:', error);
     }
   }
+
+  /**
+   * 保存知乎 Cookie
+   */
+  async saveZhihuCookie(cookie: string, source: 'auto' | 'manual' = 'auto'): Promise<{ success: boolean; version?: number; error?: string }> {
+    try {
+      // 获取当前版本号
+      const status = await this.getCookieStatus();
+      const newVersion = status.version + 1;
+      
+      // 构建刷新日志
+      const refreshLog = {
+        refresh_time: new Date().toISOString(),
+        duration_ms: 0,
+        status: 'success' as const,
+        source,
+        platform: 'zhihu',
+      };
+      
+      // 更新知乎 Cookie 和辅助字段
+      await this.conn.execute(
+        `UPDATE network_post_config 
+         SET zhihu_cookie = ?, 
+             zhihu_enabled = 1,
+             updated_at = NOW(),
+             cookie_refresh_logs = JSON_ARRAY_APPEND(
+               IFNULL(cookie_refresh_logs, JSON_ARRAY()),
+               '$',
+               ?
+             )
+         WHERE id = 1`,
+        [cookie, refreshLog]
+      );
+      
+      logger.info(`[CookieStorage] 知乎 Cookie 保存成功，版本：${newVersion}, 来源：${source}`);
+      return { success: true, version: newVersion };
+    } catch (error) {
+      logger.error('[CookieStorage] 知乎 Cookie 保存失败:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : '保存失败' 
+      };
+    }
+  }
 }

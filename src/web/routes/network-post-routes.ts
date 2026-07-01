@@ -24,6 +24,7 @@ router.get('/network-post-config', async (req: Request, res: Response) => {
     // 如果没有配置，返回默认配置
     const defaultConfig: NetworkPostConfig = {
       zhihuAccessSecret: '',
+      zhihuCookie: '',
       zhihuEnabled: false,
       xiaohongshuCookie: '',
       xiaohongshuEnabled: false,
@@ -55,6 +56,7 @@ router.post('/network-post-config', async (req: Request, res: Response) => {
     
     const config: NetworkPostConfig = {
       zhihuAccessSecret: req.body.zhihuAccessSecret || '',
+      zhihuCookie: req.body.zhihuCookie || '',
       zhihuEnabled: req.body.zhihuEnabled || false,
       xiaohongshuCookie: req.body.xiaohongshuCookie || '',
       xiaohongshuEnabled: req.body.xiaohongshuEnabled || false,
@@ -278,6 +280,15 @@ const refreshTasks: Map<string, {
   error?: string;
 }> = new Map();
 
+// 存储知乎刷新任务的状态
+const zhihuRefreshTasks: Map<string, {
+  status: 'generating' | 'waiting_scan' | 'saving' | 'success' | 'failed';
+  message?: string;
+  version?: number;
+  error?: string;
+  qrCodeBase64?: string;
+}> = new Map();
+
 /**
  * POST /api/network-post-config/cookie/refresh - 刷新 Cookie（异步）
  */
@@ -363,6 +374,122 @@ router.get('/network-post-config/cookie/status/:taskId', async (req: Request, re
     success: true, 
     data: task,
   });
+});
+
+/**
+ * POST /api/network-post-config/zhihu/refresh - 刷新知乎 Cookie（异步）
+ */
+router.post('/network-post-config/zhihu/refresh', async (req: Request, res: Response) => {
+  try {
+    const taskId = `zhihu_refresh_${Date.now()}`;
+    
+    // 初始化任务状态
+    zhihuRefreshTasks.set(taskId, {
+      status: 'generating',
+      message: '正在生成二维码...',
+    });
+    
+    // 异步执行刷新任务
+    (async () => {
+      try {
+        const { ZhihuCookieScanner } = await import('../../services/cookie-refresh/zhihu-cookie-scanner');
+        const scanner = ZhihuCookieScanner.getInstance();
+        
+        // 设置状态更新回调
+        scanner.setStatusCallback((status: any) => {
+          const currentTask = zhihuRefreshTasks.get(taskId);
+          zhihuRefreshTasks.set(taskId, {
+            ...currentTask,
+            status: status.status,
+            message: status.message,
+            qrCodeBase64: status.qrCodeBase64,
+          });
+        });
+        
+        logger.info('🔄 开始刷新知乎 Cookie...');
+        const result = await scanner.refreshCookie();
+        
+        if (result.success) {
+          const currentTask = zhihuRefreshTasks.get(taskId);
+          zhihuRefreshTasks.set(taskId, {
+            ...currentTask,
+            status: 'success',
+            version: result.version,
+          });
+        }
+      } catch (error) {
+        const currentTask = zhihuRefreshTasks.get(taskId);
+        zhihuRefreshTasks.set(taskId, {
+          ...currentTask,
+          status: 'failed',
+          error: error instanceof Error ? error.message : '刷新失败',
+        });
+      }
+    })();
+    
+    // 立即返回任务 ID
+    res.json({ 
+      success: true, 
+      taskId,
+      message: '开始刷新知乎 Cookie，请使用 taskId 轮询状态',
+    });
+  } catch (error) {
+    logger.error('刷新知乎 Cookie 失败:', error instanceof Error ? error.message : String(error));
+    res.status(500).json({ 
+      success: false, 
+      error: error instanceof Error ? error.message : '刷新失败' 
+    });
+  }
+});
+
+/**
+ * GET /api/network-post-config/zhihu/status/:taskId - 获取知乎刷新任务状态
+ */
+router.get('/network-post-config/zhihu/status/:taskId', async (req: Request, res: Response) => {
+  const { taskId } = req.params;
+  
+  const task = zhihuRefreshTasks.get(taskId);
+  if (!task) {
+    res.status(404).json({ 
+      success: false, 
+      error: '任务不存在',
+    });
+    return;
+  }
+  
+  res.json({ 
+    success: true, 
+    data: task,
+  });
+});
+
+/**
+ * GET /api/network-post-config/zhihu-cookie-status - 获取知乎 Cookie 状态
+ */
+router.get('/network-post-config/zhihu-cookie-status', async (req: Request, res: Response) => {
+  try {
+    const storage = NetworkPostConfigStorage.getInstance();
+    const status = await storage.getCookieStatus();
+    
+    const logs = Array.isArray(status.recentLogs) ? status.recentLogs : [];
+    
+    res.json({ 
+      success: true, 
+      data: {
+        hasCookie: status.hasCookie,
+        version: status.version,
+        lastRefreshTime: status.lastRefreshTime ? status.lastRefreshTime.toISOString() : null,
+        nextRefreshTime: status.nextRefreshTime ? status.nextRefreshTime.toISOString() : null,
+        recentLogs: logs.slice(-10),
+      },
+    });
+  } catch (error) {
+    logger.error('获取知乎 Cookie 状态失败:', error instanceof Error ? error.message : String(error));
+    res.status(500).json({ 
+      success: false, 
+      error: error instanceof Error ? error.message : '获取状态失败' 
+    });
+  }
 });
 
 export default router;

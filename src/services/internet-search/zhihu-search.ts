@@ -17,6 +17,7 @@
 
 import { ISearchPlatform, SearchResult } from './platform-base';
 import { getLogger } from '../../utils/logger';
+import { NetworkPostConfigStorage } from '../../storage/mysql/network-post-config-storage';
 import * as http from 'http';
 import * as https from 'https';
 import { spawn } from 'child_process';
@@ -27,6 +28,57 @@ const logger = getLogger('zhihu-search');
 // 动态获取环境变量（避免模块加载时固定值）
 const getAccessSecret = () => process.env.ZHIHU_ACCESS_SECRET || '';
 const getCookie = () => process.env.ZHIHU_COOKIE || '';
+
+// 缓存配置，避免每次搜索都查数据库
+let cachedConfig: {
+  accessSecret: string;
+  cookie: string;
+  timestamp: number;
+} | null = null;
+
+/**
+ * 从数据库加载知乎配置（Access Secret + Cookie）
+ * 缓存 5 分钟，避免频繁查询数据库
+ */
+async function loadZhihuConfig(): Promise<{ accessSecret: string; cookie: string } | null> {
+  const now = Date.now();
+  
+  // 检查缓存是否有效（5 分钟内）
+  if (cachedConfig && (now - cachedConfig.timestamp) < 5 * 60 * 1000) {
+    logger.debug('使用缓存的知乎配置');
+    return {
+      accessSecret: cachedConfig.accessSecret,
+      cookie: cachedConfig.cookie,
+    };
+  }
+  
+  try {
+    const storage = NetworkPostConfigStorage.getInstance();
+    const config = await storage.getConfig();
+    
+    if (!config) {
+      logger.warn('未找到网络发帖配置');
+      return null;
+    }
+    
+    // 更新缓存
+    cachedConfig = {
+      accessSecret: config.zhihuAccessSecret || '',
+      cookie: config.zhihuCookie || '',
+      timestamp: now,
+    };
+    
+    logger.info(`知乎配置已加载：Access Secret=${config.zhihuAccessSecret ? '已配置' : '未配置'}, Cookie=${config.zhihuCookie ? '已配置' : '未配置'}`);
+    
+    return {
+      accessSecret: config.zhihuAccessSecret || '',
+      cookie: config.zhihuCookie || '',
+    };
+  } catch (error) {
+    logger.error('加载知乎配置失败:', error instanceof Error ? error.message : String(error));
+    return null;
+  }
+}
 
 export class ZhihuSearch implements ISearchPlatform {
   private platformName = 'zhihu';
@@ -44,14 +96,25 @@ export class ZhihuSearch implements ISearchPlatform {
     try {
       logger.info(`开始搜索知乎，关键词：${keywords.join(', ')}, 最大结果数：${maxResults}`);
       
-      const accessSecret = getAccessSecret();
-      if (!accessSecret) {
+      // 从数据库加载配置
+      const config = await loadZhihuConfig();
+      
+      if (!config || !config.accessSecret) {
         logger.warn('知乎 Access Secret 未配置，跳过搜索');
         return [];
       }
       
+      // 设置环境变量（供 Python 脚本使用）
+      process.env.ZHIHU_ACCESS_SECRET = config.accessSecret;
+      if (config.cookie) {
+        process.env.ZHIHU_COOKIE = config.cookie;
+        logger.info('知乎 Cookie 已设置（用于 Playwright 绕过安全验证）');
+      } else {
+        logger.warn('知乎 Cookie 未配置，Playwright 可能遇到安全验证');
+      }
+      
       // 使用知乎官方 API + Playwright 正文提取
-      const results = await this.searchViaApiWithContent(keywords, maxResults, accessSecret);
+      const results = await this.searchViaApiWithContent(keywords, maxResults, config.accessSecret, config.cookie);
       return results;
       
     } catch (error) {
@@ -69,7 +132,8 @@ export class ZhihuSearch implements ISearchPlatform {
   private async searchViaApiWithContent(
     keywords: string[], 
     maxResults: number,
-    accessSecret: string
+    accessSecret: string,
+    cookie: string
   ): Promise<SearchResult[]> {
     try {
       const keyword = keywords[0];
@@ -85,7 +149,6 @@ export class ZhihuSearch implements ISearchPlatform {
       
       // 步骤 2：使用 Playwright 提取正文和图片
       logger.info(`步骤 2: 使用 Playwright 提取 ${searchResults.length} 条内容的正文和图片...`);
-      const cookie = getCookie();
       const resultsWithContent = await this.fetchContentViaPython(searchResults, accessSecret, cookie);
       
       return resultsWithContent;

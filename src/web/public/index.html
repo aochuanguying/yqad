@@ -5751,6 +5751,7 @@
           renderNetworkPostConfigContent(data.config);
           // 加载 Cookie 状态
           setTimeout(() => loadXiaohongshuCookieStatus(), 100);
+          setTimeout(() => loadZhihuCookieStatus(), 200);
           // 加载汽车之家警告
           setTimeout(() => loadAutohomeWarning(), 200);
         } else {
@@ -5769,10 +5770,11 @@
         <!-- 知乎配置 -->
         <div class="bg-white rounded-lg shadow-sm border mb-6">
           <div class="px-6 py-4 border-b bg-gray-50">
-            <h4 class="text-lg font-semibold text-gray-800">📚 知乎 API 配置</h4>
-            <p class="text-sm text-gray-500 mt-1">知乎官方数据开放平台 API，每天免费 1000 次调用</p>
+            <h4 class="text-lg font-semibold text-gray-800">📚 知乎配置</h4>
+            <p class="text-sm text-gray-500 mt-1">配置知乎 API 和 Playwright 访问（API 用于搜索，Playwright 用于获取正文和图片）</p>
           </div>
           <div class="p-6 space-y-4">
+            <!-- Access Secret -->
             <div>
               <label for="zhihu-access-secret" class="block text-sm font-medium text-gray-700 mb-1">
                 Access Secret <span class="text-red-500">*</span>
@@ -5786,6 +5788,50 @@
               </p>
             </div>
             
+            <!-- Cookie -->
+            <div>
+              <label for="zhihu-cookie" class="block text-sm font-medium text-gray-700 mb-1">
+                Cookie <span class="text-orange-500">*</span>
+              </label>
+              <textarea id="zhihu-cookie" name="zhihuCookie" 
+                rows="4"
+                placeholder="_xsrf=xxx; _zap=xxx; z_c0=xxx; __zse_ck=xxx; ..."
+                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-xs">${config.zhihuCookie || ''}</textarea>
+              <p class="text-xs text-gray-500 mt-1">
+                按 F12 打开开发者工具 → Network 标签 → 访问知乎任意页面 → 复制请求头中的 Cookie 字段
+                <button type="button" onclick="toggleZhihuCookieGuide()" class="text-blue-600 hover:underline ml-2">📖 查看详细教程</button>
+              </p>
+              
+              <!-- Cookie 获取指南（默认隐藏） -->
+              <div id="zhihu-cookie-guide" class="hidden mt-3 p-4 bg-blue-50 border border-blue-200 rounded-md">
+                <h5 class="text-sm font-semibold text-blue-900 mb-2">📝 如何获取知乎 Cookie</h5>
+                <ol class="text-xs text-blue-800 space-y-2 list-decimal list-inside">
+                  <li>打开浏览器（推荐 Chrome 或 Edge）</li>
+                  <li>访问 <a href="https://www.zhihu.com" target="_blank" class="text-blue-600 hover:underline">知乎</a> 并登录账号</li>
+                  <li>按 <kbd class="px-1 py-0.5 bg-gray-200 rounded text-xs">F12</kbd> 打开开发者工具</li>
+                  <li>切换到 <strong>Network（网络）</strong> 标签，勾选 <strong>Preserve log（保留日志）</strong></li>
+                  <li>刷新页面（<kbd class="px-1 py-0.5 bg-gray-200 rounded text-xs">F5</kbd>）</li>
+                  <li>在左侧请求列表中找到任意请求（如 <code>zhihu.com</code> 开头的）</li>
+                  <li>点击该请求 → 右侧 <strong>Headers（请求头）</strong> 标签 → 找到 <code>Cookie</code> 字段</li>
+                  <li>复制整个 Cookie 值并粘贴到上方输入框</li>
+                </ol>
+                <div class="mt-3 p-2 bg-white rounded border border-blue-200">
+                  <p class="text-xs font-semibold text-blue-900 mb-1">关键字段检查：</p>
+                  <ul class="text-xs text-blue-800 space-y-1">
+                    <li>✅ <code>_xsrf</code> - 跨站请求伪造保护</li>
+                    <li>✅ <code>_zap</code> - 用户会话标识</li>
+                    <li>✅ <code>z_c0</code> - 登录凭证</li>
+                    <li>✅ <code>__zse_ck</code> - 安全验证参数</li>
+                  </ul>
+                </div>
+                <div class="mt-3 p-2 bg-amber-50 border border-amber-200 rounded-md">
+                  <p class="text-xs text-amber-800">
+                    <strong>⚠️ 注意：</strong>Cookie 会过期，请定期检查并更新。建议每 1-2 周更新一次。
+                  </p>
+                </div>
+              </div>
+            </div>
+            
             <div class="flex items-center gap-2">
               <input type="checkbox" id="zhihu-enabled" name="zhihuEnabled" 
                 ${config.zhihuEnabled ? 'checked' : ''}
@@ -5793,17 +5839,22 @@
               <label for="zhihu-enabled" class="text-sm text-gray-700">启用知乎搜索</label>
             </div>
             
-            <div class="p-4 bg-green-50 border border-green-200 rounded-md">
-              <p class="text-sm text-green-800">
-                <strong>✅ 状态：</strong>
-                ${config.zhihuAccessSecret ? '已配置 Access Secret，可以点击"测试连接"验证' : '未配置 Access Secret'}
-              </p>
+            <!-- Cookie 状态显示（刷新时显示二维码） -->
+            <div id="zhihu-cookie-status" class="p-4 bg-gray-50 border border-gray-200 rounded-md mb-4">
+              <p class="text-sm text-gray-600">加载中...</p>
             </div>
             
-            <button type="button" onclick="testZhihuConnection()" 
-              class="px-4 py-2 bg-green-600 text-white text-sm rounded-md hover:bg-green-700 transition-colors">
-              🔌 测试连接
-            </button>
+            <!-- 操作按钮 -->
+            <div class="flex gap-3">
+              <button type="button" onclick="testZhihuConnection()" 
+                class="px-4 py-2 bg-green-600 text-white text-sm rounded-md hover:bg-green-700 transition-colors">
+                🔍 测试连接
+              </button>
+              <button type="button" onclick="refreshZhihuCookie()" 
+                class="px-4 py-2 bg-purple-600 text-white text-sm rounded-md hover:bg-purple-700 transition-colors">
+                🔄 刷新 Cookie
+              </button>
+            </div>
           </div>
         </div>
         
@@ -5931,6 +5982,107 @@
       `;
     }
 
+    // 切换知乎 Cookie 指南显示/隐藏
+    function toggleZhihuCookieGuide() {
+      const guide = document.getElementById('zhihu-cookie-guide');
+      if (guide.classList.contains('hidden')) {
+        guide.classList.remove('hidden');
+      } else {
+        guide.classList.add('hidden');
+      }
+    }
+    
+    // 刷新知乎 Cookie（自动扫码）
+    var zhihuRefreshTaskId = null;
+    var zhihuRefreshPollingInterval = null;
+    
+    async function refreshZhihuCookie() {
+      if (!confirm('🔄 即将开始刷新知乎 Cookie\n\n系统将生成二维码，请使用知乎 APP 扫码登录\n\n预计耗时：1-3 分钟，确定继续吗？')) {
+        return;
+      }
+      
+      var btn = event.target;
+      var originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = '🔄 刷新中...';
+      
+      try {
+        // 1. 启动刷新任务
+        var resp = await fetch('/api/network-post-config/zhihu/refresh', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        
+        var data = await resp.json();
+        
+        if (!data.success) {
+          showToast('❌ 启动失败：' + (data.error || '未知错误'), 'error');
+          btn.disabled = false;
+          btn.textContent = originalText;
+          return;
+        }
+        
+        zhihuRefreshTaskId = data.taskId;
+        showToast('🔄 开始刷新，正在生成二维码...', 'success');
+        
+        // 2. 轮询任务状态
+        zhihuRefreshPollingInterval = setInterval(async function() {
+          try {
+            var statusResp = await fetch('/api/network-post-config/zhihu/status/' + zhihuRefreshTaskId);
+            var statusData = await statusResp.json();
+            
+            if (!statusData.success) {
+              return;
+            }
+            
+            var task = statusData.data;
+            
+            // 更新状态显示（在 cookie-status 区域显示二维码）
+            var statusDiv = document.getElementById('zhihu-cookie-status');
+            if (statusDiv) {
+              var html = '<div class="space-y-2">';
+              
+              if (task.qrCodeBase64) {
+                html += '<div class="text-center">';
+                html += '<p class="text-sm font-semibold mb-2">' + (task.message || '请扫码') + '</p>';
+                html += '<img src="data:image/png;base64,' + task.qrCodeBase64 + '" alt="二维码" class="mx-auto border-2 border-blue-500 rounded-lg" style="max-width: 300px;">';
+                html += '</div>';
+              } else {
+                html += '<p class="text-sm">' + (task.message || '处理中...') + '</p>';
+              }
+              
+              html += '</div>';
+              statusDiv.innerHTML = html;
+              statusDiv.className = 'p-4 border border-blue-200 rounded-md mb-4 bg-blue-50';
+            }
+            
+            // 检查任务是否完成
+            if (task.status === 'success') {
+              clearInterval(zhihuRefreshPollingInterval);
+              showToast('✅ 知乎 Cookie 刷新成功！(版本：' + task.version + ')', 'success');
+              // 重新加载配置
+              loadNetworkPostConfig();
+              loadZhihuCookieStatus();
+              btn.disabled = false;
+              btn.textContent = originalText;
+            } else if (task.status === 'failed') {
+              clearInterval(zhihuRefreshPollingInterval);
+              showToast('❌ 刷新失败：' + (task.error || '未知错误'), 'error');
+              btn.disabled = false;
+              btn.textContent = originalText;
+            }
+          } catch (error) {
+            console.error('轮询状态失败:', error);
+          }
+        }, 2000); // 每 2 秒轮询一次
+        
+      } catch (error) {
+        showToast('刷新失败：' + error.message, 'error');
+        btn.disabled = false;
+        btn.textContent = originalText;
+      }
+    }
+    
     // 测试知乎连接
     async function testZhihuConnection() {
       const accessSecret = document.getElementById('zhihu-access-secret').value.trim();
@@ -5972,6 +6124,84 @@
         guide.classList.remove('hidden');
       } else {
         guide.classList.add('hidden');
+      }
+    }
+
+    // 加载知乎 Cookie 状态
+    async function loadZhihuCookieStatus() {
+      try {
+        const resp = await fetch('/api/network-post-config/zhihu-cookie-status');
+        const data = await resp.json();
+        
+        const statusDiv = document.getElementById('zhihu-cookie-status');
+        if (!statusDiv) return;
+        
+        if (data.success && data.data) {
+          const { hasCookie, version, lastRefreshTime, nextRefreshTime, recentLogs } = data.data;
+          
+          let html = '<div class="space-y-2">';
+          
+          if (hasCookie) {
+            html += `
+              <p class="text-sm text-green-800">
+                <strong>✅ 状态：</strong>已配置 Cookie (版本：${version})
+              </p>
+            `;
+            
+            if (lastRefreshTime) {
+              const lastRefresh = new Date(lastRefreshTime).toLocaleString('zh-CN');
+              html += `
+                <p class="text-xs text-gray-600">
+                  <strong>最后刷新：</strong>${lastRefresh}
+                </p>
+              `;
+            }
+            
+            if (nextRefreshTime) {
+              const nextRefresh = new Date(nextRefreshTime).toLocaleString('zh-CN');
+              html += `
+                <p class="text-xs text-gray-600">
+                  <strong>下次刷新：</strong>${nextRefresh}
+                </p>
+              `;
+            }
+            
+            if (recentLogs && recentLogs.length > 0) {
+              const lastLog = recentLogs[recentLogs.length - 1];
+              html += `
+                <p class="text-xs text-gray-600">
+                  <strong>最近状态：</strong>
+                  <span class="${lastLog.status === 'success' ? 'text-green-600' : 'text-red-600'}">
+                    ${lastLog.status === 'success' ? '✅ 成功' : '❌ 失败'}
+                  </span>
+                  ${lastLog.duration_ms ? `，耗时：${lastLog.duration_ms}ms` : ''}
+                  ${lastLog.error_message ? `，错误：${lastLog.error_message}` : ''}
+                </p>
+              `;
+            }
+          } else {
+            html += `
+              <p class="text-sm text-orange-800">
+                <strong>⚠️ 状态：</strong>未配置 Cookie
+              </p>
+              <p class="text-xs text-gray-600">
+                💡 请手动配置 Cookie 或点击"刷新 Cookie"自动获取
+              </p>
+            `;
+          }
+          
+          html += '</div>';
+          statusDiv.innerHTML = html;
+          statusDiv.className = `p-4 border border-gray-200 rounded-md mb-4 ${hasCookie ? 'bg-green-50' : 'bg-orange-50'}`;
+        } else {
+          statusDiv.innerHTML = '<p class="text-sm text-gray-600">加载失败</p>';
+        }
+      } catch (error) {
+        console.error('加载知乎 Cookie 状态失败:', error);
+        const statusDiv = document.getElementById('zhihu-cookie-status');
+        if (statusDiv) {
+          statusDiv.innerHTML = '<p class="text-sm text-red-600">加载失败：' + error.message + '</p>';
+        }
       }
     }
 
