@@ -10,6 +10,7 @@ import * as path from 'path';
 import { loadConfig } from '../../utils/config';
 import { getLogger } from '../../utils/logger';
 import { manualOrganizeMaterials } from '../../services/material-organizer';
+import { materialIndexRebuildService } from '../../services/material-index-rebuild-service';
 
 const logger = getLogger('materials-routes');
 const router = Router();
@@ -261,15 +262,41 @@ router.post('/process', async (req: Request, res: Response) => {
  */
 router.post('/rebuild-index', async (req: Request, res: Response) => {
   try {
-    // TODO: 调用索引重建服务
-    logger.info('索引重建请求已接收');
-    res.json({
-      success: true,
-      message: '索引重建功能暂未实现',
+    logger.info('收到素材索引重建请求');
+    
+    const { mode, cleanExisting } = req.body;
+    
+    // 检查是否是增量更新
+    if (mode === 'incremental') {
+      logger.info('执行增量索引重建');
+      const result = await materialIndexRebuildService.updateIncrementalIndex();
+      
+      return res.json({
+        success: result.success,
+        message: result.message,
+        progress: result.progress,
+        duration: result.duration,
+      });
+    }
+    
+    // 默认执行全量重建
+    logger.info('执行全量索引重建');
+    const result = await materialIndexRebuildService.rebuildAllIndexes({
+      cleanExisting: cleanExisting !== false, // 默认清理现有索引
+      batchSize: 50,
     });
+    
+    res.json({
+      success: result.success,
+      message: result.message,
+      progress: result.progress,
+      duration: result.duration,
+    });
+    
   } catch (error: any) {
     logger.error(`索引重建失败：${error.message}`);
     res.status(500).json({
+      success: false,
       error: '索引重建失败',
       message: error.message,
     });

@@ -553,16 +553,16 @@ async def fetch_multiple_posts_concurrently(
     async def fetch_with_semaphore(url: str, index: int, total: int):
         async with semaphore:
             try:
-                print(f"📄 [{index+1}/{total}] 开始获取：{url[:60]}...")
+                print(f"📄 [{index+1}/{total}] 开始获取：{url[:60]}...", file=sys.stderr)
                 # 使用带重试的函数
                 result = await fetch_post_content_with_retry(url, max_retries=2)
                 if result[1]:  # content 不为空
-                    print(f"✅ [{index+1}/{total}] 获取成功，{len(result[1])} 字")
+                    print(f"✅ [{index+1}/{total}] 获取成功，{len(result[1])} 字", file=sys.stderr)
                 else:
-                    print(f"⚠️ [{index+1}/{total}] 未获取到内容")
+                    print(f"⚠️ [{index+1}/{total}] 未获取到内容", file=sys.stderr)
                 return url, result
             except Exception as e:
-                print(f"❌ [{index+1}/{total}] 获取 {url[:50]}... 失败：{e}")
+                print(f"❌ [{index+1}/{total}] 获取 {url[:50]}... 失败：{e}", file=sys.stderr)
                 return url, ("", "", [])
     
     # 并发获取所有 URL
@@ -576,7 +576,7 @@ async def fetch_multiple_posts_concurrently(
             url, content_data = result
             content_dict[url] = content_data
         else:
-            print(f"⚠️ 异常结果：{result}")
+            print(f"⚠️ 异常结果：{result}", file=sys.stderr)
     
     return content_dict
 
@@ -615,9 +615,9 @@ async def search_with_content(
             url_to_item[url] = item
     
     if urls_to_fetch:
-        print(f"\n{'='*60}")
-        print(f"🚀 开始并发获取 {len(urls_to_fetch)} 条帖子的正文（并发数：{max_concurrent}）...")
-        print(f"{'='*60}\n")
+        print(f"\n{'='*60}", file=sys.stderr)
+        print(f"🚀 开始并发获取 {len(urls_to_fetch)} 条帖子的正文（并发数：{max_concurrent}）...", file=sys.stderr)
+        print(f"{'='*60}\n", file=sys.stderr)
         
         start_time = time.time()
         
@@ -627,12 +627,12 @@ async def search_with_content(
         elapsed = time.time() - start_time
         success_count = sum(1 for _, (t, c, img) in content_dict.items() if c)
         
-        print(f"\n{'='*60}")
-        print(f"✅ 正文获取完成")
-        print(f"   - 总耗时：{elapsed:.1f}秒")
-        print(f"   - 成功：{success_count}/{len(urls_to_fetch)}")
-        print(f"   - 平均速度：{elapsed/len(urls_to_fetch):.1f}秒/条")
-        print(f"{'='*60}\n")
+        print(f"\n{'='*60}", file=sys.stderr)
+        print(f"✅ 正文获取完成", file=sys.stderr)
+        print(f"   - 总耗时：{elapsed:.1f}秒", file=sys.stderr)
+        print(f"   - 成功：{success_count}/{len(urls_to_fetch)}", file=sys.stderr)
+        print(f"   - 平均速度：{elapsed/len(urls_to_fetch):.1f}秒/条", file=sys.stderr)
+        print(f"{'='*60}\n", file=sys.stderr)
         
         # 将内容填充回结果
         for url, (title, content, images) in content_dict.items():

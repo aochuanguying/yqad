@@ -13,6 +13,8 @@ import { AutohomeSearch } from './autohome-search';
 import { getInternetReferencePlatformStorage } from '../../storage/mysql/internet-reference-platform-storage';
 import { getInternetReferenceStorage, InternetReferenceConfig } from '../../storage/mysql/internet-reference-storage';
 import { getLogger } from '../../utils/logger';
+import { searchRateLimitStorage } from '../../storage/redis/search-rate-limit-storage';
+import { getSearchEffectStorage } from '../../storage/mysql/search-effect-storage';
 
 const logger = getLogger('internet-search-manager');
 
@@ -215,7 +217,7 @@ export class InternetSearchManager {
     const basePriorities = await this.calculateBasePriorities();
     
     // 任务 4.2: 根据频率限制调整
-    const adjustedPriorities = this.adjustByRateLimit(basePriorities);
+    const adjustedPriorities = await this.adjustByRateLimit(basePriorities);
     
     // 任务 4.3: 根据成功率调整
     const finalPriorities = await this.adjustBySuccessRate(adjustedPriorities);
@@ -248,13 +250,40 @@ export class InternetSearchManager {
   /**
    * 任务 4.2: 根据频率限制调整优先级
    */
-  private adjustByRateLimit(priorities: Map<string, number>): Map<string, number> {
+  private async adjustByRateLimit(priorities: Map<string, number>): Promise<Map<string, number>> {
     const adjusted = new Map<string, number>();
     
-    for (const [platform, priority] of priorities.entries()) {
-      // TODO: 从 Redis 获取当前小时的查询次数
-      // 这里简化处理，假设没有达到频率限制
-      adjusted.set(platform, priority);
+    try {
+      for (const [platform, priority] of priorities.entries()) {
+        // 从 Redis 获取当前小时的查询次数
+        const queryCount = await searchRateLimitStorage.getQueryCount(platform);
+        
+        // 获取平台的频率限制配置
+        const platformConfig = await getInternetReferencePlatformStorage().getPlatformByName(platform);
+        const rateLimit = platformConfig?.rateLimitPerHour || 10; // 默认 10 次/小时
+        
+        // 根据使用率降低优先级
+        const usageRate = queryCount / rateLimit;
+        let adjustedPriority = priority;
+        
+        if (usageRate > 0.8) {
+          // 使用率超过 80%，大幅降低优先级
+          adjustedPriority = Math.max(1, priority - 3);
+          logger.debug(`平台 ${platform} 频率限制预警：${queryCount}/${rateLimit}，调整后优先级：${adjustedPriority}`);
+        } else if (usageRate > 0.5) {
+          // 使用率超过 50%，适度降低优先级
+          adjustedPriority = Math.max(1, priority - 1);
+          logger.debug(`平台 ${platform} 频率限制注意：${queryCount}/${rateLimit}，调整后优先级：${adjustedPriority}`);
+        } else {
+          adjusted.set(platform, priority);
+        }
+        
+        adjusted.set(platform, adjustedPriority);
+      }
+    } catch (error) {
+      logger.warn(`频率限制调整失败：${error instanceof Error ? error.message : String(error)}`);
+      // 返回原始优先级
+      return priorities;
     }
     
     logger.debug(`频率限制调整后优先级：${JSON.stringify(Object.fromEntries(adjusted))}`);
@@ -273,8 +302,10 @@ export class InternetSearchManager {
       
       // 创建成功率映射
       const successRateMap = new Map<string, number>();
-      for (const p of allPlatforms) {
-        successRateMap.set(p.platformName, p.successRate);
+      if (Array.isArray(allPlatforms)) {
+        for (const p of allPlatforms) {
+          successRateMap.set(p.platformName, p.successRate);
+        }
       }
       
       for (const [platform, priority] of priorities.entries()) {
@@ -389,6 +420,9 @@ export class InternetSearchManager {
     try {
       logger.info(`开始搜索，平台：${platform.getPlatformDisplayName()}, 原始关键词：${keywords.join(', ')}, 优化后搜索词：${selectedKeyword}`);
       
+      // 增加查询计数
+      await searchRateLimitStorage.incrementQueryCount(platformName);
+      
       // 执行搜索（使用优化后的搜索词）
       const results = await platform.search([selectedKeyword], maxResults);
       
@@ -464,7 +498,15 @@ export class InternetSearchManager {
       // 记录成功率
       await storage.recordSuccess(platform, success);
       
-      // TODO: 后续可以添加到数据库的详细记录表
+      // 记录到数据库的详细记录表
+      const effectStorage = getSearchEffectStorage();
+      await effectStorage.recordSearchEffect({
+        platform,
+        keyword,
+        resultCount,
+        success,
+      });
+      
       logger.debug(`搜索效果记录 - 平台：${platform}, 成功：${success}, 结果数：${resultCount}, 搜索词：${keyword}`);
     } catch (error) {
       logger.warn('记录搜索效果失败:', error instanceof Error ? error.message : String(error));
@@ -481,11 +523,17 @@ export class InternetSearchManager {
     usageCount: number;
   }[]> {
     try {
-      // TODO: 实现完整的搜索词效果分析
-      // 目前返回空数组，后续需要从数据库查询统计信息
-      logger.info(`分析平台 ${platform} 的搜索词效果（功能待实现）`);
+      // 从数据库查询统计信息
+      const effectStorage = getSearchEffectStorage();
+      const rankings = await effectStorage.getPlatformKeywordRanking(platform, 10);
       
-      return [];
+      if (rankings.length === 0) {
+        logger.info(`平台 ${platform} 暂无搜索词统计数据`);
+        return [];
+      }
+      
+      logger.info(`平台 ${platform} 搜索词效果分析完成，共 ${rankings.length} 个搜索词`);
+      return rankings;
     } catch (error) {
       logger.error('分析搜索词效果失败:', error instanceof Error ? error.message : String(error));
       return [];

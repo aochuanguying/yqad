@@ -384,7 +384,7 @@ try:
     # 随机休眠 1-5 秒，模拟人工操作
     sleep_time = random.uniform(1, 5)
     time.sleep(sleep_time)
-    print(f"⏳ 随机休眠：{sleep_time:.2f}秒")
+    print(f"⏳ 随机休眠：{sleep_time:.2f}秒", file=sys.stderr)
     
     # Cookie 处理
     cookie = cookie.strip()

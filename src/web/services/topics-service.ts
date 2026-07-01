@@ -308,6 +308,31 @@ export async function incrementTopicUseCount(topicId: string): Promise<boolean> 
 }
 
 /**
+ * 扣减主题使用次数
+ */
+export async function decrementTopicUseCount(topicId: string): Promise<boolean> {
+  try {
+    const topic = await topicStorage.getTopicById(topicId);
+    if (!topic) {
+      logger.error(`主题不存在：${topicId}`);
+      return false;
+    }
+
+    const newCount = Math.max(0, topic.current_use_count - 1);
+    await topicStorage.updateTopicUseCount(topicId, newCount);
+    
+    // 同步更新 Redis 中的使用次数
+    await topicUsesStorage.setUses(topicId, newCount);
+    
+    logger.info(`主题 "${topic.name}" 使用次数已扣减：${topic.current_use_count} → ${newCount}`);
+    return true;
+  } catch (error: any) {
+    logger.error(`扣减主题使用次数失败：${error.message}`);
+    return false;
+  }
+}
+
+/**
  * 重置主题使用次数
  */
 export async function resetTopicUseCount(topicId: string): Promise<boolean> {

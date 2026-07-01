@@ -302,6 +302,14 @@ export class MaterialRecordStorage extends BaseDAO {
   }
 
   /**
+   * 获取指定时间后更新的素材
+   */
+  async getMaterialsUpdatedAfter(after: Date): Promise<MaterialRecord[]> {
+    const sql = `SELECT * FROM material_records WHERE updated_at > ? ORDER BY updated_at DESC`;
+    return await this.queryMany<MaterialRecord>(sql, [after]);
+  }
+
+  /**
    * 更新使用次数
    */
   async incrementUsedCount(id: string): Promise<void> {

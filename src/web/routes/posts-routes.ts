@@ -12,6 +12,9 @@ import { PostLog, LogQueryResponse, LogDetailResponse } from '../../types/post-l
 import { createAutoJsApiClient } from '../../utils/autojs-api-client';
 import { PostingMode } from '../../types/posting-optimization';
 import { taskCacheStorage } from '../../storage/redis/task-cache-storage';
+import { decrementTopicUseCount } from '../../web/services/topics-service';
+import { internetSearchManager } from '../../services/internet-search';
+import { searchRateLimitStorage } from '../../storage/redis/search-rate-limit-storage';
 
 const logger = getLogger('posts-routes');
 
@@ -360,11 +363,14 @@ router.post('/confirm', apiTokenMiddleware, async (req, res) => {
         usedSubDirectionIndex: pendingPost.subDirectionIndex,
       };
       
-      // TODO: 实现扣减主题使用次数的逻辑
-      // const updatedTopicPromise = Promise.resolve(null);
-      
-      // 暂时跳过扣减次数逻辑，直接记录日志
-      logger.info(`✓ 发帖回调成功，主题 "${pendingPost.topicId}"`);
+      // 扣减主题使用次数
+      try {
+        await decrementTopicUseCount(pendingPost.topicId);
+        logger.info(`✓ 发帖回调成功，主题 "${pendingPost.topicId}" 使用次数已扣减`);
+      } catch (error: any) {
+        logger.error(`扣减主题使用次数失败：${error.message}`);
+        // 扣减失败不影响后续日志记录
+      }
       
       // 记录发帖日志（成功）
       try {
@@ -551,6 +557,46 @@ router.get('/token/full', async (req, res) => {
     });
   } catch (error: any) {
     logger.error(`获取完整 Token 异常：${error.message}`);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      code: 'INTERNAL_ERROR',
+    });
+  }
+});
+
+/**
+ * GET /api/search/stats
+ * 查询搜索统计信息
+ */
+router.get('/search/stats', apiTokenMiddleware, async (req: Request, res: Response) => {
+  try {
+    logger.info('收到搜索统计查询请求');
+    
+    const { platform, type } = req.query;
+    
+    // 获取频率限制统计
+    const rateLimitStats = await searchRateLimitStorage.getAllPlatformStats();
+    const rateLimitData: any = {};
+    rateLimitStats.forEach((stats, platformName) => {
+      rateLimitData[platformName] = {
+        queryCount: stats.queryCount,
+        lastQueryTime: new Date(stats.lastQueryTime).toISOString(),
+      };
+    });
+    
+    // 获取平台效果统计
+    const effectStats = await internetSearchManager.analyzeKeywordEffectiveness(platform as string || 'xiaohongshu');
+    
+    res.json({
+      success: true,
+      data: {
+        rateLimit: rateLimitData,
+        keywordEffectiveness: effectStats,
+      },
+    });
+  } catch (error: any) {
+    logger.error(`查询搜索统计异常：${error.message}`);
     res.status(500).json({
       success: false,
       error: error.message,

@@ -22,6 +22,7 @@ import { getFeaturedPostingStorage } from '../storage/mysql/featured-posting-sto
 import { getSchedulerConfigStorage } from '../storage/mysql/scheduler-config-storage';
 import { ErrorTracker, PerformanceMonitor, SensitiveDataSanitizer } from '../utils/post-log-utils';
 import type { PipelineTimings, ResourceUsage, ContextSnapshot } from '../types/post-logging';
+import { postRetryService } from './post-retry-service';
 
 // CommonJS 模块导入（用于编译后的 JS 文件）
 let internetReferenceService: any;
@@ -844,8 +845,24 @@ export class AutoPostService {
         complianceReportId: ctx.complianceReportId,
       };
     } else {
-      // 记录失败
+      // 记录失败并添加到重试队列
       await this.recordPostFailure(ctx, mode);
+      
+      // 添加到重试队列（如果是网络错误或临时错误）
+      const isRetryableError = this.isRetryableError(ctx.error);
+      if (isRetryableError) {
+        await postRetryService.addRetryTask({
+          id: `retry_${Date.now()}_${topic.id}`,
+          postId: undefined,
+          title: finalTitle,
+          content: finalContent,
+          imageUrls,
+          topicId: topic.id,
+          mode,
+          failedReason: ctx.error || '发布失败',
+        });
+        logger.info(`发帖失败，已添加到重试队列：${finalTitle}`);
+      }
       
       return { 
         success: false, 
@@ -923,7 +940,7 @@ export class AutoPostService {
    * 记录发帖失败（辅助方法）
    */
   private async recordPostFailure(ctx: PostPipelineContext, mode: PostingMode): Promise<void> {
-    const { topic, finalTitle, triggerType, imageUrls, finalContent } = ctx;
+    const { topic, finalTitle, triggerType, imageUrls, finalContent, error } = ctx;
     
     try {
       postLoggingService.log({
@@ -937,12 +954,32 @@ export class AutoPostService {
         content: finalContent,
         imageUrls,
         status: 'failed',
-        errorMessage: '发布失败',
+        errorMessage: error || '发布失败',
         taskId: undefined,
       });
     } catch (logError: any) {
       logger.warn(`记录发帖失败日志失败：${logError.message}`);
     }
+  }
+
+  /**
+   * 判断是否为可重试的错误
+   */
+  private isRetryableError(error?: string): boolean {
+    if (!error) return false;
+    
+    const retryablePatterns = [
+      /网络/i,
+      /timeout/i,
+      /timed out/i,
+      /连接失败/i,
+      /服务器错误/i,
+      /5\d{2}/,  // 5xx 服务器错误
+      /429/i,    // 频率限制
+      /重试/i,
+    ];
+    
+    return retryablePatterns.some(pattern => pattern.test(error));
   }
 
   // ==================== 原 generatePostWithDedup 方法 ====================
