@@ -9,6 +9,21 @@
 - 简洁至上：每次变更尽可能简单，仅改动必要代码
 - 每次测试完后 kill 测试进程，不占用端口
 
+## 生产环境连接信息
+
+- MySQL: `192.168.50.50:3306`，用户 `root`，密码 `Wfw7539148@`，库名 `yqad_prod_db`
+- Redis: `192.168.50.50:6379`，db `1`，keyPrefix `prod:`
+- ChromaDB: `http://192.168.50.50:8000`
+
+## 构建与部署
+
+- 本地启动服务使用 3000 端口；如端口被占用，先 kill 占用进程再启动
+- 本地启动服务、打包镜像一律连接生产数据库
+- 打包 NAS 镜像时必须指定 `--platform linux/amd64`
+- 打包前须确保 dist 为最新编译产物；如无法确认，先 `rm -rf dist` 再 `npm run build`
+- 打包镜像时确保所有运行时依赖完整，不可遗漏（特别注意 Python 脚本依赖和 native 模块）
+- 打包 NAS 镜像导出固定为 `~/Documents/workspace/krio/yqad-latest.tar`，重名直接覆盖
+
 ## 关键规则
 
 - openspec 归档时，如存在 delta specs 则直接归档到 specs，无需二次确认
