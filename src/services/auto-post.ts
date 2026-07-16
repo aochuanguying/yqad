@@ -194,13 +194,22 @@ export class AutoPostService {
     const featuredConfig = await getFeaturedPostingStorage().getConfig();
     const featuredEnabled = featuredConfig?.enabled ?? false;
 
+    // 预获取 token（pipeline 各步骤复用，避免重复请求）
+    let pipelineToken: string;
+    try {
+      pipelineToken = await this.authService.getAccessToken();
+    } catch (err) {
+      logger.error(`获取 AccessToken 失败：${err instanceof Error ? err.message : String(err)}`);
+      return { success: false, error: '获取 AccessToken 失败', source: 'topic' };
+    }
+
     // 初始化 Pipeline 上下文
     const ctx: PostPipelineContext = {
       topic,
       mode: mode ?? (featuredEnabled ? 'featured' : 'normal'),
       triggerType,
       featuredEnabled,
-      config: null,
+      config: featuredConfig,
       imagePaths: [],
       imageUrls: [],
       matchedTopics: [],
@@ -569,7 +578,8 @@ export class AutoPostService {
       
       logger.info(`【语义去重】检查通过，相似度：${semanticDuplicateCheck.maxSimilarity.toFixed(3)}`);
     } catch (error) {
-      logger.warn(`【语义去重】检查失败，跳过：${error instanceof Error ? error.message : String(error)}`);
+      // ChromaDB 不可用时降级：依赖标题去重（generatePostWithDedup 已做）
+      logger.warn(`【语义去重】ChromaDB 不可用，降级为仅标题去重：${error instanceof Error ? error.message : String(error)}`);
     }
 
     return true;
@@ -580,8 +590,8 @@ export class AutoPostService {
    */
   private async selectMaterials(ctx: PostPipelineContext): Promise<void> {
     const { topic, subDirection, generated, featuredEnabled } = ctx;
-    // 从数据库读取配置
-    const featuredConfig = await getFeaturedPostingStorage().getConfig();
+    // 使用 pipeline 上下文中已缓存的配置
+    const featuredConfig = ctx.config;
     const minImages = featuredConfig?.minImages || 3;
     
     let imagePaths: string[] = [];
@@ -645,8 +655,8 @@ export class AutoPostService {
 
     try {
       if (featuredEnabled) {
-        // 从数据库读取配置
-        const featuredConfig = await getFeaturedPostingStorage().getConfig();
+        // 使用 pipeline 上下文中已缓存的配置
+        const featuredConfig = ctx.config;
         imageUrls = await this.uploadImagesToMinCount(
           token, 
           imagePaths, 
@@ -815,65 +825,72 @@ export class AutoPostService {
       logger.warn(`精华候选不达标，降级发普通帖：${featuredReadiness.reasons.join('; ')}`);
     }
 
-    // 发布帖子（通过 AutoJS 远程执行）
-    // 注意：publishPost 方法已移除，现在使用 AutoJS 远程发帖
-    // 这里应该调用 AutoJS API 执行脚本，但为了保持流程一致性，暂时返回成功
-    // TODO: 集成 AutoJS 远程发帖到主题发帖流程
-    const response = { success: true, postId: `autojs_${Date.now()}` };
+    // 生成 taskId，实际发帖由 AutoJS 脚本通过回调确认
+    const taskId = `autojs_topic_${Date.now()}`;
     
-    if (response.success) {
-      // 记录成功
-      await this.recordPostSuccess(ctx, response.postId, mode);
-      
-      logger.info(`✓ 主题发帖成功："${finalTitle}" (图片:${imageUrls.length}张，话题:${matchedTopics.length}个，mode:${mode}, 子方向索引:${ctx.selectedSubDirectionIndex ?? 'N/A'})`);
-      
-      return { 
-        success: true, 
-        postId: response.postId, 
-        title: finalTitle, 
-        content: finalContent,
-        imageUrls,
+    // 记录发帖日志（状态为 pending，等待 AutoJS 回调确认后再更新为 success 并扣减主题次数）
+    try {
+      await postLoggingService.log({
+        timestamp: Date.now(),
+        triggerType,
+        postType: 'topic',
+        mode,
         topicId: topic.id,
         topicName: topic.title,
-        taskId: response.postId,
-        source: 'topic', 
-        mode, 
-        featuredReadiness,
-        complianceReportId: ctx.complianceReportId,
-      };
-    } else {
-      // 记录失败并添加到重试队列
-      await this.recordPostFailure(ctx, mode);
-      
-      // 添加到重试队列（如果是网络错误或临时错误）
-      const isRetryableError = this.isRetryableError(ctx.error);
-      if (isRetryableError) {
-        await postRetryService.addRetryTask({
-          id: `retry_${Date.now()}_${topic.id}`,
-          postId: undefined,
-          title: finalTitle,
-          content: finalContent,
-          imageUrls,
-          topicId: topic.id,
-          mode,
-          failedReason: ctx.error || '发布失败',
-        });
-        logger.info(`发帖失败，已添加到重试队列：${finalTitle}`);
-      }
-      
-      return { 
-        success: false, 
-        error: '发布失败', 
         title: finalTitle,
         content: finalContent,
         imageUrls,
-        topicId: topic.id,
-        topicName: topic.title,
-        source: 'topic', 
-        mode, 
-        featuredReadiness 
-      };
+        status: 'pending',
+        taskId,
+      });
+      logger.debug(`已记录${triggerType === 'manual' ? '手动' : '自动'}主题发帖日志（等待回调）：${finalTitle}`);
+    } catch (logError: any) {
+      logger.warn(`记录发帖日志失败：${logError.message}，不影响主流程`);
     }
+
+    // 记录发帖历史
+    this.recordPost(taskId, finalTitle, ctx.subDirection?.direction || topic.direction, finalContent, imageUrls);
+
+    // 更新子方向使用记录
+    if (ctx.selectedSubDirectionIndex !== undefined) {
+      topicDiversityService.updateSubDirectionUsage(topic.id, ctx.selectedSubDirectionIndex);
+    }
+
+    // 更新素材使用记录
+    if (ctx.materialSelectionResult) {
+      const materialIds = ctx.materialSelectionResult.selectedMaterials.map((m: any) => m.id);
+      await hybridMaterialService.updateMaterialUsage(materialIds, taskId);
+    }
+
+    // 推荐相似主题（不阻断主流程）
+    try {
+      const recommendations = await recommendSimilarTopics(topic.id, 3, 0.6);
+      if (recommendations.length > 0) {
+        logger.info(
+          `为主题 "${topic.title}" 推荐 ${recommendations.length} 个相似主题：` +
+          recommendations.map(r => `${r.topicTitle}(${r.similarity.toFixed(2)})`).join(', ')
+        );
+      }
+    } catch (error) {
+      logger.warn(`推荐相似主题失败：${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    logger.info(`✓ 主题发帖内容生成成功："${finalTitle}" (图片:${imageUrls.length}张，话题:${matchedTopics.length}个，mode:${mode}，等待 AutoJS 回调)`);
+    
+    return { 
+      success: true, 
+      postId: taskId, 
+      title: finalTitle, 
+      content: finalContent,
+      imageUrls,
+      topicId: topic.id,
+      topicName: topic.title,
+      taskId,
+      source: 'topic', 
+      mode, 
+      featuredReadiness,
+      complianceReportId: ctx.complianceReportId,
+    };
   }
 
   /**
