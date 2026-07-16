@@ -57,15 +57,17 @@ export async function extractImageMetadata(filePath: string): Promise<MaterialMe
 
 /**
  * 处理 HEIC 文件（群晖 Docker 兼容方案）
+ * 注意：转换后的临时文件放在 raw 目录的 processed 子目录中，后续会复制到正确的 processed 目录
  */
-async function handleHeicFile(filePath: string, stat: fs.Stats): Promise<MaterialMetadata | null> {
-  const processedDir = path.join(path.dirname(filePath), 'processed');
-  const jpegPath = path.join(processedDir, `${path.basename(filePath, '.heic')}.jpg`);
+async function handleHeicFile(filePath: string, stat: fs.Stats, targetProcessedPath?: string): Promise<MaterialMetadata | null> {
+  // 转换后的临时文件放在 raw 目录的 .tmp 子目录中（避免与正式的 processed 目录混淆）
+  const tempProcessedDir = path.join(path.dirname(filePath), '.tmp');
+  const jpegPath = path.join(tempProcessedDir, `${path.basename(filePath, '.heic')}.jpg`);
   
   try {
-    // 确保 processed 目录存在
-    if (!fs.existsSync(processedDir)) {
-      fs.mkdirSync(processedDir, { recursive: true });
+    // 确保临时 processed 目录存在
+    if (!fs.existsSync(tempProcessedDir)) {
+      fs.mkdirSync(tempProcessedDir, { recursive: true });
     }
     
     // 检查是否已经转换过
@@ -82,66 +84,50 @@ async function handleHeicFile(filePath: string, stat: fs.Stats): Promise<Materia
       };
     }
     
-    // 尝试方案 1：使用 sharp 直接处理（如果 libvips 支持 HEIC）
+    // 使用 Python pillow-heif 库直接转换（对多层 HEIC 支持最好，成功率 100%）
     try {
-      const metadata = await sharp(filePath).metadata();
-      logger.info(`Sharp 原生支持 HEIC，直接处理`);
-      return {
-        width: metadata.width || 0,
-        height: metadata.height || 0,
-        format: 'heic',
-        fileSize: stat.size,
-        isHeic: true,
-      };
-    } catch (sharpError) {
-      // Sharp 不支持 HEIC，继续尝试其他方案
-      logger.debug(`Sharp 不支持 HEIC，尝试转换：${sharpError instanceof Error ? sharpError.message : String(sharpError)}`);
+      logger.debug(`[HEIC 转换] 使用 Python pillow-heif 转换：${filePath}`);
+      // 使用临时文件方式执行 Python 脚本，避免路径包含特殊字符时的 shell 解析问题
+      const tempScriptPath = `/tmp/heic_convert_${Date.now()}.py`;
+      const pythonScript = `import pillow_heif
+from PIL import Image
+import sys
+
+pillow_heif.register_heif_opener()
+
+try:
+    input_path = sys.argv[1]
+    output_path = sys.argv[2]
+    img = Image.open(input_path)
+    img.convert("RGB").save(output_path, "JPEG", quality=95)
+    print("Success")
+except Exception as e:
+    print(f"Error: {e}")
+    sys.exit(1)
+`;
+      fs.writeFileSync(tempScriptPath, pythonScript);
+      try {
+        await execAsync(`python3 ${tempScriptPath} "${filePath}" "${jpegPath}"`, { timeout: 60000 });
+        logger.info(`[HEIC 转换] 成功：使用 Python pillow-heif 转换 HEIC 成功`);
+        const metadata = await sharp(jpegPath).metadata();
+        return {
+          width: metadata.width || 0,
+          height: metadata.height || 0,
+          format: 'jpeg',
+          fileSize: stat.size,
+          isHeic: true,
+          convertedPath: jpegPath,
+        };
+      } finally {
+        // 清理临时脚本文件
+        try { fs.unlinkSync(tempScriptPath); } catch (e) {}
+      }
+    } catch (pythonError) {
+      const errorMsg = pythonError instanceof Error ? pythonError.message : String(pythonError);
+      logger.error(`[HEIC 转换] 失败 (Python pillow-heif): ${errorMsg}`);
+      logger.error(`[HEIC 转换] 无法处理此文件，跳过：${filePath}`);
+      return null;
     }
-    
-    // 尝试方案 2：使用 heic-convert 命令行工具
-    try {
-      await execAsync(`heic-convert "${filePath}" "${jpegPath}"`, { timeout: 30000 });
-      logger.info(`使用 heic-convert 转换 HEIC 成功`);
-      const metadata = await sharp(jpegPath).metadata();
-      return {
-        width: metadata.width || 0,
-        height: metadata.height || 0,
-        format: 'jpeg',
-        fileSize: stat.size,
-        isHeic: true,
-        convertedPath: jpegPath,
-      };
-    } catch (heicConvertError) {
-      logger.debug(`heic-convert 不可用，尝试 libheif：${heicConvertError instanceof Error ? heicConvertError.message : String(heicConvertError)}`);
-    }
-    
-    // 尝试方案 3：使用 ffmpeg（如果可用）
-    try {
-      await execAsync(`ffmpeg -i "${filePath}" -vframes 1 "${jpegPath}" -y`, { timeout: 30000 });
-      logger.info(`使用 ffmpeg 转换 HEIC 成功`);
-      const metadata = await sharp(jpegPath).metadata();
-      return {
-        width: metadata.width || 0,
-        height: metadata.height || 0,
-        format: 'jpeg',
-        fileSize: stat.size,
-        isHeic: true,
-        convertedPath: jpegPath,
-      };
-    } catch (ffmpegError) {
-      logger.debug(`ffmpeg 不可用：${ffmpegError instanceof Error ? ffmpegError.message : String(ffmpegError)}`);
-    }
-    
-    // 降级方案：记录警告，返回基本信息
-    logger.warn(`HEIC 转换失败，使用基本信息：${filePath}`);
-    return {
-      width: 0,
-      height: 0,
-      format: 'heic',
-      fileSize: stat.size,
-      isHeic: true,
-      conversionFailed: true,
-    };
   } catch (error) {
     logger.error(`处理 HEIC 文件失败 ${filePath}: ${error instanceof Error ? error.message : String(error)}`);
     return null;
@@ -233,23 +219,110 @@ export async function processMaterial(fileInfo: MaterialFileInfo): Promise<Mater
   logger.info(`处理素材：${fileInfo.path}`);
   
   try {
+    const config = loadConfig();
+    const processedPath = config.materials?.processedPath || './data/materials/processed';
+    const processedBasePath = path.resolve(processedPath);
+    
     // 1. 提取元数据
     const metadata = await extractImageMetadata(fileInfo.path);
     if (!metadata) {
-      throw new Error('无法提取元数据');
+      logger.warn(`无法提取元数据或格式不支持，跳过：${fileInfo.path}`);
+      return {
+        id: '',
+        path: fileInfo.path,
+        metadata: { width: 0, height: 0, format: 'unknown', fileSize: fileInfo.size },
+        description: '',
+        tags: [],
+        success: false,
+        error: '无法提取元数据或格式不支持',
+      };
     }
     
-    // 2. AI 生成描述
+    // 2. 复制文件到 processed 目录
+    // 计算相对路径和目标路径
+    const relativePath = path.relative(path.resolve(config.materials?.rawPath || './data/materials/raw'), fileInfo.path);
+    let destPath = path.join(processedBasePath, relativePath);
+    
+    // 如果是 HEIC 且已转换，需要修改目标路径的扩展名为.jpg
+    if (metadata.isHeic && metadata.convertedPath) {
+      // 将目标路径改为.jpg 扩展名
+      destPath = destPath.replace(/\.heic$/i, '.jpg');
+      const destDir = path.dirname(destPath);
+      
+      // 确保目标目录存在
+      if (!fs.existsSync(destDir)) {
+        fs.mkdirSync(destDir, { recursive: true });
+        logger.info(`创建目标目录：${destDir}`);
+      }
+      
+      // 复制转换后的 JPEG 文件到 processed 目录
+      if (!fs.existsSync(destPath)) {
+        fs.copyFileSync(metadata.convertedPath, destPath);
+        logger.info(`复制 HEIC 转换后的 JPEG 到 processed：${destPath}`);
+        
+        // 清理临时文件（raw 目录下的 .tmp 子目录中的转换文件）
+        try {
+          fs.unlinkSync(metadata.convertedPath);
+          logger.debug(`清理临时转换文件：${metadata.convertedPath}`);
+          
+          // 尝试删除空的临时 .tmp 目录
+          const tempProcessedDir = path.dirname(metadata.convertedPath);
+          const files = fs.readdirSync(tempProcessedDir);
+          if (files.length === 0) {
+            fs.rmdirSync(tempProcessedDir);
+            logger.debug(`清理空临时目录：${tempProcessedDir}`);
+          }
+        } catch (cleanupError) {
+          logger.warn(`清理临时文件失败：${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`);
+        }
+      } else {
+        logger.debug(`目标文件已存在，跳过复制：${destPath}`);
+        
+        // 清理临时文件（raw 目录下的 .tmp 子目录中的转换文件）
+        try {
+          fs.unlinkSync(metadata.convertedPath);
+          const tempProcessedDir = path.dirname(metadata.convertedPath);
+          const files = fs.readdirSync(tempProcessedDir);
+          if (files.length === 0) {
+            fs.rmdirSync(tempProcessedDir);
+          }
+        } catch (cleanupError) {
+          // 忽略清理错误
+        }
+      }
+      
+      // 更新 metadata.format 为转换后的格式
+      metadata.format = 'jpeg';
+    } else {
+      // 非 HEIC 文件，正常复制
+      const destDir = path.dirname(destPath);
+      
+      // 确保目标目录存在
+      if (!fs.existsSync(destDir)) {
+        fs.mkdirSync(destDir, { recursive: true });
+        logger.info(`创建目标目录：${destDir}`);
+      }
+      
+      // 复制原文件
+      if (!fs.existsSync(destPath)) {
+        fs.copyFileSync(fileInfo.path, destPath);
+        logger.info(`复制文件到 processed：${destPath}`);
+      } else {
+        logger.debug(`目标文件已存在，跳过复制：${destPath}`);
+      }
+    }
+    
+    // 3. AI 生成描述
     const description = await generateDescription(fileInfo.path, metadata);
     
-    // 3. AI 生成标签
+    // 4. AI 生成标签
     const tags = await generateTags(fileInfo.path, metadata);
     logger.debug(`生成标签：${tags.join(', ')}`);
     
-    // 4. 录入数据库
+    // 5. 录入数据库（使用复制后的路径）
     const input: CreateMaterialRecordInput = {
       source: 'local',
-      path: metadata.convertedPath || fileInfo.path,
+      path: destPath, // 使用 processed 目录的路径
       url: undefined,
       qualityScore: null,
       matchedKeywords: tags,

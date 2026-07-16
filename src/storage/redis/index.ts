@@ -49,6 +49,12 @@ export {
 } from './api-token-storage';
 
 export {
+  // 登录 Token 存储
+  AuthTokenStorage,
+  authTokenStorage,
+} from './auth-token-storage';
+
+export {
   // 任务缓存存储
   TaskCacheStorage,
   taskCacheStorage,

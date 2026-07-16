@@ -323,8 +323,9 @@ class MaterialVectorStorage {
     this.ensureInitialized();
 
     try {
-      const collection = await this.collection!.get();
-      return collection.ids.length;
+      // 使用 ChromaDB 的 count() API，避免 SQLite 变量超限问题
+      const count = await this.collection!.count();
+      return count;
     } catch (error) {
       logger.error('获取向量数量失败:', error);
       return 0;
@@ -339,13 +340,36 @@ class MaterialVectorStorage {
 
     try {
       // ChromaDB 不支持直接清空，需要删除所有 ID
-      const collection = await this.collection!.get();
-      if (collection.ids && collection.ids.length > 0) {
-        await this.collection!.delete({
-          ids: collection.ids,
+      // 但不能一次性获取所有 ID（会导致 SQLite 变量超限），需要分批删除
+      const batchSize = 100;
+      let deletedCount = 0;
+      
+      while (true) {
+        // 每次获取一批 ID
+        const batch = await this.collection!.get({
+          limit: batchSize,
+          include: [], // 只获取 IDs
         });
-        logger.info('已清空所有素材向量');
+        
+        if (!batch.ids || batch.ids.length === 0) {
+          break; // 没有更多数据
+        }
+        
+        // 删除这一批
+        await this.collection!.delete({
+          ids: batch.ids,
+        });
+        
+        deletedCount += batch.ids.length;
+        logger.debug(`已删除 ${deletedCount} 个向量`);
+        
+        // 如果获取的数量小于批次大小，说明已经删除完毕
+        if (batch.ids.length < batchSize) {
+          break;
+        }
       }
+      
+      logger.info(`已清空所有素材向量，共删除 ${deletedCount} 个`);
     } catch (error) {
       logger.error('清空素材向量失败:', error);
       throw error;

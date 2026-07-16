@@ -186,10 +186,52 @@ export class Scheduler {
       if (task.lastRun !== today) {
         // 检查当前时间是否已过任务的调度时间
         if (this.isTaskOverdue(task)) {
+          // 特殊处理：评论任务需要检查今日是否已超过限制
+          if (task.name === '自动评论') {
+            const shouldExecute = await this.shouldExecuteCommentTask();
+            if (!shouldExecute) {
+              logger.info('今日评论次数已达上限，跳过补偿执行');
+              task.lastRun = today; // 标记为已执行，避免下次重启再次检查
+              continue;
+            }
+          }
+          
           logger.info(`发现遗漏任务: "${task.name}"，立即执行`);
           await this.executeTask(task);
         }
       }
+    }
+  }
+
+  /**
+   * 检查是否应该执行评论任务（检查今日评论次数是否超过限制）
+   */
+  private async shouldExecuteCommentTask(): Promise<boolean> {
+    try {
+      const { getCommentLogStorage } = await import('../storage/mysql/comment-log-storage');
+      const commentLogStorage = getCommentLogStorage();
+      
+      // 获取今日评论次数
+      const today = new Date().toISOString().split('T')[0];
+      const todayCount = await commentLogStorage.getTodayCommentCount();
+      
+      // 获取评论配置中的每日限制
+      const { getCommentConfigStorage } = await import('../storage/mysql/comment-config-storage');
+      const commentConfig = await getCommentConfigStorage().getConfig();
+      const dailyLimit = commentConfig?.dailyLimit || 3; // 默认 3 条
+      
+      logger.info(`今日已评论 ${todayCount} 条，限制 ${dailyLimit} 条`);
+      
+      if (todayCount >= dailyLimit) {
+        logger.warn(`今日评论次数已达上限 (${todayCount}/${dailyLimit})，跳过补偿执行`);
+        return false;
+      }
+      
+      return true;
+    } catch (error) {
+      logger.error(`检查评论限制失败：${error instanceof Error ? error.message : String(error)}`);
+      // 如果检查失败，保守处理：不执行补偿
+      return false;
     }
   }
 

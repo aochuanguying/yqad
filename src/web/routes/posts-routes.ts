@@ -523,25 +523,9 @@ router.get('/token/full', async (req, res) => {
       });
     }
     
-    // 从 Redis 获取完整 Token
-    const { getRedisClient, formatKey } = await import('../../storage/redis/index');
-    const redis = getRedisClient();
-    const key = formatKey('api:token');
-    const encryptedToken = await redis.get(key);
-    
-    if (!encryptedToken) {
-      return res.status(404).json({
-        success: false,
-        error: 'Token 不存在',
-        code: 'TOKEN_NOT_FOUND',
-      });
-    }
-    
-    // 解密 Token
-    const { ApiTokenStorage } = await import('../../storage/redis/api-token-storage');
-    const storage = new ApiTokenStorage();
-    // 通过反射调用私有方法解密
-    const token = (storage as any).decryptToken(encryptedToken);
+    // 从 apiTokenStorage 获取完整 Token
+    const { apiTokenStorage } = await import('../../storage/redis/api-token-storage');
+    const token = await apiTokenStorage.getToken();
     
     if (!token) {
       return res.status(404).json({
@@ -1071,6 +1055,88 @@ router.post('/logs/cleanup', async (req, res) => {
       success: false,
       error: error.message,
       code: 'CLEANUP_ERROR',
+    });
+  }
+});
+
+/**
+ * POST /api/posts/logs/cleanup-pending
+ * 手动清理超时的 pending 状态日志（管理接口）
+ */
+router.post('/logs/cleanup-pending', async (req, res) => {
+  try {
+    const { timeoutMinutes = 30 } = req.body;
+    logger.info(`收到手动清理 pending 日志请求：超时${timeoutMinutes}分钟`);
+    
+    const { getPostLogStorage } = await import('../../storage/mysql/post-log-storage');
+    const postLogStorage = getPostLogStorage();
+    
+    // 在应用层计算超时时间阈值（使用 UTC 时间，避免时区问题）
+    const thresholdTime = new Date(Date.now() - timeoutMinutes * 60 * 1000);
+    const thresholdTimeStr = thresholdTime.toISOString().slice(0, 19).replace('T', ' ');
+    
+    const sql = `
+      UPDATE post_logs 
+      SET status = 'failed',
+          error_message = 'AutoJS 回调超时（手动清理）'
+      WHERE status = 'pending'
+        AND created_at < ?
+    `;
+    
+    const affectedRows = await (postLogStorage as any).update(sql, [thresholdTimeStr]);
+    
+    logger.info(`手动清理 ${affectedRows} 条超时的 pending 日志记录`);
+    
+    res.json({
+      success: true,
+      data: {
+        cleanedCount: affectedRows,
+        timeoutMinutes,
+      },
+    });
+  } catch (error: any) {
+    logger.error(`手动清理 pending 日志异常：${error.message}`);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      code: 'CLEANUP_PENDING_ERROR',
+    });
+  }
+});
+
+/**
+ * POST /api/posts/logs/force-update
+ * 强制更新单条日志状态（用于处理异常情况）
+ */
+router.post('/logs/force-update', async (req, res) => {
+  try {
+    const { logId, status, errorMessage } = req.body;
+    
+    if (!logId || !status) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少必要参数：logId, status',
+        code: 'MISSING_PARAMS',
+      });
+    }
+    
+    logger.info(`强制更新日志状态：${logId} -> ${status}`);
+    
+    await postLoggingService.update(logId, {
+      status,
+      errorMessage: errorMessage || undefined,
+    });
+    
+    res.json({
+      success: true,
+      message: '日志状态已更新',
+    });
+  } catch (error: any) {
+    logger.error(`强制更新日志状态异常：${error.message}`);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      code: 'FORCE_UPDATE_ERROR',
     });
   }
 });

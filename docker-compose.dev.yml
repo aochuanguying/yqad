@@ -1,0 +1,58 @@
+version: '3.8'
+
+# 本地开发环境 Docker Compose 配置
+# 用途：快速部署和测试，不包含 Cookie 刷新等额外服务
+
+services:
+  yqad:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: yqad-dev
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # 环境配置
+      - NODE_ENV=development
+      - TZ=Asia/Shanghai
+      - DISPLAY=:99
+      # MySQL 配置（根据实际情况修改）
+      - MYSQL_HOST=192.168.50.50
+      - MYSQL_PORT=3306
+      - MYSQL_USER=root
+      - MYSQL_PASSWORD=Wfw7539148@
+      - MYSQL_DATABASE=yqad_db
+      # Redis 配置（根据实际情况修改）
+      - REDIS_HOST=192.168.50.50
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+    volumes:
+      # 挂载配置目录
+      - ./config:/app/config
+      # 挂载数据目录（二维码截图等）
+      - ./data:/app/data
+      # 挂载日志
+      - ./logs:/app/logs
+      # 挂载 Python 脚本
+      - ./scripts:/app/scripts
+      # 共享 X11 socket（用于虚拟显示）
+      - /tmp/.X11-unix:/tmp/.X11-unix:ro
+    # 增加共享内存（浏览器需要）
+    shm_size: '1gb'
+    # 安全选项（允许无沙盒运行）
+    security_opt:
+      - seccomp:unconfined
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/auth/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    # 开发环境不需要资源限制
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '2.0'
+    #       memory: 2G

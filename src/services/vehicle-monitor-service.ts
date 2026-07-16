@@ -50,7 +50,6 @@ interface VehicleConfig {
   haBaseUrl: string;
   haToken: string;
   deviceTrackerEntity: string;
-  token: string;  // 直接使用 Token，避免登录踢出其他设备
   moveThresholdMeters: number;
   minBatteryVolt: number;
 }
@@ -681,15 +680,8 @@ export async function runVehicleMonitor(): Promise<void> {
     logger.debug('当前 Token 状态:', {
       hasInMemory: !!_tokenInMemory,
       hasInRedis: !!(await loadVehicleToken())?.token,
-      hasInDb: !!vehicleConfig.token,
       currentTokenLength: currentToken?.length || 0,
-      dbTokenLength: vehicleConfig.token?.length || 0,
     });
-    
-    if (!currentToken && vehicleConfig.token) {
-      logger.info('从数据库加载 Token');
-      await setToken(vehicleConfig.token);
-    }
 
     // 2. 验证 Token 有效性
     const tokenValid = await validateToken();

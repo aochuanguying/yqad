@@ -66,4 +66,4 @@ materials:
       enabled: true
       command: "auto"
       timeoutMs: 30000
-logLevel: "info"
+logLevel: "debug"

@@ -344,6 +344,39 @@ export class MaterialRecordStorage extends BaseDAO {
       throw error;
     }
   }
+
+  /**
+   * 根据路径删除素材记录（同步删除 ChromaDB 向量）
+   * 用于清理已删除的 processed 文件对应的记录
+   */
+  async deleteMaterialRecordByPath(filePath: string): Promise<number> {
+    const sql = `DELETE FROM material_records WHERE path = ?`;
+    
+    try {
+      // 1. 从 MySQL 删除
+      const [rows] = await this.query(sql, [filePath]);
+      const deleted = rows?.affectedRows || 0;
+      
+      if (deleted > 0) {
+        // 2. 同步删除 ChromaDB 向量（通过 file_path 查找）
+        try {
+          const existingId = await materialVectorStorage.findByFilePath(filePath);
+          if (existingId) {
+            await materialVectorStorage.deleteVector(existingId);
+            logger.info(`删除素材记录及 ChromaDB 向量：${filePath} (id: ${existingId})`);
+          }
+        } catch (chromaError) {
+          logger.warn(`删除 ChromaDB 向量失败：${filePath}, 但 MySQL 删除成功`, chromaError);
+          // 不抛出错误，避免 MySQL 删除失败
+        }
+      }
+      
+      return deleted;
+    } catch (error) {
+      logger.error(`删除素材记录失败：${filePath}`, error);
+      throw error;
+    }
+  }
 }
 
 let instance: MaterialRecordStorage | null = null;

@@ -1,12 +1,13 @@
 /**
  * Token 管理路由
  * 
- * 提供 Token 的获取、设置、复制等功能
+ * 提供登录 Token（JWT）的获取、设置、删除功能
+ * 使用 authTokenStorage（Redis 键 auth:token），与 API Token 隔离
  */
 
 import { Router, Request, Response } from 'express';
 import { getLogger } from '../../utils/logger';
-import { apiTokenStorage } from '../../storage/redis/api-token-storage';
+import { authTokenStorage } from '../../storage/redis/auth-token-storage';
 
 const logger = getLogger('token-routes');
 const router = Router();
@@ -17,7 +18,7 @@ const router = Router();
  */
 router.get('/', async (req: Request, res: Response) => {
   try {
-    const token = await apiTokenStorage.getToken();
+    const token = await authTokenStorage.getToken();
     
     if (!token) {
       return res.json({
@@ -71,7 +72,7 @@ router.put('/', async (req: Request, res: Response) => {
     }
     
     // 保存到 Redis
-    await apiTokenStorage.saveToken(token);
+    await authTokenStorage.saveToken(token);
     
     logger.info('Token 已更新');
     
@@ -95,7 +96,7 @@ router.put('/', async (req: Request, res: Response) => {
  */
 router.delete('/', async (req: Request, res: Response) => {
   try {
-    await apiTokenStorage.deleteToken();
+    await authTokenStorage.deleteToken();
     
     logger.info('Token 已删除');
     

@@ -53,37 +53,45 @@ export async function getAllConfig(): Promise<AppConfig> {
   resetConfigCache();
   let config = loadConfig();
   
-  // 特殊处理 vehicleMonitor 配置：从数据库读取
+  // 特殊处理 vehicleMonitor 配置：从数据库读取，并补充 Redis 中的 token
   try {
     const dbVehicleMonitorConfig = await vehicleMonitorStorage.getConfig();
     if (dbVehicleMonitorConfig) {
-      config = {
-        ...config,
-        vehicleMonitor: dbVehicleMonitorConfig,
-      };
-    }
-  } catch (error) {
-    logger.warn('从数据库读取车辆监控配置失败，将使用文件配置:', error instanceof Error ? error.message : String(error));
-  }
-  
-  // 特殊处理 vehicleMonitor 配置：如果 Redis 中有 Token，优先返回 Redis 中的 Token（热更新）
-  try {
-    const vehicleToken = getVehicleToken();
-    logger.debug('getVehicleToken 调用成功:', !!vehicleToken);
-    const token = await vehicleToken.getToken();
-    logger.debug('Redis Token:', token ? `${token.substring(0, 20)}...` : 'null');
-    if (token && config.vehicleMonitor) {
+      // 从 Redis 读取奥捷智行 Token（token 字段存储在 Redis 中，而不是数据库）
+      let token = '';
+      try {
+        const vehicleTokenStorage = getVehicleToken();
+        const tokenData = await vehicleTokenStorage.getToken();
+        if (tokenData) {
+          token = tokenData;
+          logger.debug('从 Redis 读取奥捷智行 Token 成功');
+        }
+      } catch (tokenError) {
+        logger.debug('从 Redis 读取奥捷智行 Token 失败:', tokenError instanceof Error ? tokenError.message : String(tokenError));
+      }
+      
       config = {
         ...config,
         vehicleMonitor: {
-          ...config.vehicleMonitor,
-          token,
-        },
+          enabled: dbVehicleMonitorConfig.enabled,
+          intervalMinutes: dbVehicleMonitorConfig.intervalMinutes,
+          quickIntervalMinutes: dbVehicleMonitorConfig.quickIntervalMinutes,
+          safeDistanceMeters: dbVehicleMonitorConfig.safeDistanceMeters,
+          moveThresholdMeters: dbVehicleMonitorConfig.moveThresholdMeters,
+          minBatteryVolt: dbVehicleMonitorConfig.minBatteryVolt,
+          alertPhone: dbVehicleMonitorConfig.alertPhone,
+          barkKey: dbVehicleMonitorConfig.barkKey,
+          barkServer: dbVehicleMonitorConfig.barkServer,
+          haBaseUrl: dbVehicleMonitorConfig.haBaseUrl,
+          haToken: dbVehicleMonitorConfig.haToken,
+          deviceTrackerEntity: dbVehicleMonitorConfig.deviceTrackerEntity,
+          token, // 从 Redis 读取的奥捷智行 Token
+        } as any,
       };
-      logger.debug('已更新 config.vehicleMonitor.token');
+      logger.debug('从数据库读取车辆监控配置成功，并补充了 Redis Token');
     }
   } catch (error) {
-    logger.warn('从 Redis 读取车辆 Token 失败:', error instanceof Error ? error.message : String(error));
+    logger.warn('从数据库读取车辆监控配置失败，将使用文件配置:', error instanceof Error ? error.message : String(error));
   }
   
   // 特殊处理 api 配置：从数据库读取
@@ -350,10 +358,13 @@ export async function updateConfigGroup(
 
     // 特殊处理 vehicleMonitor 配置：只更新数据库，不写回配置文件
     if (group === 'vehicleMonitor') {
-      // 如果有 token，同时更新 Redis
+      // 如果有 token，同时更新 Redis（token 是奥捷智行 Token，不是 haToken）
       if (newValues.token) {
-        const { updateToken } = require('../../services/vehicle-monitor-service');
-        updateToken(newValues.token);
+        const vehicleTokenStorage = getVehicleToken();
+        await vehicleTokenStorage.saveToken(newValues.token);
+        logger.info('奥捷智行 Token 已保存到 Redis');
+        // 从 newValues 中移除 token，避免保存到数据库
+        delete (newValues as any).token;
       }
       await vehicleMonitorStorage.saveConfig(newValues as any);
       // 不更新 fullConfig[group]，保持配置文件干净
@@ -411,11 +422,6 @@ export async function updateConfigGroup(
     // 特殊处理 postingIntervalControl 配置：只更新数据库，不写回配置文件
     else if (group === 'postingIntervalControl') {
       await postingIntervalControlStorage.saveConfig(newValues as any);
-      // 不更新 fullConfig[group]，保持配置文件干净
-    } 
-    // 特殊处理 vehicleMonitor 配置：只更新数据库，不写回配置文件
-    else if (group === 'vehicleMonitor') {
-      await vehicleMonitorStorage.saveConfig(newValues as any);
       // 不更新 fullConfig[group]，保持配置文件干净
     } 
     // 特殊处理 telecomApi 配置：只更新数据库，不写回配置文件

@@ -9,14 +9,12 @@ import {
   PostListResponse,
   CommentListResponse,
   PublishCommentResponse,
-  PublishPostResponse,
   MemberInfoResponse,
   Post,
 } from './types';
-import { HotTopic, PublishOptions } from '../types/posting-optimization';
+import { HotTopic } from '../types/posting-optimization';
 import { loadConfig } from '../utils/config';
 import { getLogger } from '../utils/logger';
-import { generateVrfCode, buildContentJson } from '../utils/publish-helpers';
 import { getAPIConfigStorage } from '../storage/mysql/api-config-storage';
 
 const logger = getLogger('real-api');
@@ -112,7 +110,7 @@ export class RealAudiApi implements IAudiApi {
 
   async login(username: string, password: string): Promise<LoginResponse> {
     // password 参数在此场景中作为验证码使用
-    logger.info(`登录中: ${username}`);
+    logger.info(`登录中：${username}`);
     const response = await this.client.post('/mapi/user/v1/account/login', {
       accountLoginDto: {
         account: username,
@@ -129,7 +127,7 @@ export class RealAudiApi implements IAudiApi {
 
     const data = response.data;
     if (data.code !== 0 || !data.data?.accessToken) {
-      throw new Error(`登录失败: ${data.message || 'code=' + data.code}`);
+      throw new Error(`登录失败：${data.message || 'code=' + data.code}`);
     }
 
     const accessToken = data.data.accessToken;
@@ -159,7 +157,7 @@ export class RealAudiApi implements IAudiApi {
 
     const data = response.data;
     if (data.code !== 0) {
-      throw new Error(`获取帖子列表失败: code=${data.code} ${data.message || ''}`);
+      throw new Error(`获取帖子列表失败：code=${data.code} ${data.message || ''}`);
     }
 
     const records: any[] = data.data?.records || [];
@@ -176,7 +174,7 @@ export class RealAudiApi implements IAudiApi {
 
       const obj = record[objKey];
       if (!obj || !obj.id) {
-        logger.debug(`跳过无效记录: contentType=${contentType}, 无 id`);
+        logger.debug(`跳过无效记录：contentType=${contentType}, 无 id`);
         continue;
       }
 
@@ -235,65 +233,22 @@ export class RealAudiApi implements IAudiApi {
 
     const data = response.data;
     if (data.code === 0) {
-      logger.info(`评论发布成功: postId=${postId}`);
+      logger.info(`评论发布成功：postId=${postId}`);
       return { success: true, commentId: `real-${Date.now()}` };
     } else {
-      logger.error(`评论发布失败: code=${data.code} ${data.message || ''}`);
+      logger.error(`评论发布失败：code=${data.code} ${data.message || ''}`);
       return { success: false, commentId: '' };
     }
   }
 
-  async publishPost(accessToken: string, title: string, content: string, options?: PublishOptions): Promise<PublishPostResponse> {
-    const config = loadConfig();
-    const deviceId = config.api.deviceId || 'AUDI_APP_iPhone_71A0E430-DB97-448F-868A-A6352E31FC13_26.5_6.1.1';
-    const ipRegion = config.api.ipRegion || '';
-
-    // 构建帖子正文：标题 + 正文
-    const fullContent = title + '\n\n' + content;
-
-    // 构建请求体
-    const body = {
-      type: 0,
-      topicList: options?.topicList?.map(t => ({ name: t.name, id: t.id })) || [],
-      momentDto: {
-        imgUrlList: options?.imageUrls || [],
-        content: fullContent,
-        contentJson: buildContentJson(fullContent),
-      },
-      vrfCode: generateVrfCode(deviceId),
-      ipRegion,
-      confirmPublish: false,
-    };
-
-    try {
-      const response = await this.client.post(
-        '/cnapi/v1/community/subject/publish',
-        body,
-        { headers: this.buildAppHeaders(accessToken) },
-      );
-
-      this.checkTokenRenewal(response, accessToken);
-
-      const data = response.data;
-      if (data.code === 0) {
-        const postId = String(data.data?.id || '');
-        logger.info(`发帖成功: postId=${postId}`);
-        return { success: true, postId };
-      } else {
-        logger.error(`发帖失败: code=${data.code} ${data.message || ''}`);
-        return { success: false, postId: '', code: data.code, message: data.message };
-      }
-    } catch (error: any) {
-      logger.error(`发帖请求异常: ${error.message}`);
-      return { success: false, postId: '' };
-    }
-  }
+  // 注意：publishPost 方法已移除，现在发帖通过 AutoJS 远程执行脚本实现
+  // 直接 API 发帖方式已废弃（2026-07-07）
 
   /**
    * 获取热门话题列表
    * @param token 用户访问令牌
-   * @param page 页码，默认1
-   * @param pageSize 每页数量，默认20
+   * @param page 页码，默认 1
+   * @param pageSize 每页数量，默认 20
    * @returns 热门话题列表，失败时返回空数组
    */
   async getHotTopics(token: string, page: number = 1, pageSize: number = 20): Promise<HotTopic[]> {
@@ -311,7 +266,7 @@ export class RealAudiApi implements IAudiApi {
 
       const data = response.data;
       if (data.code !== 0) {
-        logger.error(`获取热门话题失败: code=${data.code} ${data.message || ''}`);
+        logger.error(`获取热门话题失败：code=${data.code} ${data.message || ''}`);
         return [];
       }
 
@@ -326,30 +281,30 @@ export class RealAudiApi implements IAudiApi {
       return topics;
     } catch (error: any) {
       if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
-        logger.error(`热门话题API请求超时: ${error.message}`);
+        logger.error(`热门话题 API 请求超时：${error.message}`);
       } else {
-        logger.error(`热门话题API请求失败: ${error.message}`);
+        logger.error(`热门话题 API 请求失败：${error.message}`);
       }
       return [];
     }
   }
 
   /**
-   * 上传图片到CDN
+   * 上传图片到 CDN
    * @param token 用户访问令牌
    * @param imagePaths 本地图片路径数组
-   * @returns 成功上传的CDN URL列表和失败数量
+   * @returns 成功上传的 CDN URL 列表和失败数量
    */
   async uploadImages(token: string, imagePaths: string[]): Promise<{ urls: string[]; failed: number }> {
     if (!imagePaths || imagePaths.length === 0) {
       return { urls: [], failed: 0 };
     }
 
-    // 最多上传9张图片
+    // 最多上传 9 张图片
     const limitedPaths = imagePaths.slice(0, 9);
     const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
-    // 过滤超过10MB的文件
+    // 过滤超过 10MB 的文件
     const validPaths: string[] = [];
     let skippedCount = 0;
 
@@ -357,18 +312,18 @@ export class RealAudiApi implements IAudiApi {
       try {
         const stat = fs.statSync(filePath);
         if (stat.size > MAX_FILE_SIZE) {
-          logger.warn(`图片文件超过10MB限制，跳过: ${filePath} (${(stat.size / 1024 / 1024).toFixed(2)}MB)`);
+          logger.warn(`图片文件超过 10MB 限制，跳过：${filePath} (${(stat.size / 1024 / 1024).toFixed(2)}MB)`);
           skippedCount++;
         } else {
           validPaths.push(filePath);
         }
       } catch (error: any) {
-        logger.warn(`无法读取图片文件，跳过: ${filePath} - ${error.message}`);
+        logger.warn(`无法读取图片文件，跳过：${filePath} - ${error.message}`);
         skippedCount++;
       }
     }
 
-    // 如果超过9张图片被提供但有些被过滤了，需要记录被截断的数量
+    // 如果超过 9 张图片被提供但有些被过滤了，需要记录被截断的数量
     const truncatedCount = imagePaths.length > 9 ? imagePaths.length - 9 : 0;
     const totalFailed = skippedCount + truncatedCount;
 
@@ -399,7 +354,7 @@ export class RealAudiApi implements IAudiApi {
 
       const response = await this.client.post('/mapi/attachment/v1/batch_upload', form, {
         headers: mergedHeaders,
-        timeout: 60000, // 图片上传超时60秒
+        timeout: 60000, // 图片上传超时 60 秒
         maxContentLength: Infinity,
         maxBodyLength: Infinity,
       });
@@ -408,11 +363,11 @@ export class RealAudiApi implements IAudiApi {
 
       const data = response.data;
       if (data.code !== 0) {
-        logger.error(`图片上传失败: code=${data.code} ${data.message || ''}`);
+        logger.error(`图片上传失败：code=${data.code} ${data.message || ''}`);
         return { urls: [], failed: imagePaths.length };
       }
 
-      // 从响应中提取CDN URL列表
+      // 从响应中提取 CDN URL 列表
       const uploadResults: any[] = Array.isArray(data.data) ? data.data : [];
       const urls: string[] = [];
       let uploadFailed = 0;
@@ -431,24 +386,24 @@ export class RealAudiApi implements IAudiApi {
       const finalFailed = totalFailed + (failedInUpload > 0 ? failedInUpload : 0);
 
       if (failedInUpload > 0) {
-        logger.warn(`部分图片上传失败: 成功${urls.length}张，失败${failedInUpload}张`);
+        logger.warn(`部分图片上传失败：成功${urls.length}张，失败${failedInUpload}张`);
       } else {
-        logger.info(`图片上传成功: ${urls.length}张`);
+        logger.info(`图片上传成功：${urls.length}张`);
       }
 
       return { urls, failed: finalFailed };
     } catch (error: any) {
       if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
-        logger.error(`图片上传超时: ${error.message}`);
+        logger.error(`图片上传超时：${error.message}`);
       } else {
-        logger.error(`图片上传请求失败: ${error.message}`);
+        logger.error(`图片上传请求失败：${error.message}`);
       }
       return { urls: [], failed: imagePaths.length };
     }
   }
 
   /**
-   * 根据文件扩展名获取MIME类型
+   * 根据文件扩展名获取 MIME 类型
    */
   private getMimeType(filename: string): string {
     const ext = path.extname(filename).toLowerCase();
@@ -501,7 +456,7 @@ export class RealAudiApi implements IAudiApi {
    * 发送短信验证码（腾讯滑块验证后调用）
    */
   async sendSmsCode(phone: string, captchaTicket: string): Promise<boolean> {
-    logger.info(`发送短信验证码: ${phone}`);
+    logger.info(`发送短信验证码：${phone}`);
     const response = await this.client.post('/mapi/user/v1/vrcode/send2', {
       describeCaptchaMiniResultReqDto: {
         captchaAppId: '198705236',
@@ -520,7 +475,7 @@ export class RealAudiApi implements IAudiApi {
       logger.info('短信验证码发送成功');
       return true;
     } else {
-      logger.error(`短信验证码发送失败: ${data.message || 'code=' + data.code}`);
+      logger.error(`短信验证码发送失败：${data.message || 'code=' + data.code}`);
       return false;
     }
   }

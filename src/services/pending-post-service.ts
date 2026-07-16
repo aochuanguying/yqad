@@ -74,6 +74,10 @@ export class PendingPostService {
   }
 
   async cleanupExpired(): Promise<void> {
+    // 清理 post_logs 中的超时 pending 记录（不依赖 pending_posts 表）
+    await this.cleanupExpiredPostLogs();
+    
+    // 清理 pending_posts 表
     const posts = await this.storage.getAllPending();
     const now = Date.now();
     let cleaned = 0;
@@ -102,6 +106,41 @@ export class PendingPostService {
 
     await this.storage.deleteExpired();
     logger.info(`清理 ${cleaned} 条过期待确认记录，级联更新 ${updatedLogs} 条日志状态`);
+  }
+
+  /**
+   * 清理 post_logs 中超时的 pending 记录
+   * 直接按时间清理，不依赖 pending_posts 表
+   * 
+   * 修复时区问题：在应用层计算时间，避免 MySQL 时区不一致导致清理失败
+   */
+  private async cleanupExpiredPostLogs(): Promise<void> {
+    try {
+      const timeoutMinutes = 30;
+      const { getPostLogStorage } = await import('../storage/mysql/post-log-storage');
+      const postLogStorage = getPostLogStorage();
+      
+      // 在应用层计算超时时间阈值（使用 UTC 时间，避免时区问题）
+      const thresholdTime = new Date(Date.now() - timeoutMinutes * 60 * 1000);
+      const thresholdTimeStr = thresholdTime.toISOString().slice(0, 19).replace('T', ' ');
+      
+      const sql = `
+        UPDATE post_logs 
+        SET status = 'failed',
+            error_message = 'AutoJS 回调超时（30 分钟未收到回调）'
+        WHERE status = 'pending'
+          AND created_at < ?
+      `;
+      
+      // 使用 update 方法执行 SQL（返回受影响的行数）
+      const affectedRows = await (postLogStorage as any).update(sql, [thresholdTimeStr]);
+      
+      if (affectedRows > 0) {
+        logger.info(`清理 ${affectedRows} 条超时的 pending 日志记录（直接清理）`);
+      }
+    } catch (error: any) {
+      logger.error(`清理超时 pending 日志失败：${error.message}`);
+    }
   }
 
   async getAllPending(): Promise<PendingPost[]> {

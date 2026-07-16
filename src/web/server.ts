@@ -87,6 +87,11 @@ export function createWebApp(params?: { includeApiRoutes?: boolean }): express.E
 
   const app = express();
 
+  // === 关键配置：信任代理（必须在 rate-limit 之前设置）===
+  // 启用信任代理，允许使用 X-Forwarded-For 头识别真实用户 IP
+  app.set('trust proxy', true);
+  logger.info('已启用 trust proxy 设置，支持 X-Forwarded-For 头');
+
   // 安全中间件：设置安全响应头
   app.use(helmet({
     contentSecurityPolicy: false, // 允许内联脚本（前端为纯 HTML）

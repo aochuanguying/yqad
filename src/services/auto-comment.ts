@@ -188,6 +188,8 @@ export class AutoCommentService {
       getPostConfigStorage().getConfig(),
     ]);
     
+    logger.info(`评论配置：enabled=${commentConfig?.enabled}, dailyLimit=${commentConfig?.dailyLimit}, delayMin=${commentConfig?.delayMin}, delayMax=${commentConfig?.delayMax}`);
+    
     const results: CommentResult[] = [];
 
     // 多页获取帖子列表
@@ -380,12 +382,13 @@ export class AutoCommentService {
 
       // 评论间随机延时（最后一条不需要等待）
       if (i < enrichedPosts.length - 1) {
-        const delay = randomDelay(
-          (commentConfig?.delayMin || 60) * 1000,
-          (commentConfig?.delayMax || 180) * 1000
-        );
-        logger.info(`等待 ${Math.round(delay / 1000)}秒 后发布下一条评论...`);
+        const delayMin = (commentConfig?.delayMin || 60) * 1000;
+        const delayMax = (commentConfig?.delayMax || 180) * 1000;
+        const delay = randomDelay(delayMin, delayMax);
+        logger.info(`【延迟调试】第 ${i + 1}/${enrichedPosts.length} 条评论完成，配置延迟 ${delayMin/1000}-${delayMax/1000} 秒，实际等待 ${Math.round(delay / 1000)} 秒`);
         await sleep(delay);
+      } else {
+        logger.info(`【延迟调试】第 ${i + 1}/${enrichedPosts.length} 条是最后一条，不等待`);
       }
     }
 

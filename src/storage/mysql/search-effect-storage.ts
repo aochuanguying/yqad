@@ -9,6 +9,7 @@
 
 import { BaseDAO } from './dao/base-dao';
 import { getLogger } from '../../utils/logger';
+import { v4 as uuidv4 } from 'uuid';
 
 const logger = getLogger('search-effect-storage');
 
@@ -52,14 +53,16 @@ class SearchEffectStorage extends BaseDAO {
     qualityScore?: number;
   }): Promise<void> {
     try {
+      const id = uuidv4();
       const sql = `
         INSERT INTO search_effects (
-          platform, keyword, result_count, success, duration_ms, quality_score
+          id, platform, keyword, result_count, success, duration_ms, quality_score
         )
-        VALUES (?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
       `;
       
       await this.insert(sql, [
+        id,
         input.platform,
         input.keyword,
         input.resultCount,

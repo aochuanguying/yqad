@@ -137,6 +137,16 @@ export class CommentLogStorage extends BaseDAO {
     const sql = `DELETE FROM comment_logs WHERE created_at < DATE_SUB(NOW(), INTERVAL ? DAY)`;
     return await this.delete(sql, [daysOld]);
   }
+
+  /**
+   * 获取今日评论次数
+   */
+  async getTodayCommentCount(): Promise<number> {
+    const today = new Date().toISOString().split('T')[0];
+    const sql = `SELECT COUNT(*) as count FROM comment_logs WHERE DATE(created_at) = ?`;
+    const result = await this.queryOne<{ count: number }>(sql, [today]);
+    return result?.count || 0;
+  }
 }
 
 // 导出单例

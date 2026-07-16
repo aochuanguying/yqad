@@ -97,6 +97,90 @@ router.post('/execute', async (req: Request, res: Response) => {
 });
 
 /**
+ * POST /api/vehicle-monitor/config
+ * 保存车辆监控配置
+ */
+router.post('/config', async (req: Request, res: Response) => {
+  try {
+    const { 
+      enabled, 
+      alertPhone, 
+      barkKey, 
+      barkServer,
+      haBaseUrl,
+      haToken,
+      deviceTrackerEntity,
+      intervalMinutes,
+      quickIntervalMinutes,
+      safeDistanceMeters,
+      moveThresholdMeters,
+      minBatteryVolt
+    } = req.body;
+    
+    // 获取当前配置
+    const currentConfig = await vehicleMonitorStorage.getConfig();
+    
+    if (!currentConfig) {
+      return res.status(404).json({
+        code: 'NOT_FOUND',
+        message: '配置不存在',
+      });
+    }
+    
+    // 更新配置 - 保留原有值，使用前端传递的新值覆盖
+    const newConfig = {
+      ...currentConfig,
+      enabled: enabled !== undefined ? enabled : currentConfig.enabled,
+      alertPhone: alertPhone !== undefined ? alertPhone : currentConfig.alertPhone,
+      barkKey: barkKey !== undefined ? barkKey : currentConfig.barkKey,
+      barkServer: barkServer !== undefined ? barkServer : currentConfig.barkServer,
+      haBaseUrl: haBaseUrl !== undefined ? haBaseUrl : currentConfig.haBaseUrl,
+      haToken: haToken !== undefined ? haToken : currentConfig.haToken,
+      deviceTrackerEntity: deviceTrackerEntity !== undefined ? deviceTrackerEntity : currentConfig.deviceTrackerEntity,
+      intervalMinutes: intervalMinutes !== undefined ? intervalMinutes : currentConfig.intervalMinutes,
+      quickIntervalMinutes: quickIntervalMinutes !== undefined ? quickIntervalMinutes : currentConfig.quickIntervalMinutes,
+      safeDistanceMeters: safeDistanceMeters !== undefined ? safeDistanceMeters : currentConfig.safeDistanceMeters,
+      moveThresholdMeters: moveThresholdMeters !== undefined ? moveThresholdMeters : currentConfig.moveThresholdMeters,
+      minBatteryVolt: minBatteryVolt !== undefined ? minBatteryVolt : currentConfig.minBatteryVolt,
+    };
+    
+    await vehicleMonitorStorage.saveConfig(newConfig);
+    
+    // 重新加载告警服务配置（热重载）
+    const { alertService } = await import('../../services/alert-service');
+    await alertService.reloadConfig();
+    
+    logger.info('车辆监控配置已保存', { 
+      enabled: newConfig.enabled,
+      hasAlertPhone: !!newConfig.alertPhone,
+      hasBarkKey: !!newConfig.barkKey,
+      hasHaToken: !!newConfig.haToken,
+    });
+    
+    res.json({
+      code: 'SUCCESS',
+      message: '配置已保存',
+      data: {
+        enabled: newConfig.enabled,
+        alertPhone: newConfig.alertPhone,
+        barkKey: newConfig.barkKey ? newConfig.barkKey.substring(0, 8) + '***' : '',
+        barkServer: newConfig.barkServer,
+        haBaseUrl: newConfig.haBaseUrl,
+        haToken: newConfig.haToken ? newConfig.haToken.substring(0, 8) + '***' : '',
+        deviceTrackerEntity: newConfig.deviceTrackerEntity,
+      },
+    });
+  } catch (error: any) {
+    const msg = error instanceof Error ? error.message : String(error);
+    logger.error(`保存车辆监控配置失败：${msg}`);
+    res.status(500).json({
+      code: 'ERROR',
+      message: `保存失败：${msg}`,
+    });
+  }
+});
+
+/**
  * DELETE /api/vehicle-monitor/alerts
  * 清空告警记录
  */

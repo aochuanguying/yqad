@@ -67,11 +67,9 @@ export function buildHumanToneCommentPrompt(
     ? `\n\n【注意】你之前对这个帖子评论过："${options.previousComment}"。这次必须换一个完全不同的角度和表达方式，不能重复相同的意思。`
     : '';
 
-  // 随机决定是否加入口语化要求（约 30% 概率）
-  const useColloquial = options?.useColloquial ?? Math.random() < 0.3;
-  const colloquialBlock = useColloquial
-    ? '\n- 这次可以故意用一些口语化表达，比如"哈哈"、"emmm"、"绝了"、"真的假的"等，也可以少打一个标点或者用"..."代替'
-    : '';
+  // 100% 启用口语化要求，让评论更像真人随手发的
+  const useColloquial = true;
+  const colloquialBlock = '\n- 必须使用口语化表达，像微信聊天一样随意：可以用"哈哈"、"emmm"、"绝了"、"真的假的"等语气词'
 
   // 构建帖子特征块
   const featuresBlock = `
@@ -94,7 +92,7 @@ ${selectedStyle.instruction}
 - 不要用"感谢分享"、"写得好"、"学习了"这类万能废话开头
 - 不要用排比句、不要列条目、不要用"首先...其次...最后"这种结构
 - 像真人一样，可以只说半句话、可以跑题、可以用口语连接词
-- 评论长度 20-200 字，偏短更自然${colloquialBlock}${avoidOpeningsBlock}${previousCommentBlock}
+- **句末标点符号可有可无，不要刻意添加句号、感叹号等，像随手发的消息**${colloquialBlock}${avoidOpeningsBlock}${previousCommentBlock}
 
 只输出评论内容本身，不要加引号、不要加"评论："前缀。`;
 

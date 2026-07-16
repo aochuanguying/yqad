@@ -30,7 +30,7 @@ async function apiTokenMiddleware(req: any, res: any, next: any) {
       return res.status(401).json({ error: 'Token 格式无效', code: 'INVALID_TOKEN' });
     }
     
-    const isValid = verifyApiToken(token);
+    const isValid = await verifyApiToken(token);
     if (!isValid) {
       logger.warn('鉴权失败：Token 无效');
       return res.status(401).json({ error: 'Token 无效', code: 'INVALID_TOKEN' });

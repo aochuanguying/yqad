@@ -108,9 +108,14 @@ async function main() {
       try {
         const { CookieScanner } = await import('./services/cookie-refresh/cookie-scanner');
         const scanner = CookieScanner.getInstance();
-        const result = await scanner.refreshCookie();
+        
+        // 智能刷新模式：先检查 Cookie 是否有效，有效才续期，无效则跳过（不扫码）
+        const result = await scanner.smartRefreshCookie();
         if (result.success) {
           logger.info(`✅ 小红书 Cookie 自动刷新成功！版本：${result.version}`);
+        } else if (result.requiresManualRefresh) {
+          // Cookie 失效，需要用户手动刷新
+          logger.warn(`⚠️ 小红书 Cookie 已失效，请在 Web 页面手动刷新 Cookie`);
         } else {
           logger.error(`❌ 小红书 Cookie 自动刷新失败：${result.error}`);
         }
@@ -123,9 +128,14 @@ async function main() {
       try {
         const { ZhihuCookieScanner } = await import('./services/cookie-refresh/zhihu-cookie-scanner');
         const scanner = ZhihuCookieScanner.getInstance();
-        const result = await scanner.refreshCookie();
+        
+        // 智能刷新模式：先检查 Cookie 是否有效，有效才续期，无效则跳过（不扫码）
+        const result = await scanner.smartRefreshCookie();
         if (result.success) {
           logger.info(`✅ 知乎 Cookie 自动刷新成功！版本：${result.version}`);
+        } else if (result.requiresManualRefresh) {
+          // Cookie 失效，需要用户手动刷新
+          logger.warn(`⚠️ 知乎 Cookie 已失效，请在 Web 页面手动刷新 Cookie`);
         } else {
           logger.error(`❌ 知乎 Cookie 自动刷新失败：${result.error}`);
         }
@@ -137,6 +147,10 @@ async function main() {
 
   // 启动调度器
   scheduler.start();
+
+  // 初始化发帖日志服务（启动清理定时器）
+  const { postLoggingService } = await import('./services/post-logging-service');
+  logger.info('发帖日志服务已初始化（清理定时器已启动）');
 
   // 启动待确认发帖超时清理定时任务（每 10 分钟执行一次）
   setInterval(() => {

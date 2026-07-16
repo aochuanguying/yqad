@@ -51,13 +51,6 @@ export interface PublishCommentResponse {
   commentId: string;
 }
 
-export interface PublishPostResponse {
-  success: boolean;
-  postId: string;
-  code?: number;       // API原始响应码
-  message?: string;    // API原始响应消息
-}
-
 // 统一 API 接口
 export interface IAudiApi {
   /** 登录获取 token */
@@ -75,8 +68,8 @@ export interface IAudiApi {
   /** 发布评论 */
   publishComment(accessToken: string, postId: string, content: string, contentType?: string): Promise<PublishCommentResponse>;
 
-  /** 发布帖子 */
-  publishPost(accessToken: string, title: string, content: string, options?: PublishOptions): Promise<PublishPostResponse>;
+  // 注意：publishPost 方法已移除，现在发帖通过 AutoJS 远程执行脚本实现
+  // publishPost(accessToken: string, title: string, content: string, options?: PublishOptions): Promise<PublishPostResponse>;
 
   /** 上传图片到 CDN */
   uploadImages(accessToken: string, imagePaths: string[]): Promise<{ urls: string[]; failed: number }>;

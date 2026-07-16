@@ -154,7 +154,7 @@ export interface AppConfig {
     haBaseUrl: string;
     haToken: string;
     deviceTrackerEntity: string;
-    token: string;
+    token?: string; // 奥捷智行 Token（存储在 Redis 中）
   };
   autojsApi?: {
     enabled: boolean;

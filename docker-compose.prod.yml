@@ -1,0 +1,109 @@
+version: '3.8'
+
+services:
+  yqad-prod:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: yqad-prod-app
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      # 环境配置
+      - NODE_ENV=production
+      - DISPLAY=:99
+      # MySQL 生产数据库配置
+      - MYSQL_HOST=192.168.50.50
+      - MYSQL_PORT=3306
+      - MYSQL_USER=root
+      - MYSQL_PASSWORD=Wfw7539148@
+      - MYSQL_DATABASE=yqad_prod_db
+      # Redis 生产环境配置
+      - REDIS_HOST=192.168.50.50
+      - REDIS_PORT=6379
+      - REDIS_DB=1
+      # ChromaDB 配置
+      - CHROMADB_URL=http://192.168.50.50:8000
+      # 时区设置
+      - TZ=Asia/Shanghai
+    volumes:
+      # 挂载生产环境配置
+      - ./config/default.yaml:/app/config/default.yaml:ro
+      # 挂载数据目录（二维码截图等）
+      - ./data:/app/data
+      # 挂载日志
+      - ./logs:/app/logs
+      # 共享 X11 socket（用于虚拟显示）
+      - /tmp/.X11-unix:/tmp/.X11-unix:ro
+    # 增加共享内存（浏览器需要）
+    shm_size: '2gb'
+    # 安全选项（允许无沙盒运行）
+    security_opt:
+      - seccomp:unconfined
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/auth/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    # 资源限制
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '1.0'
+          memory: 1G
+    networks:
+      - yqad-prod-network
+
+  # 小红书 Cookie 自动刷新服务
+  xiaohongshu-cookie-refresh:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: xiaohongshu-cookie-refresh-prod
+    hostname: xiaohongshu-cookie-prod
+    restart: unless-stopped
+    environment:
+      # 数据库配置 (生产环境)
+      - DB_HOST=192.168.50.50
+      - DB_PORT=3306
+      - DB_USER=root
+      - DB_PASSWORD=Wfw7539148@
+      - DB_NAME=yqad_prod_db
+      # 时区设置
+      - TZ=Asia/Shanghai
+    volumes:
+      # 持久化浏览器数据 (重要！)
+      - ./browser_data:/tmp/xiaohongshu_browser_data
+      # 持久化二维码图片
+      - ./qr_codes:/tmp/qr_codes
+      # 日志文件
+      - ./logs:/var/log/xiaohongshu
+    # 定时任务：每天凌晨 2 点运行
+    command: >
+      sh -c "
+      echo '0 2 * * * python3 /app/scripts/auto_refresh_xiaohongshu_cookie_docker.py >> /var/log/xiaohongshu/cookie_refresh.log 2>&1' | crontab -
+      && crond -f -l 2
+      "
+    # 资源限制
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    networks:
+      - yqad-prod-network
+    depends_on:
+      - yqad-prod
+
+networks:
+  yqad-prod-network:
+    driver: bridge
