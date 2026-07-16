@@ -14,15 +14,12 @@ import { getLogger } from '../utils/logger';
 import { getInternetReferenceStorage } from '../storage/mysql/internet-reference-storage';
 import { internetSearchManager, SearchResult } from './internet-search';
 import { XiaohongshuSearch } from './internet-search/xiaohongshu-search';
+import { searchRateLimitStorage } from '../storage/redis/search-rate-limit-storage';
 
 const logger = getLogger('internet-reference-service');
 
-// 查询计数（用于频率限制）
-let queryCount = 0;
-let lastResetTime = Date.now();
-
 /**
- * 检查是否可以进行查询（频率限制）
+ * 检查是否可以进行查询（频率限制，使用 Redis 持久化）
  */
 export async function canQuery(): Promise<boolean> {
   try {
@@ -32,24 +29,21 @@ export async function canQuery(): Promise<boolean> {
       return false;
     }
 
-    // 重置计数器（每小时）
-    const now = Date.now();
-    if (now - lastResetTime > 3600000) {
-      queryCount = 0;
-      lastResetTime = now;
-    }
-
-    // 检查频率限制
+    // 使用 Redis 存储的查询计数（自动按小时过期）
     const rateLimit = config.rateLimitPerHour || 10;
-    if (queryCount >= rateLimit) {
-      logger.warn(`互联网参考查询频率超限：${queryCount}/${rateLimit} 次/小时`);
+    const isExceeded = await searchRateLimitStorage.isRateLimitExceeded('global', rateLimit);
+    
+    if (isExceeded) {
+      const currentCount = await searchRateLimitStorage.getQueryCount('global');
+      logger.warn(`互联网参考查询频率超限：${currentCount}/${rateLimit} 次/小时`);
       return false;
     }
 
     return true;
   } catch (error) {
     logger.error('检查查询频率失败:', error instanceof Error ? error.message : String(error));
-    return false;
+    // Redis 不可用时降级为允许查询（避免阻断核心功能）
+    return true;
   }
 }
 
@@ -143,8 +137,8 @@ export async function search(): Promise<SearchResult[]> {
       return [];
     }
 
-    // 增加查询计数
-    queryCount++;
+    // 增加查询计数（Redis 持久化）
+    await searchRateLimitStorage.incrementQueryCount('global');
 
     // 使用搜索关键词查询
     const keywords = config.searchKeywords || ['奥迪', '奥迪 Q5L', '奥迪用车'];
@@ -238,7 +232,11 @@ function sleep(ms: number): Promise<void> {
 /**
  * 重置查询计数器（用于测试）
  */
-export function resetQueryCount(): void {
-  queryCount = 0;
-  lastResetTime = Date.now();
+export async function resetQueryCount(): Promise<void> {
+  try {
+    await searchRateLimitStorage.incrementQueryCount('global'); // Redis key 会自动按小时过期
+    logger.info('查询计数器已重置');
+  } catch (error) {
+    logger.warn('重置查询计数器失败:', error);
+  }
 }

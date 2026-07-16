@@ -261,37 +261,19 @@ export class NetworkPostConfigStorage {
       
       logger.info(`✓ Cookie 解析成功，a1: ${parseResult.a1Value ? '存在' : '不存在'}`);
       
-      // 2. 临时设置 Cookie 到环境变量
-      const originalCookie = process.env.XIAOHONGSHU_COOKIE;
-      process.env.XIAOHONGSHU_COOKIE = cookie;
+      // 2. 直接注入 Cookie 到搜索服务实例（避免环境变量竞态）
+      const { XiaohongshuSearch } = require('../../services/internet-search/xiaohongshu-search');
+      const searchService = new XiaohongshuSearch();
       
-      try {
-        // 3. 使用优化后的 XiaohongshuSearch 类测试连接
-        const { XiaohongshuSearch } = require('../../services/internet-search/xiaohongshu-search');
-        const searchService = new XiaohongshuSearch();
-        
-        logger.info('开始测试小红书 API 连接（使用优化后的搜索服务）...');
-        
-        // 4. 调用 testConnection 方法（已包含重试机制和频率控制）
-        const result = await searchService.testConnection();
-        
-        // 5. 恢复原始 Cookie
-        if (originalCookie) {
-          process.env.XIAOHONGSHU_COOKIE = originalCookie;
-        } else {
-          delete process.env.XIAOHONGSHU_COOKIE;
-        }
-        
-        return result;
-      } catch (error) {
-        // 恢复原始 Cookie
-        if (originalCookie) {
-          process.env.XIAOHONGSHU_COOKIE = originalCookie;
-        } else {
-          delete process.env.XIAOHONGSHU_COOKIE;
-        }
-        throw error;
-      }
+      // 直接设置 config.cookie，跳过 initialize 的数据库加载
+      (searchService as any).config.cookie = cookie;
+      
+      logger.info('开始测试小红书 API 连接...');
+      
+      // 3. 调用 testConnection 方法
+      const result = await searchService.testConnection();
+      
+      return result;
     } catch (error) {
       logger.error('测试小红书连接失败:', error instanceof Error ? error.message : String(error));
       return {
@@ -315,9 +297,16 @@ export class NetworkPostConfigStorage {
         const scriptPath = path.join(__dirname, '../../../scripts/test_autohome.py');
         const pythonExecutable = process.env.PYTHON_EXECUTABLE || 'python3';
         
-        const pyProcess = spawn(pythonExecutable, [scriptPath, '奥迪', '5']);
+        const pyProcess = spawn(pythonExecutable, [scriptPath, '奥迪Q5L提车', '5']);
         let output = '';
         let errorOutput = '';
+        let resolved = false;
+
+        const doResolve = (result: { success: boolean; resultCount?: number; error?: string }) => {
+          if (resolved) return;
+          resolved = true;
+          resolve(result);
+        };
 
         pyProcess.stdout.on('data', (data: Buffer) => {
           output += data.toString();
@@ -329,7 +318,7 @@ export class NetworkPostConfigStorage {
 
         pyProcess.on('close', (code: number) => {
           if (code !== 0) {
-            resolve({
+            doResolve({
               success: false,
               error: errorOutput || `Python 进程退出码：${code}`,
             });
@@ -338,13 +327,13 @@ export class NetworkPostConfigStorage {
 
           try {
             const result = JSON.parse(output);
-            resolve({
+            doResolve({
               success: result.success,
               resultCount: result.total || result.results?.length || 0,
               error: result.error,
             });
           } catch (e) {
-            resolve({
+            doResolve({
               success: false,
               error: `解析响应失败：${output}`,
             });
@@ -353,7 +342,7 @@ export class NetworkPostConfigStorage {
 
         setTimeout(() => {
           pyProcess.kill();
-          resolve({
+          doResolve({
             success: false,
             error: '测试超时（15 秒）',
           });
@@ -373,14 +362,13 @@ export class NetworkPostConfigStorage {
    */
   async getCookieStatus(): Promise<CookieStatus> {
     try {
-      // 先获取基础字段（兼容旧表结构）
       const sql = `
         SELECT 
           xiaohongshu_cookie,
-          cookie_version,
-          last_refresh_time,
-          next_refresh_time,
-          cookie_refresh_logs
+          xiaohongshu_cookie_version,
+          xiaohongshu_last_refresh_time,
+          xiaohongshu_next_refresh_time,
+          xiaohongshu_cookie_refresh_logs
         FROM network_post_config 
         WHERE id = 1
       `;
@@ -398,22 +386,30 @@ export class NetworkPostConfigStorage {
         };
       }
       
-      // 兼容旧表结构（字段可能不存在）
       const hasCookie = !!row.xiaohongshu_cookie && row.xiaohongshu_cookie.toString().length > 0;
       const cookie = row.xiaohongshu_cookie ? row.xiaohongshu_cookie.toString() : '';
-      const version = row.cookie_version ? parseInt(row.cookie_version) : 0;
-      const lastRefreshTime = row.last_refresh_time ? new Date(row.last_refresh_time) : null;
-      const nextRefreshTime = row.next_refresh_time ? new Date(row.next_refresh_time) : null;
+      const version = row.xiaohongshu_cookie_version ? parseInt(row.xiaohongshu_cookie_version) : 0;
+      const lastRefreshTime = row.xiaohongshu_last_refresh_time ? new Date(row.xiaohongshu_last_refresh_time) : null;
+      const nextRefreshTime = row.xiaohongshu_next_refresh_time ? new Date(row.xiaohongshu_next_refresh_time) : null;
       
       // 安全解析 JSON 日志
       let recentLogs: any[] = [];
       try {
-        if (row.cookie_refresh_logs) {
-          const parsed = JSON.parse(row.cookie_refresh_logs);
-          recentLogs = Array.isArray(parsed) ? parsed : [];
+        if (row.xiaohongshu_cookie_refresh_logs) {
+          const logData = row.xiaohongshu_cookie_refresh_logs;
+          // MySQL JSON 字段可能返回字符串或对象，需要兼容处理
+          if (typeof logData === 'string') {
+            const parsed = JSON.parse(logData);
+            recentLogs = Array.isArray(parsed) ? parsed : [];
+          } else if (Array.isArray(logData)) {
+            recentLogs = logData;
+          } else if (typeof logData === 'object' && logData !== null) {
+            // 如果是对象但不是数组，尝试转换为数组
+            recentLogs = [logData];
+          }
         }
       } catch (e) {
-        logger.warn('解析 cookie_refresh_logs 失败:', e);
+        logger.warn('解析 xiaohongshu_cookie_refresh_logs 失败:', e);
         recentLogs = [];
       }
       
@@ -427,41 +423,13 @@ export class NetworkPostConfigStorage {
       };
     } catch (error) {
       logger.error('获取 Cookie 状态失败:', error);
-      // 如果是字段不存在的错误，尝试只查询 xiaohongshu_cookie 字段
-      try {
-        const sql = `SELECT xiaohongshu_cookie FROM network_post_config WHERE id = 1`;
-        const result = await this.conn.query(sql);
-        const row = Array.isArray(result) ? result[0] : result;
-        
-        if (!row || !row.xiaohongshu_cookie) {
-          return {
-            hasCookie: false,
-            version: 0,
-            lastRefreshTime: null,
-            nextRefreshTime: null,
-            recentLogs: [],
-          };
-        }
-        
-        const hasCookie = !!row.xiaohongshu_cookie && row.xiaohongshu_cookie.toString().length > 0;
-        return {
-          hasCookie,
-          cookie: hasCookie ? row.xiaohongshu_cookie.toString() : '',
-          version: 0,
-          lastRefreshTime: null,
-          nextRefreshTime: null,
-          recentLogs: [],
-        };
-      } catch (retryError) {
-        logger.error('重试获取 Cookie 状态失败:', retryError);
-        return {
-          hasCookie: false,
-          version: 0,
-          lastRefreshTime: null,
-          nextRefreshTime: null,
-          recentLogs: [],
-        };
-      }
+      return {
+        hasCookie: false,
+        version: 0,
+        lastRefreshTime: null,
+        nextRefreshTime: null,
+        recentLogs: [],
+      };
     }
   }
 
@@ -470,38 +438,39 @@ export class NetworkPostConfigStorage {
    */
   async saveCookie(cookie: string, source: 'auto' | 'manual' = 'auto'): Promise<{ success: boolean; version?: number; error?: string }> {
     try {
-      // 获取当前版本号
-      const status = await this.getCookieStatus();
-      const newVersion = status.version + 1;
-      
       // 构建刷新日志
       const refreshLog = {
         refresh_time: new Date().toISOString(),
         duration_ms: 0, // 由调用方更新
         status: 'success' as const,
         source,
+        platform: 'xiaohongshu',
       };
       
-      // 更新 Cookie 和辅助字段
+      // 使用 SQL 层面自增 version，避免竞态条件
       await this.conn.execute(
         `UPDATE network_post_config 
          SET xiaohongshu_cookie = ?, 
-             cookie_version = ?,
-             last_refresh_time = NOW(),
-             next_refresh_time = DATE_ADD(NOW(), INTERVAL 24 HOUR),
-             cookie_refresh_logs = JSON_ARRAY_APPEND(
-               IFNULL(cookie_refresh_logs, JSON_ARRAY()),
+             xiaohongshu_cookie_version = IFNULL(xiaohongshu_cookie_version, 0) + 1,
+             xiaohongshu_last_refresh_time = NOW(),
+             xiaohongshu_next_refresh_time = DATE_ADD(NOW(), INTERVAL 24 HOUR),
+             xiaohongshu_cookie_refresh_logs = JSON_ARRAY_APPEND(
+               IFNULL(xiaohongshu_cookie_refresh_logs, JSON_ARRAY()),
                '$',
-               ?
+               CAST(? AS JSON)
              )
          WHERE id = 1`,
-        [cookie, newVersion, refreshLog]
+        [cookie, JSON.stringify(refreshLog)]
       );
       
-      logger.info(`[CookieStorage] Cookie 保存成功，版本：${newVersion}, 来源：${source}`);
+      // 查询实际写入的版本号
+      const status = await this.getCookieStatus();
+      const newVersion = status.version;
+      
+      logger.info(`[CookieStorage] 小红书 Cookie 保存成功，版本：${newVersion}, 来源：${source}`);
       return { success: true, version: newVersion };
     } catch (error) {
-      logger.error('[CookieStorage] Cookie 保存失败:', error);
+      logger.error('[CookieStorage] 小红书 Cookie 保存失败:', error);
       return { 
         success: false, 
         error: error instanceof Error ? error.message : '保存失败' 
@@ -512,7 +481,7 @@ export class NetworkPostConfigStorage {
   /**
    * 更新刷新日志（用于更新耗时）
    */
-  async updateRefreshLog(durationMs: number, status: 'success' | 'failed', errorMessage?: string): Promise<void> {
+  async updateRefreshLog(durationMs: number, status: 'success' | 'failed', errorMessage?: string, platform: 'xiaohongshu' | 'zhihu' = 'xiaohongshu'): Promise<void> {
     try {
       const logEntry = {
         refresh_time: new Date().toISOString(),
@@ -520,26 +489,40 @@ export class NetworkPostConfigStorage {
         status,
         error_message: errorMessage,
         source: 'auto',
+        platform,
       };
+      
+      // 根据平台选择字段
+      const logField = platform === 'zhihu' ? 'zhihu_cookie_refresh_logs' : 'xiaohongshu_cookie_refresh_logs';
       
       // 获取当前日志数组
       const [rows] = await this.conn.query(
-        'SELECT cookie_refresh_logs FROM network_post_config WHERE id = 1'
+        `SELECT ${logField} FROM network_post_config WHERE id = 1`
       ) as any;
       
       const row = Array.isArray(rows) ? rows[0] : rows;
       // MySQL JSON 字段可能返回字符串或对象，需要兼容处理
       let logs: any[] = [];
-      if (row?.cookie_refresh_logs) {
-        if (typeof row.cookie_refresh_logs === 'string') {
-          try {
-            logs = JSON.parse(row.cookie_refresh_logs);
-          } catch (e) {
-            logger.warn('解析 cookie_refresh_logs 失败:', e);
+      if (row && row[logField]) {
+        const logData = row[logField];
+        if (typeof logData === 'string') {
+          // 检查是否是无效的字符串（如 "[object Object]"）
+          if (logData.startsWith('[object ')) {
+            logger.warn(`${logField} 存储了无效的对象字符串，重置为空数组`);
             logs = [];
+          } else {
+            try {
+              logs = JSON.parse(logData);
+            } catch (e) {
+              logger.warn(`解析 ${logField} 失败:`, e);
+              logs = [];
+            }
           }
-        } else if (Array.isArray(row.cookie_refresh_logs)) {
-          logs = row.cookie_refresh_logs;
+        } else if (Array.isArray(logData)) {
+          logs = logData;
+        } else if (typeof logData === 'object' && logData !== null) {
+          // 如果是对象但不是数组，尝试转换为数组
+          logs = [logData];
         }
       }
       
@@ -553,7 +536,7 @@ export class NetworkPostConfigStorage {
         }
         
         await this.conn.execute(
-          'UPDATE network_post_config SET cookie_refresh_logs = ? WHERE id = 1',
+          `UPDATE network_post_config SET ${logField} = ? WHERE id = 1`,
           [JSON.stringify(logs)]
         );
       }
@@ -563,14 +546,91 @@ export class NetworkPostConfigStorage {
   }
 
   /**
+   * 获取知乎 Cookie 状态
+   */
+  async getZhihuCookieStatus(): Promise<CookieStatus> {
+    try {
+      const sql = `
+        SELECT 
+          zhihu_cookie,
+          zhihu_cookie_version,
+          zhihu_last_refresh_time,
+          zhihu_next_refresh_time,
+          zhihu_cookie_refresh_logs
+        FROM network_post_config 
+        WHERE id = 1
+      `;
+      
+      const result = await this.conn.query(sql);
+      const row = Array.isArray(result) ? result[0] : result;
+      
+      if (!row) {
+        return {
+          hasCookie: false,
+          version: 0,
+          lastRefreshTime: null,
+          nextRefreshTime: null,
+          recentLogs: [],
+        };
+      }
+      
+      const hasCookie = !!row.zhihu_cookie && row.zhihu_cookie.toString().length > 0;
+      const cookie = row.zhihu_cookie ? row.zhihu_cookie.toString() : '';
+      const version = row.zhihu_cookie_version ? parseInt(row.zhihu_cookie_version) : 0;
+      const lastRefreshTime = row.zhihu_last_refresh_time ? new Date(row.zhihu_last_refresh_time) : null;
+      const nextRefreshTime = row.zhihu_next_refresh_time ? new Date(row.zhihu_next_refresh_time) : null;
+      
+      let recentLogs: any[] = [];
+      try {
+        if (row.zhihu_cookie_refresh_logs) {
+          const logData = row.zhihu_cookie_refresh_logs;
+          // MySQL JSON 字段可能返回字符串或对象，需要兼容处理
+          if (typeof logData === 'string') {
+            // 检查是否是无效的字符串（如 "[object Object]"）
+            if (logData.startsWith('[object ')) {
+              logger.warn(`zhihu_cookie_refresh_logs 存储了无效的对象字符串，重置为空数组`);
+              recentLogs = [];
+            } else {
+              const parsed = JSON.parse(logData);
+              recentLogs = Array.isArray(parsed) ? parsed : [];
+            }
+          } else if (Array.isArray(logData)) {
+            recentLogs = logData;
+          } else if (typeof logData === 'object' && logData !== null) {
+            // 如果是对象但不是数组，尝试转换为数组
+            recentLogs = [logData];
+          }
+        }
+      } catch (e) {
+        logger.warn('解析 zhihu_cookie_refresh_logs 失败:', e);
+        recentLogs = [];
+      }
+      
+      return {
+        hasCookie,
+        cookie,
+        version,
+        lastRefreshTime,
+        nextRefreshTime,
+        recentLogs,
+      };
+    } catch (error) {
+      logger.error('获取知乎 Cookie 状态失败:', error);
+      return {
+        hasCookie: false,
+        version: 0,
+        lastRefreshTime: null,
+        nextRefreshTime: null,
+        recentLogs: [],
+      };
+    }
+  }
+
+  /**
    * 保存知乎 Cookie
    */
   async saveZhihuCookie(cookie: string, source: 'auto' | 'manual' = 'auto'): Promise<{ success: boolean; version?: number; error?: string }> {
     try {
-      // 获取当前版本号
-      const status = await this.getCookieStatus();
-      const newVersion = status.version + 1;
-      
       // 构建刷新日志
       const refreshLog = {
         refresh_time: new Date().toISOString(),
@@ -580,20 +640,26 @@ export class NetworkPostConfigStorage {
         platform: 'zhihu',
       };
       
-      // 更新知乎 Cookie 和辅助字段
+      // 使用 SQL 层面自增 version，避免竞态条件
       await this.conn.execute(
         `UPDATE network_post_config 
          SET zhihu_cookie = ?, 
              zhihu_enabled = 1,
-             updated_at = NOW(),
-             cookie_refresh_logs = JSON_ARRAY_APPEND(
-               IFNULL(cookie_refresh_logs, JSON_ARRAY()),
+             zhihu_cookie_version = IFNULL(zhihu_cookie_version, 0) + 1,
+             zhihu_last_refresh_time = NOW(),
+             zhihu_next_refresh_time = DATE_ADD(NOW(), INTERVAL 24 HOUR),
+             zhihu_cookie_refresh_logs = JSON_ARRAY_APPEND(
+               IFNULL(zhihu_cookie_refresh_logs, JSON_ARRAY()),
                '$',
-               ?
+               CAST(? AS JSON)
              )
          WHERE id = 1`,
-        [cookie, refreshLog]
+        [cookie, JSON.stringify(refreshLog)]
       );
+      
+      // 查询实际写入的版本号
+      const status = await this.getZhihuCookieStatus();
+      const newVersion = status.version;
       
       logger.info(`[CookieStorage] 知乎 Cookie 保存成功，版本：${newVersion}, 来源：${source}`);
       return { success: true, version: newVersion };

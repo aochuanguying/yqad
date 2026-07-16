@@ -100,7 +100,6 @@
         <button class="tab-btn px-4 py-3 text-sm whitespace-nowrap hover:bg-gray-50" data-group="log-settings">📋 日志记录</button>
         <button class="tab-btn px-4 py-3 text-sm whitespace-nowrap hover:bg-gray-50 text-green-700 font-medium" data-group="materials">📷 素材库</button>
         <button class="tab-btn px-4 py-3 text-sm whitespace-nowrap hover:bg-gray-50 text-purple-700 font-medium" data-group="topics">📝 发帖主题</button>
-        <button class="tab-btn px-4 py-3 text-sm whitespace-nowrap hover:bg-gray-50 text-cyan-700 font-medium" data-group="autojs">🤖 AutoJS 配置</button>
         <button class="tab-btn px-4 py-3 text-sm whitespace-nowrap hover:bg-gray-50 text-orange-700 font-medium" data-group="vehicleMonitor">🚗 车辆监控</button>
         <button class="tab-btn px-4 py-3 text-sm whitespace-nowrap hover:bg-gray-50 text-pink-700 font-medium" data-group="mobile">📱 手机配置</button>
       </nav>
@@ -547,14 +546,6 @@
         return;
       }
       
-      if (group === 'autojs') {
-        manualCommentBtn.style.display = 'none';
-        manualPostBtn.style.display = 'none';
-        saveBtn.style.display = 'none';
-        renderAutoJsTab();
-        return;
-      }
-      
       // 车辆监控 Tab 显示左侧子菜单
       if (group === 'vehicleMonitor') {
         const vehicleMonitorSubmenu = document.getElementById('vehicle-monitor-submenu');
@@ -936,6 +927,9 @@
       const providerGrid = document.getElementById('ai-provider-grid');
       const refreshBtn = document.getElementById('ai-refresh-btn');
 
+      // 如果元素不存在，直接返回（可能已切换页面）
+      if (!providerGrid) return;
+
       try {
         const response = await fetch('/api/ai/health');
         if (!response.ok) {
@@ -949,7 +943,7 @@
         }
 
         // 只在第一次加载时隐藏加载状态
-        if (providerGrid.classList.contains('hidden')) {
+        if (providerGrid && loadingState && providerGrid.classList.contains('hidden')) {
           loadingState.classList.add('hidden');
           providerGrid.classList.remove('hidden');
         }
@@ -958,14 +952,22 @@
         updateAiProviderCards(result.data);
         
         // 更新最后更新时间
-        document.getElementById('ai-last-updated').textContent = 
-          `最后更新：${new Date(result.timestamp).toLocaleTimeString('zh-CN')}`;
+        const lastUpdatedEl = document.getElementById('ai-last-updated');
+        if (lastUpdatedEl) {
+          lastUpdatedEl.textContent = 
+            `最后更新：${new Date(result.timestamp).toLocaleTimeString('zh-CN')}`;
+        }
 
       } catch (error) {
         console.error('加载健康状态失败:', error);
-        if (!providerGrid.classList.contains('hidden')) {
-          errorState.classList.remove('hidden');
-          document.getElementById('ai-error-message').textContent = error.message;
+        if (providerGrid && !providerGrid.classList.contains('hidden')) {
+          if (errorState) {
+            errorState.classList.remove('hidden');
+            const errorMsgEl = document.getElementById('ai-error-message');
+            if (errorMsgEl) {
+              errorMsgEl.textContent = error.message;
+            }
+          }
         }
       } finally {
         if (refreshBtn) {
@@ -1404,8 +1406,13 @@
       // 如果是在网络发帖页面，保存网络发帖配置
       if (isNetworkPostPage) {
         try {
+          const zhihuCookieValue = document.getElementById('zhihu-cookie')?.value?.trim() || '';
+          console.log('💾 保存配置 - 知乎 Cookie 长度:', zhihuCookieValue.length);
+          console.log('💾 保存配置 - 知乎 Cookie 预览:', zhihuCookieValue.substring(0, 50) + '...');
+          
           const config = {
             zhihuAccessSecret: document.getElementById('zhihu-access-secret').value.trim(),
+            zhihuCookie: zhihuCookieValue,
             zhihuEnabled: document.getElementById('zhihu-enabled').checked,
             xiaohongshuCookie: document.getElementById('xiaohongshu-cookie').value.trim(),
             xiaohongshuEnabled: document.getElementById('xiaohongshu-enabled').checked,
@@ -1413,6 +1420,8 @@
             maxResults: 10,
             enabled: true,
           };
+          
+          console.log('💾 发送配置:', JSON.stringify(config, null, 2));
           
           const resp = await fetch('/api/network-post-config', {
             method: 'POST',
@@ -2146,11 +2155,18 @@
       const container = document.getElementById('alert-config-container');
       
       try {
-        const resp = await fetch('/api/telecom-config');
+        const resp = await fetch('/api/vehicle-monitor/status');
         const data = await resp.json();
         
-        if (data.success) {
-          renderAlertConfigContent(data.config);
+        if (data.code === 'SUCCESS') {
+          // 使用车辆监控配置中的告警相关字段
+          const config = {
+            enabled: data.data.config?.enabled !== false,
+            alertPhone: data.data.config?.alertPhone || '',
+            barkKey: data.data.config?.barkKey || '',
+            barkServer: data.data.config?.barkServer || '',
+          };
+          renderAlertConfigContent(config);
         } else {
           container.innerHTML = '<p class="text-red-500">加载失败</p>';
         }
@@ -2173,7 +2189,7 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
               <div>
                 <label class="block text-sm font-medium text-gray-700 mb-2">
-                  告警接收手机号 <span class="text-red-500">*</span>
+                  告警接收手机号 <span class="text-gray-400 font-normal">(可选)</span>
                 </label>
                 <input 
                   type="text" 
@@ -2183,24 +2199,36 @@
                   maxlength="11"
                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-                <p class="text-xs text-gray-500 mt-1">11 位中国大陆手机号，用于接收告警短信和电话</p>
+                <p class="text-xs text-gray-500 mt-1">11 位中国大陆手机号，用于接收告警短信和电话（可为空）</p>
               </div>
-              <div class="flex items-end">
-                <div class="flex gap-3">
-                  <button 
-                    id="telecom-save-btn" 
-                    type="button"
-                    class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center gap-2"
-                  >
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path>
-                    </svg>
-                    保存配置
-                  </button>
-                </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">
+                  Bark 推送键 <span class="text-gray-400 font-normal">(可选)</span>
+                </label>
+                <input 
+                  type="text" 
+                  id="bark-key" 
+                  value="${config.barkKey || ''}"
+                  placeholder="例如：xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p class="text-xs text-gray-500 mt-1">Bark 设备的推送键，用于接收 Bark 告警（可为空）</p>
               </div>
             </div>
-            <div class="flex items-center gap-3">
+            <div class="mb-6">
+              <label class="block text-sm font-medium text-gray-700 mb-2">
+                Bark 服务器地址 <span class="text-gray-400 font-normal">(可选，不填使用官方 API)</span>
+              </label>
+              <input 
+                type="text" 
+                id="bark-server" 
+                value="${config.barkServer || ''}"
+                placeholder="https://api.day.app"
+                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <p class="text-xs text-gray-500 mt-1">自定义 Bark 服务器地址，留空则使用官方 API</p>
+            </div>
+            <div class="flex items-center gap-3 mb-4">
               <label class="flex items-center">
                 <input 
                   type="checkbox" 
@@ -2212,10 +2240,24 @@
               </label>
               <span id="telecom-status" class="text-xs px-2 py-1 rounded bg-gray-100 text-gray-600">未配置</span>
             </div>
+            <div class="flex gap-3">
+              <button 
+                id="telecom-save-btn" 
+                type="button"
+                class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center gap-2"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path>
+                </svg>
+                保存配置
+              </button>
+            </div>
             <div class="mt-4 p-4 bg-blue-50 rounded-lg">
               <p class="text-sm text-blue-800">
-                <strong>💡 说明：</strong>告警通知使用 Android Telecom API 发送短信和拨打电话。
-                请在 <span class="font-medium text-blue-900">📱 手机配置 → 🔧 服务配置</span> 中配置 API 地址和 Token。
+                <strong>💡 说明：</strong>
+                手机号和 Bark 键可以为空，不为空时才会触发对应告警。
+                <br/>• 手机号：通过短信 + 电话告警（需要配置 <span class="font-medium text-blue-900">📱 手机配置 → 🔧 服务配置</span>）
+                <br/>• Bark 键：通过 Bark 推送告警（iOS 设备推荐使用）
               </p>
             </div>
           </div>
@@ -2265,6 +2307,7 @@
                     <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">通知方式</th>
                     <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">短信状态</th>
                     <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">电话状态</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Bark 状态</th>
                     <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">接收人</th>
                   </tr>
                 </thead>
@@ -2427,6 +2470,12 @@
         return;
       }
 
+      const container = document.getElementById('vehicle-map');
+      if (!container) {
+        console.error('地图容器 div 不存在');
+        return;
+      }
+
       if (!vehicleMapInstance) {
         vehicleMapInstance = new AMap.Map('vehicle-map', {
           zoom: 15,
@@ -2444,6 +2493,13 @@
       }
 
       console.log('updateVehicleMap: 开始更新位置', lng, lat);
+
+      // 确保地图容器存在
+      const container = document.getElementById('vehicle-map');
+      if (!container) {
+        console.error('updateVehicleMap: 地图容器 div 不存在');
+        return;
+      }
 
       // 确保地图已初始化
       if (!vehicleMapInstance) {
@@ -2639,12 +2695,18 @@
 
         if (data.success) {
           const stats = data.stats;
-          document.getElementById('stats-today').textContent = stats.todayCount || 0;
-          document.getElementById('stats-week').textContent = stats.weekCount || 0;
-          if (stats.topAnomalies && stats.topAnomalies.length > 0) {
-            document.getElementById('stats-top-anomaly').textContent = stats.topAnomalies[0].type;
-          } else {
-            document.getElementById('stats-top-anomaly').textContent = '--';
+          const todayEl = document.getElementById('stats-today');
+          const weekEl = document.getElementById('stats-week');
+          const topEl = document.getElementById('stats-top-anomaly');
+          
+          if (todayEl) todayEl.textContent = stats.todayCount || 0;
+          if (weekEl) weekEl.textContent = stats.weekCount || 0;
+          if (topEl) {
+            if (stats.topAnomalies && stats.topAnomalies.length > 0) {
+              topEl.textContent = stats.topAnomalies[0].type;
+            } else {
+              topEl.textContent = '--';
+            }
           }
         }
       } catch (error) {
@@ -2672,7 +2734,7 @@
       if (!tbody) return;
 
       if (!history || history.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-8 text-center text-gray-500 text-sm">暂无告警记录</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="px-4 py-8 text-center text-gray-500 text-sm">暂无告警记录</td></tr>';
         return;
       }
 
@@ -2683,17 +2745,32 @@
                                record.smsStatus === 'timeout' ? 'text-yellow-600' : 'text-red-600';
         const callStatusColor = record.callStatus === 'success' ? 'text-green-600' : 
                                 record.callStatus === 'timeout' ? 'text-yellow-600' : 'text-red-600';
-        const notificationTypeText = record.notificationType === 'both' ? '短信 + 电话' : 
-                                     record.notificationType === 'sms' ? '短信' : '电话';
+        const barkStatusColor = record.barkStatus === 'success' ? 'text-green-600' : 
+                                record.barkStatus === 'timeout' ? 'text-yellow-600' : record.barkStatus ? 'text-red-600' : 'text-gray-400';
+        
+        // 通知方式显示
+        let notificationTypeText = '';
+        if (record.notificationType === 'all') {
+          notificationTypeText = '短信 + 电话+Bark';
+        } else if (record.notificationType === 'both') {
+          notificationTypeText = '短信 + 电话';
+        } else if (record.notificationType === 'bark') {
+          notificationTypeText = 'Bark';
+        } else if (record.notificationType === 'sms') {
+          notificationTypeText = '短信';
+        } else if (record.notificationType === 'call') {
+          notificationTypeText = '电话';
+        }
 
         return `
           <tr>
             <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">${timeStr}</td>
             <td class="px-4 py-3 text-sm text-gray-900">${record.anomalies.join(', ')}</td>
             <td class="px-4 py-3 text-sm text-gray-900">${notificationTypeText}</td>
-            <td class="px-4 py-3 text-sm ${smsStatusColor}">${record.smsStatus === 'success' ? '✓ 成功' : record.smsStatus === 'timeout' ? '⏱ 超时' : '✗ 失败'}</td>
-            <td class="px-4 py-3 text-sm ${callStatusColor}">${record.callStatus === 'success' ? '✓ 成功' : record.callStatus === 'timeout' ? '⏱ 超时' : '✗ 失败'}</td>
-            <td class="px-4 py-3 text-sm text-gray-900">${record.phone}</td>
+            <td class="px-4 py-3 text-sm ${smsStatusColor}">${record.smsStatus ? (record.smsStatus === 'success' ? '✓ 成功' : record.smsStatus === 'timeout' ? '⏱ 超时' : '✗ 失败') : '-'}</td>
+            <td class="px-4 py-3 text-sm ${callStatusColor}">${record.callStatus ? (record.callStatus === 'success' ? '✓ 成功' : record.callStatus === 'timeout' ? '⏱ 超时' : '✗ 失败') : '-'}</td>
+            <td class="px-4 py-3 text-sm ${barkStatusColor}">${record.barkStatus ? (record.barkStatus === 'success' ? '✓ 成功' : record.barkStatus === 'timeout' ? '⏱ 超时' : '✗ 失败') : '-'}</td>
+            <td class="px-4 py-3 text-sm text-gray-900">${record.phone || '-'}</td>
           </tr>
         `;
       }).join('');
@@ -2707,13 +2784,16 @@
         saveBtn.addEventListener('click', async () => {
           const enabled = document.getElementById('telecom-enabled').checked;
           const alertPhone = document.getElementById('telecom-alert-phone').value.trim();
+          const barkKey = document.getElementById('bark-key').value.trim();
+          const barkServer = document.getElementById('bark-server').value.trim();
 
-          if (enabled && !alertPhone) {
-            showToast('启用时必须填写告警手机号', 'error');
+          // 验证：至少需要一个告警渠道
+          if (enabled && !alertPhone && !barkKey) {
+            showToast('启用时必须至少配置手机号或 Bark 键之一', 'error');
             return;
           }
 
-          if (enabled && alertPhone && !/^1\d{10}$/.test(alertPhone)) {
+          if (alertPhone && !/^1\d{10}$/.test(alertPhone)) {
             showToast('手机号格式不正确，请输入 11 位中国大陆手机号', 'error');
             return;
           }
@@ -2728,20 +2808,25 @@
           `;
 
           try {
-            const resp = await fetch('/api/telecom-config', {
+            const resp = await fetch('/api/vehicle-monitor/config', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ enabled, alertPhone }),
+              body: JSON.stringify({ 
+                enabled, 
+                alertPhone,
+                barkKey,
+                barkServer,
+              }),
             });
             const data = await resp.json();
 
-            if (data.success) {
+            if (data.code === 'SUCCESS') {
               showToast('配置已保存', 'success');
               updateTelecomStatus(enabled);
               await loadAlertStats();
               await loadAlertHistory();
             } else {
-              showToast(data.error || '保存失败', 'error');
+              showToast(data.message || '保存失败', 'error');
             }
           } catch (error) {
             console.error('保存配置失败:', error);
@@ -3475,10 +3560,25 @@
     }
 
     async function refreshMaterials() {
-      await fetch('/api/materials/refresh', { method: 'POST' });
-      await loadMaterials('');
-      renderMaterials();
-      showToast('素材索引已刷新', 'success');
+      try {
+        // 调用增量索引更新（后台异步执行）
+        const resp = await fetch('/api/materials/rebuild-index', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: 'incremental' }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+          throw new Error(data.error || '刷新索引失败');
+        }
+        showToast('索引刷新任务已启动，请稍后刷新页面查看结果', 'success');
+        // 10 秒后自动刷新页面
+        setTimeout(() => {
+          location.reload();
+        }, 10000);
+      } catch (error) {
+        showToast('刷新失败：' + error.message, 'error');
+      }
     }
 
     async function rebuildIndex() {
@@ -5045,7 +5145,7 @@
           <div class="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
             <h3 class="text-sm font-semibold text-blue-800 mb-3">🔑 Token 管理</h3>
             <div class="flex flex-wrap gap-2">
-              <button onclick="copyToken()" id="copy-token-btn" class="px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm flex items-center gap-1">
+              <button onclick="copyLoginToken()" id="copy-token-btn" class="px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm flex items-center gap-1">
                 📋 复制 Token
               </button>
               <button onclick="showSetTokenModal()" id="set-token-btn" class="px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm flex items-center gap-1">
@@ -5308,35 +5408,6 @@
       }
     }
     
-    /**
-     * 复制当前 Token（通过重置获取完整 Token）
-     */
-    async function copyCurrentToken() {
-      if (!confirm('⚠️ 点击确定将重新生成一个新的 Token，旧 Token 将立即失效。确定要继续吗？')) {
-        return;
-      }
-      
-      try {
-        const resp = await fetch('/api/posts/token/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reset: true }),
-        });
-        const result = await resp.json();
-        
-        if (result.success && result.data && result.data.token) {
-          await navigator.clipboard.writeText(result.data.token);
-          showToast('✅ Token 已复制到剪贴板', 'success');
-          // 复制后刷新状态显示
-          renderApiTokenTab();
-        } else {
-          showToast('❌ 获取 Token 失败：' + (result.error || '未知错误'), 'error');
-        }
-      } catch (e) {
-        showToast('❌ 复制失败：' + e.message, 'error');
-      }
-    }
-
     /**
      * 复制当前完整 Token（不重置）
      */
@@ -5629,9 +5700,9 @@
     // ========== Token 管理功能 ==========
     
     /**
-     * 复制 Token 到剪贴板
+     * 复制登录 Token 到剪贴板
      */
-    async function copyToken() {
+    async function copyLoginToken() {
       try {
         const resp = await fetch('/api/token');
         const result = await resp.json();
@@ -5739,6 +5810,7 @@
       loadNetworkPostConfig();
     }
 
+    // 渲染 Cookie 刷新页面
     // 加载网络发帖配置
     async function loadNetworkPostConfig() {
       const container = document.getElementById('network-post-config-container');
@@ -6060,8 +6132,19 @@
             if (task.status === 'success') {
               clearInterval(zhihuRefreshPollingInterval);
               showToast('✅ 知乎 Cookie 刷新成功！(版本：' + task.version + ')', 'success');
-              // 重新加载配置
-              loadNetworkPostConfig();
+              // 只更新 Cookie 输入框，不重渲染整个页面（避免清空其他编辑中的字段）
+              fetch('/api/network-post-config')
+                .then(r => r.json())
+                .then(data => {
+                  if (data.success && data.config.zhihuCookie) {
+                    const cookieInput = document.getElementById('zhihu-cookie');
+                    if (cookieInput) {
+                      cookieInput.value = data.config.zhihuCookie;
+                      console.log('✅ 知乎 Cookie 输入框已更新，长度:', data.config.zhihuCookie.length);
+                    }
+                  }
+                })
+                .catch(err => console.error('加载配置失败:', err));
               loadZhihuCookieStatus();
               btn.disabled = false;
               btn.textContent = originalText;
@@ -6086,6 +6169,7 @@
     // 测试知乎连接
     async function testZhihuConnection() {
       const accessSecret = document.getElementById('zhihu-access-secret').value.trim();
+      const cookie = document.getElementById('zhihu-cookie').value.trim();
       const statusSpan = document.getElementById('network-post-save-status');
       
       if (!accessSecret) {
@@ -6099,13 +6183,21 @@
         const resp = await fetch('/api/network-post-config/test-zhihu', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ accessSecret }),
+          body: JSON.stringify({ accessSecret, cookie }),
         });
         
         const data = await resp.json();
         
         if (data.success) {
-          showToast(`✅ 测试成功！找到 ${data.resultCount || 0} 条结果`, 'success');
+          let msg = `✅ API 测试成功！找到 ${data.resultCount || 0} 条结果`;
+          if (data.cookieValid === true) {
+            msg += '，Cookie 有效';
+          } else if (data.cookieValid === false) {
+            msg += '，⚠️ Cookie 无效';
+          } else if (!cookie) {
+            msg += '（未填写 Cookie，跳过验证）';
+          }
+          showToast(msg, data.cookieValid === false ? 'warning' : 'success');
           if (statusSpan) statusSpan.textContent = '测试成功';
         } else {
           showToast('❌ 测试失败：' + (data.error || '未知错误'), 'error');
@@ -6139,9 +6231,28 @@
         if (data.success && data.data) {
           const { hasCookie, version, lastRefreshTime, nextRefreshTime, recentLogs } = data.data;
           
+          // 检查最后一条日志是否为失效
+          const lastLog = (recentLogs && recentLogs.length > 0) ? recentLogs[recentLogs.length - 1] : null;
+          const isExpired = lastLog && lastLog.status === 'failed' && 
+            (lastLog.error_message || '').includes('失效');
+          
           let html = '<div class="space-y-2">';
           
-          if (hasCookie) {
+          if (isExpired) {
+            // Cookie 已过期状态（红色警告）
+            html += `
+              <p class="text-sm text-red-800">
+                <strong>❌ 状态：</strong>Cookie 已过期，请手动刷新
+              </p>
+              <p class="text-xs text-red-600">
+                ${lastLog.error_message || 'Cookie 已失效，需要手动刷新'}
+              </p>
+              <p class="text-xs text-gray-600 mt-1">
+                💡 请点击"刷新 Cookie"扫码重新获取，或手动粘贴新 Cookie 后保存
+              </p>
+            `;
+            statusDiv.className = 'p-4 border border-red-200 rounded-md mb-4 bg-red-50';
+          } else if (hasCookie) {
             html += `
               <p class="text-sm text-green-800">
                 <strong>✅ 状态：</strong>已配置 Cookie (版本：${version})
@@ -6166,8 +6277,7 @@
               `;
             }
             
-            if (recentLogs && recentLogs.length > 0) {
-              const lastLog = recentLogs[recentLogs.length - 1];
+            if (lastLog) {
               html += `
                 <p class="text-xs text-gray-600">
                   <strong>最近状态：</strong>
@@ -6179,6 +6289,7 @@
                 </p>
               `;
             }
+            statusDiv.className = 'p-4 border border-gray-200 rounded-md mb-4 bg-green-50';
           } else {
             html += `
               <p class="text-sm text-orange-800">
@@ -6188,11 +6299,11 @@
                 💡 请手动配置 Cookie 或点击"刷新 Cookie"自动获取
               </p>
             `;
+            statusDiv.className = 'p-4 border border-gray-200 rounded-md mb-4 bg-orange-50';
           }
           
           html += '</div>';
           statusDiv.innerHTML = html;
-          statusDiv.className = `p-4 border border-gray-200 rounded-md mb-4 ${hasCookie ? 'bg-green-50' : 'bg-orange-50'}`;
         } else {
           statusDiv.innerHTML = '<p class="text-sm text-gray-600">加载失败</p>';
         }
@@ -6217,9 +6328,28 @@
         if (data.success && data.data) {
           const { hasCookie, version, lastRefreshTime, nextRefreshTime, recentLogs } = data.data;
           
+          // 检查最后一条日志是否为失效
+          const lastLog = (recentLogs && recentLogs.length > 0) ? recentLogs[recentLogs.length - 1] : null;
+          const isExpired = lastLog && lastLog.status === 'failed' && 
+            (lastLog.error_message || '').includes('失效');
+          
           let html = '<div class="space-y-2">';
           
-          if (hasCookie) {
+          if (isExpired) {
+            // Cookie 已过期状态（红色警告）
+            html += `
+              <p class="text-sm text-red-800">
+                <strong>❌ 状态：</strong>Cookie 已过期，请手动刷新
+              </p>
+              <p class="text-xs text-red-600">
+                ${lastLog.error_message || 'Cookie 已失效，需要手动刷新'}
+              </p>
+              <p class="text-xs text-gray-600 mt-1">
+                💡 请点击"刷新 Cookie"扫码重新获取，或手动粘贴新 Cookie 后保存
+              </p>
+            `;
+            statusDiv.className = 'p-4 border border-red-200 rounded-md mb-4 bg-red-50';
+          } else if (hasCookie) {
             html += `
               <p class="text-sm text-green-800">
                 <strong>✅ 状态：</strong>已配置 Cookie (版本：${version})
@@ -6244,8 +6374,7 @@
               `;
             }
             
-            if (recentLogs && recentLogs.length > 0) {
-              const lastLog = recentLogs[recentLogs.length - 1];
+            if (lastLog) {
               html += `
                 <p class="text-xs text-gray-600">
                   <strong>最近状态：</strong>
@@ -6257,6 +6386,7 @@
                 </p>
               `;
             }
+            statusDiv.className = 'p-4 border border-gray-200 rounded-md mb-4 bg-green-50';
           } else {
             html += `
               <p class="text-sm text-orange-800">
@@ -6266,11 +6396,11 @@
                 💡 请手动配置 Cookie 或点击"刷新 Cookie"自动获取
               </p>
             `;
+            statusDiv.className = 'p-4 border border-gray-200 rounded-md mb-4 bg-orange-50';
           }
           
           html += '</div>';
           statusDiv.innerHTML = html;
-          statusDiv.className = `p-4 border border-gray-200 rounded-md mb-4 ${hasCookie ? 'bg-green-50' : 'bg-orange-50'}`;
         } else {
           statusDiv.innerHTML = '<p class="text-sm text-gray-600">加载失败</p>';
         }
@@ -6286,6 +6416,10 @@
     // 刷新 Cookie（自动扫码）
     var refreshTaskId = null;
     var refreshPollingInterval = null;
+    
+    // 小红书独立的刷新任务变量
+    var xiaohongshuRefreshTaskId = null;
+    var xiaohongshuRefreshPollingInterval = null;
     
     async function refreshXiaohongshuCookie() {
       if (!confirm('🔄 即将开始刷新 Cookie\n\n系统将生成二维码，请使用小红书 APP 扫码登录\n\n预计耗时：1-3 分钟，确定继续吗？')) {
@@ -6313,13 +6447,13 @@
           return;
         }
         
-        refreshTaskId = data.taskId;
+        xiaohongshuRefreshTaskId = data.taskId;
         showToast('🔄 开始刷新，正在生成二维码...', 'success');
         
         // 2. 轮询任务状态
-        refreshPollingInterval = setInterval(async function() {
+        xiaohongshuRefreshPollingInterval = setInterval(async function() {
           try {
-            var statusResp = await fetch('/api/network-post-config/cookie/status/' + refreshTaskId);
+            var statusResp = await fetch('/api/network-post-config/cookie/status/' + xiaohongshuRefreshTaskId);
             var statusData = await statusResp.json();
             
             if (!statusData.success) {
@@ -6349,15 +6483,28 @@
             
             // 检查任务是否完成
             if (task.status === 'success') {
-              clearInterval(refreshPollingInterval);
+              clearInterval(xiaohongshuRefreshPollingInterval);
               showToast('✅ Cookie 刷新成功！(版本：' + task.version + ')', 'success');
-              // 重新加载配置，更新 Cookie 输入框
-              loadNetworkPostConfig();
+              
+              // 直接更新 Cookie 输入框的值（更可靠）
+              fetch('/api/network-post-config')
+                .then(r => r.json())
+                .then(data => {
+                  if (data.success && data.config.xiaohongshuCookie) {
+                    const cookieInput = document.getElementById('xiaohongshu-cookie');
+                    if (cookieInput) {
+                      cookieInput.value = data.config.xiaohongshuCookie;
+                      console.log('✅ Cookie 输入框已更新，长度:', data.config.xiaohongshuCookie.length);
+                    }
+                  }
+                })
+                .catch(err => console.error('加载配置失败:', err));
+              
               loadXiaohongshuCookieStatus();
               btn.disabled = false;
               btn.textContent = originalText;
             } else if (task.status === 'failed') {
-              clearInterval(refreshPollingInterval);
+              clearInterval(xiaohongshuRefreshPollingInterval);
               showToast('❌ 刷新失败：' + (task.error || '未知错误'), 'error');
               btn.disabled = false;
               btn.textContent = originalText;

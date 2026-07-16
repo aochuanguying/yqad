@@ -40,6 +40,7 @@ export class CookieScanner {
   private browser: any = null;
   private page: any = null;
   private statusCallback: StatusCallback | null = null;
+  private isRefreshing: boolean = false;
 
   private constructor() {
     this.storage = NetworkPostConfigStorage.getInstance();
@@ -53,6 +54,13 @@ export class CookieScanner {
   }
 
   /**
+   * 是否正在刷新中
+   */
+  getIsRefreshing(): boolean {
+    return this.isRefreshing;
+  }
+
+  /**
    * 设置状态更新回调
    */
   setStatusCallback(callback: StatusCallback): void {
@@ -60,15 +68,212 @@ export class CookieScanner {
   }
 
   /**
+   * 智能刷新 Cookie（定时任务使用）
+   * 
+   * 逻辑：
+   * 1. 先检查当前 Cookie 是否有效（通过 API 测试）
+   * 2. 如果有效 → 刷新页面续期，增加有效期
+   * 3. 如果无效 → 返回 requiresManualRefresh=true，不执行扫码
+   * 
+   * 适用场景：定时任务自动刷新（无人值守）
+   */
+  async smartRefreshCookie(): Promise<{ 
+    success: boolean; 
+    version?: number; 
+    error?: string;
+    requiresManualRefresh?: boolean; // 需要用户手动刷新
+  }> {
+    if (this.isRefreshing) {
+      logger.warn('⚠️ Cookie 刷新正在进行中，跳过本次请求');
+      return { success: false, error: '刷新正在进行中，请稍后再试' };
+    }
+    this.isRefreshing = true;
+    const startTime = Date.now();
+    logger.info('🔍 开始智能检查 Cookie 状态...');
+
+    try {
+      // 1. 检查当前 Cookie 是否有效
+      logger.info('📡 正在测试当前 Cookie 有效性...');
+      const { XiaohongshuSearch } = await import('../../services/internet-search/xiaohongshu-search');
+      const searchService = new XiaohongshuSearch();
+      await searchService.initialize(); // 加载 Cookie
+      const testResult = await searchService.testConnection();
+
+      if (testResult.success) {
+        // 2. Cookie 有效，刷新页面续期
+        logger.info('✅ 当前 Cookie 有效，正在刷新页面以续期...');
+        
+        // 初始化浏览器（加载持久化数据）
+        await this.initBrowser();
+        
+        try {
+          // 访问主页
+          await this.page.goto('https://www.xiaohongshu.com', {
+            waitUntil: 'networkidle',
+            timeout: 15000,
+          });
+          await this.page.waitForTimeout(2000);
+          
+          // 刷新页面触发续期
+          await this.page.reload({ waitUntil: 'networkidle', timeout: 15000 });
+          await this.page.waitForTimeout(2000);
+          
+          // 提取新 Cookie
+          logger.info('🍪 提取续期后的 Cookie...');
+          const cookie = await this.extractCookie();
+          
+          if (cookie) {
+            const saveResult = await this.storage.saveCookie(cookie, 'auto');
+            if (saveResult.success) {
+              logger.info(`✅ Cookie 续期成功，版本：${saveResult.version}`);
+              await this.cleanup();
+              return { success: true, version: saveResult.version };
+            } else {
+              logger.error('❌ 保存 Cookie 失败:', saveResult.error);
+              await this.cleanup();
+              return { success: false, error: saveResult.error };
+            }
+          } else {
+            logger.warn('⚠️ 未能提取到 Cookie，但当前 Cookie 仍然有效');
+            await this.cleanup();
+            return { success: true }; // 即使没提取到，原有 Cookie 仍然有效
+          }
+        } catch (error) {
+          logger.warn('🔄 续期过程出错，但当前 Cookie 仍然有效:', error instanceof Error ? error.message : error);
+          await this.cleanup();
+          return { success: true }; // Cookie 仍然有效
+        }
+      } else {
+        // 3. API 测试 Cookie 无效，尝试浏览器续期（持久化 session 可能仍有效）
+        logger.warn('⚠️ API 测试 Cookie 已失效，尝试浏览器续期...');
+        
+        try {
+          await this.initBrowser();
+          
+          // 访问主页检查浏览器 session 是否还在
+          await this.page.goto('https://www.xiaohongshu.com', {
+            waitUntil: 'networkidle',
+            timeout: 15000,
+          });
+          await this.page.waitForTimeout(2000);
+          
+          // 检查是否有认证 Cookie
+          const cookies = await this.page.context().cookies();
+          const hasAuthCookie = cookies.some((c: any) => 
+            c.name === 'a1' || c.name === 'web_session' || c.name === 'id_token'
+          );
+          const currentUrl = this.page.url();
+          const isLoggedIn = hasAuthCookie && !currentUrl.includes('/login');
+          
+          if (isLoggedIn) {
+            // 浏览器 session 有效，刷新续期
+            logger.info('✅ 浏览器 session 仍然有效，刷新页面续期...');
+            await this.page.reload({ waitUntil: 'networkidle', timeout: 15000 });
+            await this.page.waitForTimeout(2000);
+            
+            const cookie = await this.extractCookie();
+            if (cookie) {
+              const saveResult = await this.storage.saveCookie(cookie, 'auto');
+              if (saveResult.success) {
+                logger.info(`✅ 浏览器续期成功，版本：${saveResult.version}`);
+                const duration = Date.now() - startTime;
+                await this.storage.updateRefreshLog(duration, 'success', undefined, 'xiaohongshu');
+                await this.cleanup();
+                return { success: true, version: saveResult.version };
+              }
+            }
+          }
+          
+          // 浏览器 session 也失效了
+          logger.warn('⚠️ 浏览器 session 也已失效，需要手动刷新');
+          await this.cleanup();
+        } catch (browserError) {
+          logger.warn('浏览器续期尝试失败:', browserError instanceof Error ? browserError.message : browserError);
+          await this.cleanup();
+        }
+        
+        // 真正失效：记录失败日志
+        await this.storage.updateRefreshLog(Date.now() - startTime, 'failed', 'Cookie 已失效，需要手动刷新', 'xiaohongshu');
+        return { 
+          success: false, 
+          error: 'Cookie 已失效，请在 Web 页面手动刷新',
+          requiresManualRefresh: true 
+        };
+      }
+    } catch (error) {
+      logger.error('❌ 智能刷新 Cookie 失败:', error instanceof Error ? error.message : error);
+      await this.cleanup();
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : '智能刷新失败' 
+      };
+    } finally {
+      this.isRefreshing = false;
+    }
+  }
+
+  /**
    * 刷新 Cookie（兼容一次扫码和两次扫码）
    */
   async refreshCookie(): Promise<{ success: boolean; version?: number; error?: string }> {
+    if (this.isRefreshing) {
+      logger.warn('⚠️ Cookie 刷新正在进行中，跳过本次请求');
+      return { success: false, error: '刷新正在进行中，请稍后再试' };
+    }
+    this.isRefreshing = true;
     const startTime = Date.now();
     logger.info('🔄 开始刷新 Cookie...');
 
     try {
       // 初始化浏览器
       await this.initBrowser();
+
+      // 先检查是否已登录（通过访问主页）
+      logger.info('🔍 检查是否已登录...');
+      try {
+        await this.page.goto('https://www.xiaohongshu.com', {
+          waitUntil: 'networkidle',
+          timeout: 15000,
+        });
+        await this.page.waitForTimeout(2000);
+        
+        // 检查是否有认证 Cookie
+        const cookies = await this.page.context().cookies();
+        const hasAuthCookie = cookies.some((c: any) => 
+          c.name === 'a1' || c.name === 'web_session' || c.name === 'id_token'
+        );
+        
+        // 检查是否在主页（不在登录页）
+        const currentUrl = this.page.url();
+        const isLoggedIn = hasAuthCookie && !currentUrl.includes('/login');
+        
+        if (isLoggedIn) {
+          logger.info('✅ 检测到已登录状态');
+          
+          // 主动续期：刷新页面触发网站重新颁发 Cookie
+          logger.info('🔄 正在刷新页面以续期 Cookie...');
+          await this.page.reload({ waitUntil: 'networkidle', timeout: 15000 });
+          await this.page.waitForTimeout(2000);
+          
+          // 获取续期后的新 Cookie
+          logger.info('🍪 获取续期后的 Cookie...');
+          const cookie = await this.extractCookie();
+          if (cookie) {
+            const saveResult = await this.storage.saveCookie(cookie, 'auto');
+            if (saveResult.success) {
+              logger.info(`✅ Cookie 自动续期成功，版本：${saveResult.version}`);
+              const duration = Date.now() - startTime;
+              await this.storage.updateRefreshLog(duration, 'success', undefined, 'xiaohongshu');
+              await this.cleanup();
+              return { success: true, version: saveResult.version };
+            }
+          }
+        }
+        
+        logger.info('⚠️ 未检测到登录状态，需要重新登录');
+      } catch (error) {
+        logger.warn('检查登录状态失败，进入扫码流程:', error instanceof Error ? error.message : error);
+      }
 
       // 打开登录页面
       logger.info('📱 打开小红书登录页面...');
@@ -79,11 +284,11 @@ export class CookieScanner {
 
       await this.page.goto('https://www.xiaohongshu.com/login', {
         waitUntil: 'domcontentloaded',
-        timeout: 30000, // 优化：30 秒足够，避免过长等待
+        timeout: 30000,
       });
 
       // 等待页面加载
-      await this.page.waitForTimeout(2000); // 优化：2 秒足够
+      await this.page.waitForTimeout(2000);
 
       // 最多尝试 2 次扫码
       for (let scanRound = 1; scanRound <= 2; scanRound++) {
@@ -108,6 +313,16 @@ export class CookieScanner {
         logger.info(`⏳ 等待第 ${scanRound} 轮扫码...`);
         const scanTimeout = scanRound === 1 ? 180000 : 120000; // 3 分钟 / 2 分钟
         const scanResult = await this.waitForScanOrLogin(scanTimeout, scanRound === 2);
+        
+        // 立即检查 scanResult
+        logger.info('🔍 scanResult 原始值:', JSON.stringify({
+          changed: scanResult.changed,
+          loggedIn: scanResult.loggedIn,
+          hasCookie: !!scanResult.cookie,
+          cookieLength: scanResult.cookie?.length,
+          cookieType: typeof scanResult.cookie
+        }));
+        
         await this.cleanupQRCode(qrResult.filepath);
 
         if (!scanResult.changed) {
@@ -122,9 +337,11 @@ export class CookieScanner {
 
         if (scanResult.loggedIn) {
           // 登录成功！
-          logger.info('✅ 登录成功，提取 Cookie...');
-          logger.info('📝 Cookie 长度:', scanResult.cookie?.length || 0);
-          logger.debug('📝 Cookie 内容:', scanResult.cookie?.substring(0, 100) + '...');
+          const cookieLen = scanResult.cookie?.length || 0;
+          const cookieType = typeof scanResult.cookie;
+          const cookiePreview = scanResult.cookie ? scanResult.cookie.substring(0, 50) : 'N/A';
+          
+          logger.info(`✅ 登录成功，scanResult: changed=${scanResult.changed}, loggedIn=${scanResult.loggedIn}, cookie 长度=${cookieLen}, 类型=${cookieType}, 预览=${cookiePreview}...`);
           
           this.statusCallback?.({
             status: 'saving',
@@ -150,27 +367,30 @@ export class CookieScanner {
             return { success: false, error: saveResult.error };
           }
 
-          // 验证 Cookie 有效性
-          logger.info('🔍 正在验证 Cookie 有效性...');
-          try {
-            const { XiaohongshuSearch } = await import('../../services/internet-search/xiaohongshu-search');
-            const searchService = new XiaohongshuSearch();
-            const testResult = await searchService.testConnection();
-            
-            if (testResult.success) {
-              logger.info(`✅ Cookie 验证成功！获取到 ${testResult.resultCount} 条结果`);
-            } else {
-              logger.warn('⚠️ Cookie 验证失败，但已��存到数据库:', testResult.error);
+          // 验证 Cookie 有效性（非阻塞，不等待完成）
+          logger.info('🔍 正在验证 Cookie 有效性...（后台运行）');
+          (async () => {
+            try {
+              const { XiaohongshuSearch } = await import('../../services/internet-search/xiaohongshu-search');
+              const searchService = new XiaohongshuSearch();
+              await searchService.initialize(); // 加载 Cookie
+              const testResult = await searchService.testConnection();
+              
+              if (testResult.success) {
+                logger.info(`✅ Cookie 验证成功！获取到 ${testResult.resultCount} 条结果`);
+              } else {
+                logger.warn('⚠️ Cookie 验证失败，但已保存到数据库:', testResult.error);
+              }
+            } catch (error) {
+              logger.warn('⚠️ Cookie 验证过程出错:', error instanceof Error ? error.message : error);
             }
-          } catch (error) {
-            logger.warn('⚠️ Cookie 验证过程出错:', error instanceof Error ? error.message : error);
-          }
+          })();
 
           // 更新日志
           logger.info('📊 更新刷新日志...');
           const duration = Date.now() - startTime;
           const logStartTime = Date.now();
-          await this.storage.updateRefreshLog(duration, 'success');
+          await this.storage.updateRefreshLog(duration, 'success', undefined, 'xiaohongshu');
           logger.info(`📊 更新日志完成，耗时：${Date.now() - logStartTime}ms`);
 
           await this.cleanup();
@@ -203,13 +423,15 @@ export class CookieScanner {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '未知错误';
       logger.error('❌ Cookie 刷新失败:', errorMessage);
-      await this.storage.updateRefreshLog(Date.now() - startTime, 'failed', errorMessage);
+      await this.storage.updateRefreshLog(Date.now() - startTime, 'failed', errorMessage, 'xiaohongshu');
       this.statusCallback?.({
         status: 'failed',
         message: errorMessage,
       });
       await this.cleanup();
       return { success: false, error: errorMessage };
+    } finally {
+      this.isRefreshing = false;
     }
   }
 
@@ -226,12 +448,14 @@ export class CookieScanner {
         fs.mkdirSync(qrCodeDir, { recursive: true });
       }
 
-      // 浏览器用户数据持久化目录
+      // 浏览器用户数据持久化目录（每次刷新都使用新目录，确保干净环境）
+      // 使用固定的持久化用户数据目录
       const userDataDir = path.join(process.cwd(), 'data', 'browser_user_data', 'xiaohongshu');
       if (!fs.existsSync(userDataDir)) {
         fs.mkdirSync(userDataDir, { recursive: true });
       }
       logger.info(`📁 浏览器用户数据目录：${userDataDir}`);
+      logger.info('ℹ️ 使用持久化目录以保持登录状态');
 
       // 检测是否在 Docker 容器中运行（多种检测方式）
       const isDocker = fs.existsSync('/.dockerenv') || 
@@ -265,6 +489,7 @@ export class CookieScanner {
 
       // persistentContext 直接返回 BrowserContext，不需要再创建 context
       const context = await Promise.race([browserLaunchPromise, timeoutPromise]);
+      this.browser = context; // 保存引用以便 cleanup 时关闭
       
       logger.info(`浏览器启动成功（模式：${isDocker ? 'Docker 无头' : '本地有头'}，持久化：${userDataDir}）`);
 
@@ -411,7 +636,15 @@ export class CookieScanner {
         return 3000; // 60 秒后：每 3 秒检测
       };
 
-      const checkInterval = setInterval(async () => {
+      let stopped = false;
+
+      const scheduleNextCheck = () => {
+        if (stopped) return;
+        setTimeout(doCheck, getPollingInterval());
+      };
+
+      const doCheck = async () => {
+        if (stopped) return;
         checkCount++;
         const elapsed = Math.round((Date.now() - startTime) / 1000);
         
@@ -419,7 +652,7 @@ export class CookieScanner {
           const currentUrl = this.page.url();
 
           // 定期输出状态（每 10 秒）
-          if (checkCount % (10 / (getPollingInterval() / 1000)) === 0) {
+          if (elapsed % 10 === 0) {
             logger.debug(`等待中... (${elapsed}秒) URL: ${currentUrl}`);
           }
 
@@ -442,10 +675,8 @@ export class CookieScanner {
               
               if (hasAuthCookie) {
                 logger.info(`🎉 确认登录成功（URL: ${currentUrl}），找到认证 Cookie`);
-                clearTimeout(timer);
-                clearInterval(checkInterval);
-
-                // 精确提取 Cookie 关键字段
+                
+                // 使用原始 Cookie（不刷新页面，避免 Cookie 丢失）
                 const cookieDict: Record<string, string> = {};
                 const priorityKeys = ['a1', 'web_session', 'session_id', 'gid', 'api_settings', 'iminfo'];
                 
@@ -458,16 +689,20 @@ export class CookieScanner {
                 for (const key of priorityKeys) {
                   if (cookieDict[key]) {
                     cookieParts.push(`${key}=${cookieDict[key]}`);
-                    delete cookieDict[key]; // 避免重复
+                    delete cookieDict[key];
                   }
                 }
-                // 添加剩余 Cookie
                 for (const [name, value] of Object.entries(cookieDict)) {
                   cookieParts.push(`${name}=${value}`);
                 }
                 const cookieString = cookieParts.join('; ');
-
-                logger.info(`✅ 提取 Cookie 成功，包含 ${cookieParts.length} 个字段`);
+                
+                // 使用字符串模板确保输出
+                const logMsg = `✅ Cookie: 长度=${cookieString.length}, 字段数=${cookieParts.length}, 前 100 字符=${cookieString.substring(0, 100)}`;
+                logger.info(logMsg);
+                
+                stopped = true;
+                clearTimeout(timer);
                 resolve({ changed: true, loggedIn: true, cookie: cookieString });
                 return;
               } else {
@@ -507,8 +742,8 @@ export class CookieScanner {
                 
                 // 短暂等待让二维码完全渲染（1 秒足够）
                 await this.page.waitForTimeout(1000);
+                stopped = true;
                 clearTimeout(timer);
-                clearInterval(checkInterval);
                 logger.info('✅ 第二个二维码已就绪，准备截图');
                 resolve({ changed: true, loggedIn: false });
                 return;
@@ -528,8 +763,48 @@ export class CookieScanner {
           logger.debug('检查出错:', error instanceof Error ? error.message : error);
           // 忽略错误，继续轮询
         }
-      }, getPollingInterval());
+
+        // 安排下一次检查
+        scheduleNextCheck();
+      };
+
+      // 启动第一次检查
+      scheduleNextCheck();
     });
+  }
+
+  /**
+   * 提取 Cookie（通用方法）
+   */
+  private async extractCookie(): Promise<string | null> {
+    try {
+      const cookies = await this.page.context().cookies();
+      const cookieDict: Record<string, string> = {};
+      const priorityKeys = ['a1', 'web_session', 'session_id', 'gid', 'api_settings', 'iminfo'];
+      
+      cookies.forEach((c: any) => {
+        cookieDict[c.name] = c.value;
+      });
+      
+      // 优先提取关键字段，然后补充其他字段
+      const cookieParts: string[] = [];
+      for (const key of priorityKeys) {
+        if (cookieDict[key]) {
+          cookieParts.push(`${key}=${cookieDict[key]}`);
+          delete cookieDict[key];
+        }
+      }
+      for (const [name, value] of Object.entries(cookieDict)) {
+        cookieParts.push(`${name}=${value}`);
+      }
+      
+      const cookieString = cookieParts.join('; ');
+      logger.info(`🍪 提取 Cookie 成功，长度：${cookieString.length}, 字段数：${cookieParts.length}`);
+      return cookieString;
+    } catch (error) {
+      logger.error('提取 Cookie 失败:', error instanceof Error ? error.message : error);
+      return null;
+    }
   }
 
   /**
@@ -537,10 +812,27 @@ export class CookieScanner {
    */
   private async cleanupQRCode(filepath: string): Promise<void> {
     try {
-      if (fs.existsSync(filepath)) {
-        // 不立即删除，保留最近的二维码用于问题排查
-        // 由定时任务清理 7 天前的旧二维码
-        logger.info(`� 二维码已保留：${filepath}（7 天后自动清理）`);
+      // 清理 7 天前的旧二维码文件
+      const qrCodeDir = path.join(process.cwd(), 'data', 'qr_codes');
+      if (fs.existsSync(qrCodeDir)) {
+        const files = fs.readdirSync(qrCodeDir);
+        const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+        let cleanedCount = 0;
+        for (const file of files) {
+          const filePath = path.join(qrCodeDir, file);
+          try {
+            const stat = fs.statSync(filePath);
+            if (stat.mtimeMs < sevenDaysAgo) {
+              fs.unlinkSync(filePath);
+              cleanedCount++;
+            }
+          } catch (e) {
+            // 忽略单个文件的清理错误
+          }
+        }
+        if (cleanedCount > 0) {
+          logger.info(`🗑️ 已清理 ${cleanedCount} 个过期二维码/调试文件`);
+        }
       }
     } catch (error) {
       logger.warn('清理二维码失败:', error);
@@ -584,6 +876,10 @@ export class CookieScanner {
       
       const duration = Date.now() - cleanupStartTime;
       logger.info(`🗑️ 浏览器已清理（耗时：${duration}ms）`);
+      
+      // 不再清理持久化浏览器数据目录，保持登录状态
+      // const userDataDir = path.join(process.cwd(), 'data', 'browser_user_data');
+      // ... (保留用户数据)
     } catch (error) {
       logger.warn('清理浏览器失败:', error instanceof Error ? error.message : error);
       // 即使失败也要重置引用

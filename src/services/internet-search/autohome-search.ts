@@ -332,24 +332,23 @@ export class AutohomeSearch implements ISearchPlatform {
    * @returns 搜索结果数组
    */
   async search(keywords: string[], maxResults: number): Promise<SearchResult[]> {
-    try {
-      const keyword = keywords.join(' ');
-      logger.info(`开始搜索汽车之家："${keyword}"`);
+    const keyword = keywords.join(' ');
+    logger.info(`开始搜索汽车之家："${keyword}"`);
 
-      // 频率限制检查
-      await this.checkRateLimit();
-      
-      // 搜索间延迟
-      await this.searchDelay();
-      
-      const results = await this.searchViaPython(keyword, maxResults);
-      logger.info(`汽车之家搜索完成，返回 ${results.length} 条结果`);
-      
-      return results;
-    } catch (error) {
-      logger.error('汽车之家搜索��败', error);
-      return [];
+    // 频率限制检查
+    await this.checkRateLimit();
+    
+    // 搜索间延迟
+    await this.searchDelay();
+    
+    const results = await this.searchViaPython(keyword, maxResults);
+    logger.info(`汽车之家搜索完成，返回 ${results.length} 条结果`);
+    
+    if (results.length === 0) {
+      throw new Error('汽车之家搜索结果为空');
     }
+    
+    return results;
   }
 
   /**
@@ -366,6 +365,7 @@ export class AutohomeSearch implements ISearchPlatform {
       const pyProcess = spawn(pythonExecutable, args);
       let output = '';
       let errorOutput = '';
+      let settled = false;
 
       pyProcess.stdout.on('data', (data: Buffer) => {
         output += data.toString();
@@ -376,6 +376,9 @@ export class AutohomeSearch implements ISearchPlatform {
       });
 
       pyProcess.on('close', (code: number) => {
+        if (settled) return;
+        settled = true;
+
         if (code !== 0) {
           logger.warn(`Python 脚本退出码：${code}, 错误：${errorOutput}`);
           resolve([]);
@@ -396,7 +399,7 @@ export class AutohomeSearch implements ISearchPlatform {
             source: '汽车之家',
             url: item.url || '',
             author: item.author || '未知用户',
-            likes: item.replies || 0,
+            likes: item.views || 0,
             comments: item.replies || 0,
             imageUrls: item.images || [],
             publishTime: item.publish_time || undefined,
@@ -414,6 +417,8 @@ export class AutohomeSearch implements ISearchPlatform {
 
       // 超时处理（25 秒）
       setTimeout(() => {
+        if (settled) return;
+        settled = true;
         pyProcess.kill();
         logger.warn('搜索超时（25 秒）');
         resolve([]);

@@ -342,23 +342,56 @@ export class XiaohongshuSearch implements ISearchPlatform {
    * @returns 搜索结果数组
    */
   async search(keywords: string[], maxResults: number): Promise<SearchResult[]> {
-    try {
-      const keyword = keywords.join(' ');
-      logger.info(`开始搜索小红书："${keyword}"`);
+    const keyword = keywords.join(' ');
+    logger.info(`开始搜索小红书："${keyword}"`);
 
-      // 频率限制检查（滑动窗口）
-      await this.checkRateLimit();
+    // 每次搜索前从数据库加载最新 Cookie（确保使用最新值）
+    await this.ensureCookieLoaded();
+
+    if (!this.config.cookie) {
+      throw new Error('小红书 Cookie 未配置，无法搜索');
+    }
+
+    // 频率限制检查（滑动窗口）
+    await this.checkRateLimit();
+    
+    // 搜索间延迟（模拟人工操作）
+    await this.requestDelay();
+    
+    const results = await this.searchViaPython(keyword, maxResults);
+    logger.info(`小红书搜索完成，返回 ${results.length} 条结果`);
+    
+    if (results.length === 0) {
+      throw new Error('小红书搜索结果为空');
+    }
+    
+    return results;
+  }
+
+  /**
+   * 确保 Cookie 已从数据库加载（带 5 分钟缓存）
+   */
+  private cookieLoadedAt: number = 0;
+  private async ensureCookieLoaded(): Promise<void> {
+    const now = Date.now();
+    // 5 分钟缓存，避免频繁查数据库
+    if (this.config.cookie && (now - this.cookieLoadedAt < 5 * 60 * 1000)) {
+      return;
+    }
+    
+    try {
+      const storage = NetworkPostConfigStorage.getInstance();
+      const status = await storage.getCookieStatus();
       
-      // 搜索间延迟（模拟人工操作）
-      await this.requestDelay();
-      
-      const results = await this.searchViaPython(keyword, maxResults);
-      logger.info(`小红书搜索完成，返回 ${results.length} 条结果`);
-      
-      return results;
+      if (status.hasCookie && status.cookie) {
+        this.config.cookie = status.cookie;
+        this.cookieLoadedAt = now;
+        logger.debug('[XiaohongshuSearch] Cookie 从数据库加载成功');
+      } else {
+        logger.warn('[XiaohongshuSearch] 数据库中没有 Cookie');
+      }
     } catch (error) {
-      logger.error('小红书搜索失败', error);
-      return [];
+      logger.error('[XiaohongshuSearch] 加载 Cookie 失败:', error);
     }
   }
 
@@ -368,6 +401,10 @@ export class XiaohongshuSearch implements ISearchPlatform {
   private async searchViaPython(keyword: string, maxResults: number): Promise<SearchResult[]> {
     return new Promise((resolve, reject) => {
       const startTime = Date.now();
+      
+      // 记录参数信息
+      logger.info(`Python 调用：keyword="${keyword}", maxResults=${maxResults}, cookie 长度=${this.config.cookie?.length || 0}`);
+      
       const pythonScript = `
 import json
 import sys
@@ -375,16 +412,16 @@ import time
 import random
 import requests
 from xhshow import Xhshow
+import os
 
 try:
     cookie = sys.argv[1]
     keyword = sys.argv[2]
     max_results = int(sys.argv[3])
     
-    # 随机休眠 1-5 秒，模拟人工操作
+    # 随机休眠 1-5 秒，模拟人工操作（不输出日志，避免误判为错误）
     sleep_time = random.uniform(1, 5)
     time.sleep(sleep_time)
-    print(f"⏳ 随机休眠：{sleep_time:.2f}秒", file=sys.stderr)
     
     # Cookie 处理
     cookie = cookie.strip()
@@ -479,8 +516,8 @@ try:
         except Exception as e:
             continue
     
+    # 只输出 JSON 到 stdout，不输出其他信息（避免被误判为错误）
     print(json.dumps({"success": True, "notes": notes, "total": len(notes)}))
-    print(f"✅ 搜索完成，找到 {len(notes)} 条结果", file=sys.stderr)
     
 except Exception as e:
     import traceback
@@ -488,16 +525,20 @@ except Exception as e:
     sys.exit(1)
 `;
 
-      // 使用 Python 3.10+ (xhshow 需要)
-      const pythonExecutable = process.env.PYTHON_EXECUTABLE || '/opt/homebrew/bin/python3.10';
+      // 使用 Python 3 (Docker 环境中为 python3，本地开发可设置 PYTHON_EXECUTABLE 环境变量)
+      const pythonExecutable = process.env.PYTHON_EXECUTABLE || 'python3';
       const pyProcess = spawn(pythonExecutable, [
         '-c', 
         pythonScript, 
         this.config.cookie, 
         keyword, 
         maxResults.toString()
-      ]);
+      ], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
+      });
 
+      let settled = false;
       let output = '';
       let errorOutput = '';
 
@@ -510,13 +551,28 @@ except Exception as e:
         logger.warn('Python stderr:', data.toString());
       });
 
-      pyProcess.on('close', (code: number) => {
+      pyProcess.on('error', (err) => {
+        if (settled) return;
+        settled = true;
+        logger.error('Python 进程启动失败:', err);
+        reject(err);
+      });
+
+      pyProcess.on('close', (code: number, signal: string | null) => {
+        if (settled) return;
+        settled = true;
         const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
+        logger.info(`Python 进程结束 - 退出码：${code}, 信号：${signal}, stdout 长度：${output.length}, stderr 长度：${errorOutput.length}`);
         logger.debug('Python 输出:', output);
         logger.debug('Python 错误输出:', errorOutput);
-        logger.debug('Python 退出码:', code);
         
         if (code !== 0) {
+          // 记录详细错误信息
+          if (errorOutput.trim()) {
+            logger.error('Python 错误详情:', errorOutput);
+          } else {
+            logger.error(`Python 进程异常退出 - 退出码：${code}, 信号：${signal}, stdout: ${output.substring(0, 200)}`);
+          }
           reject(new Error(errorOutput || `Python 进程退出码：${code}`));
           return;
         }
@@ -557,6 +613,8 @@ except Exception as e:
 
       // 设置超时
       setTimeout(() => {
+        if (settled) return;
+        settled = true;
         pyProcess.kill();
         reject(new Error('搜索超时（30 秒）'));
       }, 30000);
@@ -774,7 +832,7 @@ result = get_note_detail_api(note_id, xsec_token, cookie)
 print(json.dumps(result, ensure_ascii=False))
 `;
 
-      const pythonExecutable = process.env.PYTHON_EXECUTABLE || '/opt/homebrew/bin/python3.10';
+      const pythonExecutable = process.env.PYTHON_EXECUTABLE || 'python3';
       const args = [
         '-c',
         pythonScript,

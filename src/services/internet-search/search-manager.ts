@@ -91,19 +91,21 @@ export class PlatformAwareKeywordSelector implements ISearchKeywordSelector {
 
   /**
    * 汽车之家搜索词选择
-   * 特点：使用精准的论坛术语，优先返回 card 类型结果
+   * 特点：使用精准的论坛术语，优先返回论坛帖子
    * 策略：
-   * - 包含"提车"、"作业"、"用车"等词优先（容易返回 card）
-   * - 2-4 字短词优先
-   * - 避免太宽泛的词（如"奥迪"会返回 box）
+   * - 包含"提车"、"作业"、"用车"等词优先
+   * - 纯车型词自动拼接论坛术语后缀（避免只返回车型卡片）
+   * - 避免太宽泛的词（如"奥迪"会返回综合结果无论坛帖子）
    */
   private selectAutohomeKeyword(keywords: string[]): string {
     if (keywords.length === 0) return '';
     
-    // 优先选择包含论坛术语的词
+    // 论坛术语列表
+    const forumTerms = ['提车', '作业', '用车', '试驾', '保养', '油耗', '改装', '故障', '维修'];
+    
+    // 优先选择已包含论坛术语的词
     const forumKeywords = keywords.filter(k => 
-      k.includes('提车') || k.includes('作业') || k.includes('用车') || 
-      k.includes('试驾') || k.includes('保养') || k.includes('油耗')
+      forumTerms.some(term => k.includes(term))
     );
     
     if (forumKeywords.length > 0) {
@@ -112,20 +114,17 @@ export class PlatformAwareKeywordSelector implements ISearchKeywordSelector {
       return keyword;
     }
     
-    // 其次选择 2-4 字短词
-    const shortKeywords = keywords.filter(k => k.length >= 2 && k.length <= 4);
+    // 没有论坛术语的词：选最长的车型词 + 拼接随机论坛术语
+    // 例如 "奥迪 Q5L" → "奥迪Q5L提车"
+    const suffixes = ['提车', '用车', '作业', '油耗', '保养'];
+    const suffix = suffixes[Math.floor(Date.now() / 3600000) % suffixes.length]; // 每小时换一个
     
-    if (shortKeywords.length > 0) {
-      const keyword = shortKeywords[0];
-      logger.debug(`汽车之家搜索词选择（短词）：${keyword}`);
-      return keyword;
-    }
+    // 选择最长的关键词（通常包含车型信息）
+    const longestKeyword = keywords.reduce((a, b) => a.length > b.length ? a : b);
+    const combined = `${longestKeyword.replace(/\s+/g, '')}${suffix}`;
     
-    // 如果没有短词，选择第一个关键词
-    const keyword = keywords[0];
-    logger.debug(`汽车之家搜索词选择：${keyword}`);
-    
-    return keyword;
+    logger.debug(`汽车之家搜索词选择（自动拼接）：${combined}（原词：${longestKeyword}）`);
+    return combined;
   }
 }
 

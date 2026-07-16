@@ -104,16 +104,12 @@ export class ZhihuSearch implements ISearchPlatform {
         return [];
       }
       
-      // 设置环境变量（供 Python 脚本使用）
-      process.env.ZHIHU_ACCESS_SECRET = config.accessSecret;
-      if (config.cookie) {
-        process.env.ZHIHU_COOKIE = config.cookie;
-        logger.info('知乎 Cookie 已设置（用于 Playwright 绕过安全验证）');
-      } else {
+      if (!config.cookie) {
         logger.warn('知乎 Cookie 未配置，Playwright 可能遇到安全验证');
       }
       
       // 使用知乎官方 API + Playwright 正文提取
+      // 注意：accessSecret 和 cookie 通过 stdin 传递给 Python 脚本，无需设置环境变量
       const results = await this.searchViaApiWithContent(keywords, maxResults, config.accessSecret, config.cookie);
       return results;
       
@@ -226,6 +222,7 @@ export class ZhihuSearch implements ISearchPlatform {
       const pyProcess = spawn(pythonExecutable, [scriptPath, '--from-stdin']);
       let output = '';
       let errorOutput = '';
+      let settled = false;
 
       pyProcess.stdin.write(JSON.stringify(inputData));
       pyProcess.stdin.end();
@@ -239,6 +236,9 @@ export class ZhihuSearch implements ISearchPlatform {
       });
 
       pyProcess.on('close', (code: number) => {
+        if (settled) return;
+        settled = true;
+
         if (code !== 0) {
           logger.warn(`Python 脚本退出码：${code}`);
           if (errorOutput) {
@@ -309,6 +309,8 @@ export class ZhihuSearch implements ISearchPlatform {
 
       // 超时处理（90 秒，给 Playwright 更多时间）
       setTimeout(() => {
+        if (settled) return;
+        settled = true;
         pyProcess.kill();
         logger.warn('Python 脚本执行超时，使用 Fallback 结果');
         resolve(this.mapToSearchResult(searchResults));
