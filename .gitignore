@@ -56,8 +56,19 @@ config/local.yaml
 *.temp
 temp-*/
 
-# Test files
+# One-off SQL scripts
+fix_*.sql
+cleanup_*.sql
+create_*.sql
+
+# Test files (root level)
 verify-*.js
 check-*.js
 create-*.js
 test-*.js
+test_*.js
+test_*.py
+test-*.py
+
+# Synology
+.synologyDriveIgnore
