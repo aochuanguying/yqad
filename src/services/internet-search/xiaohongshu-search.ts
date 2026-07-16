@@ -365,6 +365,37 @@ export class XiaohongshuSearch implements ISearchPlatform {
       throw new Error('小红书搜索结果为空');
     }
     
+    // 对前 2 条有 xsecToken 的结果补充完整正文（搜索 API 只返回 desc 摘要）
+    const enrichCount = Math.min(2, results.length);
+    for (let i = 0; i < enrichCount; i++) {
+      const result = results[i];
+      if (!result.xsecToken || !result.url) continue;
+      
+      // 从 URL 提取 noteId
+      const noteIdMatch = result.url.match(/explore\/([a-f0-9]+)/);
+      if (!noteIdMatch) continue;
+      
+      try {
+        const detail = await this.getNoteDetail(noteIdMatch[1], result.xsecToken);
+        if (detail.success && detail.data) {
+          // 用完整正文替换简短描述
+          if (detail.data.content && detail.data.content.length > (result.content?.length || 0)) {
+            results[i] = {
+              ...result,
+              content: detail.data.content,
+              imageUrls: detail.data.images.length > 0 ? detail.data.images : result.imageUrls,
+            };
+            logger.info(`【正文增强】笔记 ${noteIdMatch[1]} 正文补充成功（${detail.data.content.length} 字）`);
+          }
+        }
+        // 详情请求间随机延迟（避免风控）
+        await this.requestDelay();
+      } catch (err) {
+        logger.debug(`笔记 ${noteIdMatch[1]} 正文补充失败，使用搜索摘要：${err instanceof Error ? err.message : String(err)}`);
+        // 补充失败不影响整体结果
+      }
+    }
+    
     return results;
   }
 

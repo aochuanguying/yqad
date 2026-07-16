@@ -137,9 +137,6 @@ export async function search(): Promise<SearchResult[]> {
       return [];
     }
 
-    // 增加查询计数（Redis 持久化）
-    await searchRateLimitStorage.incrementQueryCount('global');
-
     // 使用搜索关键词查询
     const keywords = config.searchKeywords || ['奥迪', '奥迪 Q5L', '奥迪用车'];
     const maxResults = config.maxResults || 5;
@@ -153,6 +150,9 @@ export async function search(): Promise<SearchResult[]> {
       logger.warn('搜索结果为空');
       return [];
     }
+
+    // 搜索成功后再增加全局查询计数（避免失败时浪费配额）
+    await searchRateLimitStorage.incrementQueryCount('global');
 
     // 去水印处理（如果有图片）
     const processedResults: SearchResult[] = [];

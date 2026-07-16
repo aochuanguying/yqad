@@ -1134,7 +1134,7 @@ export class AutoPostService {
       const { detectPlagiarism } = plagiarismDetector || require('../utils/plagiarism-detector');
 
       // 检查频率限制
-      if (!canQuery()) {
+      if (!(await canQuery())) {
         logger.error('互联网参考查询频率超限，无法发帖');
         return { success: false, error: '互联网参考查询频率超限', source: 'free' };
       }
@@ -1176,46 +1176,43 @@ export class AutoPostService {
         // 上传图片（需要 accessToken）
         const imageUrls: string[] = [];
         if (imagePaths.length > 0) {
-          // 假设有可用的 token
-          const token = 'placeholder_token';
-          const uploadResult = await this.api.uploadImages(token, imagePaths);
-          imageUrls.push(...uploadResult.urls);
+          try {
+            const token = await this.authService.getAccessToken();
+            const uploadResult = await this.api.uploadImages(token, imagePaths);
+            imageUrls.push(...uploadResult.urls);
+          } catch (uploadErr: any) {
+            logger.warn(`图片上传失败，以纯文字方式继续：${uploadErr.message}`);
+          }
         }
         
-        // 发布帖子（通过 AutoJS 远程执行）
-        // 注意：publishPost 方法已移除，现在使用 AutoJS 远程发帖
-        const publishResult = { success: true, postId: `autojs_${Date.now()}` };
+        // 生成 taskId，通过 AutoJS 远程执行发帖
+        const taskId = `autojs_free_${Date.now()}`;
         
-        if (publishResult.success && publishResult.postId) {
-          logger.info(`自由发帖成功：${generated.title}`);
-          
-          // 记录日志
-          const logId = await postLoggingService.log({
-            timestamp: Date.now(),
-            triggerType: 'auto',
-            postType: 'free',
-            mode: featuredEnabled ? 'featured' : 'normal',
-            title: generated.title,
-            content: generated.content,
-            imageUrls,
-            status: 'success',
-          });
-          
-          return {
-            success: true,
-            postId: publishResult.postId,
-            title: generated.title,
-            source: 'free',
-            mode: featuredEnabled ? 'featured' : 'normal',
-          };
-        } else {
-          logger.error(`发布失败`);
-          return {
-            success: false,
-            error: `发布失败`,
-            source: 'free',
-          };
-        }
+        // 记录日志（状态为 pending，等待 AutoJS 回调确认）
+        await postLoggingService.log({
+          timestamp: Date.now(),
+          triggerType,
+          postType: 'free',
+          mode: featuredEnabled ? 'featured' : 'normal',
+          title: generated.title,
+          content: generated.content,
+          imageUrls,
+          status: 'pending',
+          taskId,
+        });
+        
+        logger.info(`自由发帖内容生成成功（等待 AutoJS 回调）：${generated.title}`);
+        
+        return {
+          success: true,
+          postId: taskId,
+          title: generated.title,
+          content: generated.content,
+          imageUrls,
+          taskId,
+          source: 'free',
+          mode: featuredEnabled ? 'featured' : 'normal',
+        };
       }
 
       logger.info(`获取到 ${references.length} 篇互联网参考素材（已包含去水印处理）`);
