@@ -204,6 +204,8 @@ export async function getXiaohongshuNoteDetail(
     logger.info(`开始获取小红书笔记详情：${noteId}`);
     
     const xiaohongshu = new XiaohongshuSearch();
+    // 确保 Cookie 已加载（独立调用时不会经过 search() 的 ensureCookieLoaded）
+    await xiaohongshu.initialize();
     const result = await xiaohongshu.getNoteDetail(noteId, xsecToken);
     
     if (result.success) {
@@ -234,7 +236,7 @@ function sleep(ms: number): Promise<void> {
  */
 export async function resetQueryCount(): Promise<void> {
   try {
-    await searchRateLimitStorage.incrementQueryCount('global'); // Redis key 会自动按小时过期
+    await searchRateLimitStorage.resetQueryCount('global');
     logger.info('查询计数器已重置');
   } catch (error) {
     logger.warn('重置查询计数器失败:', error);

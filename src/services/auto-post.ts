@@ -1273,37 +1273,13 @@ export class AutoPostService {
       try {
         logger.info('开始应用多样化变换（自由发帖）...');
         
-        // 标题变换（50% 概率）
+        // 标题变换（50% 概率）— 仅记录日志，不做硬编码前缀拼接
+        // 真正的标题多样化由 AI 内容生成时通过 prompt 实现
         let finalTitle = generated.title;
-        if (Math.random() < 0.5) {
-          const styles: Array<'疑问式' | '数字式' | '对比式' | '故事式' | '警告式'> = 
-            ['疑问式', '数字式', '对比式', '故事式', '警告式'];
-          const randomStyle = styles[Math.floor(Math.random() * styles.length)];
-          
-          try {
-            // 使用 AI 生成变体标题（简化版本，直接修改标题）
-            finalTitle = `[${randomStyle}] ${generated.title}`;
-            logger.info(`【多样化】自由发帖标题变换：${randomStyle}`);
-          } catch (err) {
-            logger.warn(`标题变换失败，使用原标题：${err instanceof Error ? err.message : String(err)}`);
-          }
-        }
         
-        // 内容变换（30% 概率）
+        // 内容变换（30% 概率）— 仅记录日志
+        // 真正的内容多样化由 AI 内容生成时通过 prompt 实现
         let finalContent = generated.content;
-        if (Math.random() < 0.3) {
-          const techniques: Array<'增加细节' | '调整语气' | '改变结构' | '替换词汇'> = 
-            ['增加细节', '调整语气', '改变结构', '替换词汇'];
-          const randomTechnique = techniques[Math.floor(Math.random() * techniques.length)];
-          
-          try {
-            // 使用 AI 生成变体内容（简化版本，直接返回原内容）
-            finalContent = generated.content;
-            logger.info(`【多样化】自由发帖内容变换：${randomTechnique}`);
-          } catch (err) {
-            logger.warn(`内容变换失败，使用原内容：${err instanceof Error ? err.message : String(err)}`);
-          }
-        }
         
         // 更新生成的内容
         generated.title = finalTitle;
@@ -1423,75 +1399,44 @@ export class AutoPostService {
       }
 
       // 发布帖子（通过 AutoJS 远程执行）
-      // 注意：publishPost 方法已移除，现在使用 AutoJS 远程发帖
-      const response = { success: true, postId: `autojs_${Date.now()}` };
+      // 生成 taskId，实际发帖由 AutoJS 脚本通过回调确认
+      const taskId = `autojs_free_${Date.now()}`;
       
-      if (response.success) {
-        // 记录发帖历史，包含来源信息
-        this.recordPost(response.postId, generated.title, `互联网参考：${references[0].source}`);
-        
-        // 记录发帖日志（使用最终模式）
-        try {
-          postLoggingService.log({
-            timestamp: Date.now(),
-            triggerType,
-            postType: 'free',
-            mode: finalMode,
-            title: generated.title,
-            content: generated.content,
-            imageUrls,
-            status: 'success',
-            taskId: response.postId,
-          });
-          logger.debug(`已记录${triggerType === 'manual' ? '手动' : '自动'}自由发帖日志：${generated.title}`);
-        } catch (logError: any) {
-          logger.warn(`记录发帖日志失败：${logError.message}，不影响发帖主流程`);
-        }
-        
-        logger.info(`✓ 互联网参考模式发帖成功："${generated.title}" (mode=${finalMode})`);
-        // 清理过期临时图片
-        cleanTempImages();
-        return { 
-          success: true, 
-          postId: response.postId, 
-          title: generated.title, 
-          content: generated.content,
-          imageUrls,
-          taskId: response.postId,
-          source: 'free', 
-          mode: finalMode, 
-          featuredReadiness 
-        };
-      } else {
-        // 记录失败日志（使用最终模式）
-        try {
-          postLoggingService.log({
-            timestamp: Date.now(),
-            triggerType,
-            postType: 'free',
-            mode: finalMode,
-            title: generated.title,
-            content: generated.content,
-            imageUrls,
-            status: 'failed',
-            errorMessage: '发布失败',
-            taskId: undefined,
-          });
-        } catch (logError: any) {
-          logger.warn(`记录发帖失败日志失败：${logError.message}`);
-        }
-        
-        return { 
-          success: false, 
-          error: '发布失败', 
+      // 记录发帖历史，包含来源信息
+      this.recordPost(taskId, generated.title, `互联网参考：${references[0].source}`);
+      
+      // 记录发帖日志（状态为 pending，等待 AutoJS 回调确认）
+      try {
+        postLoggingService.log({
+          timestamp: Date.now(),
+          triggerType,
+          postType: 'free',
+          mode: finalMode,
           title: generated.title,
           content: generated.content,
           imageUrls,
-          source: 'free', 
-          mode: finalMode, 
-          featuredReadiness 
-        };
+          status: 'pending',
+          taskId,
+        });
+        logger.debug(`已记录${triggerType === 'manual' ? '手动' : '自动'}自由发帖日志（等待回调）：${generated.title}`);
+      } catch (logError: any) {
+        logger.warn(`记录发帖日志失败：${logError.message}，不影响发帖主流程`);
       }
+      
+      logger.info(`✓ 互联网参考模式内容生成成功："${generated.title}" (mode=${finalMode}，等待 AutoJS 回调)`);
+      // 清理过期临时图片
+      cleanTempImages();
+      return { 
+        success: true, 
+        postId: taskId, 
+        title: generated.title, 
+        content: generated.content,
+        imageUrls,
+        taskId,
+        source: 'free', 
+        mode: finalMode, 
+        featuredReadiness 
+      };
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       logger.error(`互联网参考模式失败：${errorMsg}`);
