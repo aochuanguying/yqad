@@ -22,7 +22,8 @@ COPY scripts ./scripts
 
 # 安装浏览器依赖、Xvfb 和必要工具
 USER root
-RUN apt-get update && apt-get install -y \
+RUN sed -i 's|http://deb.debian.org|http://mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update && apt-get install -y \
     xvfb \
     curl \
     wget \
