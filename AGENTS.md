@@ -17,7 +17,7 @@
 - 生产部署服务器（x5-server）: `192.168.50.10`，用户 `root`，密码 `Wfw7539148@`
   - Docker 数据目录: `/opt/docker/yqad/`
   - 编排文件: `/opt/docker/docker-compose.yml`
-  - 网络模式: host（桥接网络有连通性问题）
+  - 网络模式: host（Docker 29 nftables 桥接端口映射对外部客户端不可用）
   - 服务端口: 3080（3000 被 Nginx Proxy Manager 占用）
   - 访问地址: `http://192.168.50.10:3080`
 
