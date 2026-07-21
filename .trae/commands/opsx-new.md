@@ -1,24 +1,17 @@
 ---
-name: openspec-new-change
-description: 使用实验性产出物工作流启动新的 OpenSpec 变更。当用户想以结构化的分步方法创建新功能、修复或修改时使用。
-allowed-tools: Bash(openspec-cn:*)
-license: MIT
-compatibility: 需要 openspec-cn CLI。
-metadata:
-  author: openspec
-  version: "1.0"
-  generatedBy: "1.6.0"
+name: "OPSX: New"
+description: 使用实验性产出物工作流启动新变更（OPSX）
 ---
 
 使用实验性产出物驱动方法启动新变更。
 
 **Store 选择：** 如果用户指定了某个 Store（Store 是在本机注册的独立 OpenSpec 仓库），或者工作位于某个 Store 中，请运行 `openspec-cn store list --json` 来查找已注册的 Store ID，然后在读写规范和变更的命令上传递 `--store <id>` 参数（`new change`、`status`、`instructions`、`list`、`show`、`validate`、`archive`、`doctor`、`context`）。其他命令不需要此参数。命令输出的提示信息中已包含该参数；请在后续操作中保留它。如果没有指定 Store，命令将对最近的本地 `openspec/` 根目录生效。
 
-**输入**：用户的请求应当包含变更名（kebab-case）或对想要构建内容的描述。
+**输入**：`/opsx:new` 之后的参数是变更名（kebab-case），或用户想要构建内容的描述。
 
 **步骤**
 
-1. **如果没有提供明确的输入，询问他们想要构建什么**
+1. **如果没有提供输入，询问他们想要构建什么**
 
    使用 **AskUserQuestion tool**（开放式，无预设选项）询问：
    > "您想要处理什么变更？请描述您想要构建或修复的内容。"
@@ -51,8 +44,7 @@ metadata:
    使用返回的 `planningHome`、`changeRoot`、`artifactPaths` 和 `nextSteps`，而不是假设仓库本地路径。
 
 5. **获取第一个产出物的指令**
-   第一个产出物取决于 schema（例如 spec-driven 的 `proposal`）。
-   检查状态输出找到第一个 status 为 "ready" 的产出物。
+   第一个产出物取决于 schema。检查状态输出找到第一个 status 为 "ready" 的产出物。
    ```bash
    openspec-cn instructions <first-artifact-id> --change "<name>"
    ```
@@ -67,11 +59,11 @@ metadata:
 - 使用的 schema/工作流及其产出物序列
 - 当前状态（0/N 个产出物已完成）
 - 第一个产出物的模板
-- 提示："准备好创建第一个产出物了吗？只要描述这个变更是关于什么的，我来起草，或让我继续。"
+- 提示："准备好创建第一个产出物了吗？运行 `/opsx:continue`，或直接描述这个变更是关于什么的，我来起草。"
 
 **护栏**
 - 不要创建任何产出物 - 仅展示指令
 - 不要超出展示第一个产出物模板的范围
 - 若名称无效（非 kebab-case），请求有效名称
-- 若同名变更已存在，建议继续处理该变更
+- 若同名变更已存在，建议改用 `/opsx:continue`
 - 若使用非默认工作流则传递 --schema

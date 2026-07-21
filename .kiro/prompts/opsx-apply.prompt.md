@@ -1,20 +1,12 @@
 ---
-name: openspec-apply-change
-description: 从 OpenSpec 变更中实现任务。当用户想开始实现、继续实现或处理任务时使用。
-allowed-tools: Bash(openspec-cn:*)
-license: MIT
-compatibility: 需要 openspec-cn CLI。
-metadata:
-  author: openspec
-  version: "1.0"
-  generatedBy: "1.6.0"
+description: 从 OpenSpec 变更中实现任务（实验性）
 ---
 
 从 OpenSpec 变更中实现任务。
 
 **Store 选择：** 如果用户指定了某个 Store（Store 是在本机注册的独立 OpenSpec 仓库），或者工作位于某个 Store 中，请运行 `openspec-cn store list --json` 来查找已注册的 Store ID，然后在读写规范和变更的命令上传递 `--store <id>` 参数（`new change`、`status`、`instructions`、`list`、`show`、`validate`、`archive`、`doctor`、`context`）。其他命令不需要此参数。命令输出的提示信息中已包含该参数；请在后续操作中保留它。如果没有指定 Store，命令将对最近的本地 `openspec/` 根目录生效。
 
-**输入**：可选地指定变更名。若省略，检查能否从对话上下文推断。若模糊或歧义，你必须提示用户从可用变更中选择。
+**输入**：可选地在 `/opsx:apply` 后指定变更名（例如 `/opsx:apply add-auth`）。若省略，检查能否从对话上下文推断。若模糊或歧义，你必须提示用户从可用变更中选择。
 
 **步骤**
 
@@ -43,13 +35,13 @@ metadata:
    ```
 
    返回：
-   - `contextFiles`：产出物 ID -> 具体文件路径数组（因 schema 而异 - 可能是 proposal/specs/design/tasks 或 spec/tests/implementation/docs）
+   - `contextFiles`：产出物 ID -> 具体文件路径数组（因 schema 而异）
    - 进度（总数、已完成、剩余）
    - 带状态的任务列表
    - 基于当前状态的动态指令
 
    **处理状态：**
-   - 若 `state: "blocked"`（缺失产出物）：展示消息，建议使用 openspec-continue-change
+   - 若 `state: "blocked"`（缺失产出物）：展示消息，建议使用 `/opsx:continue`
    - 若 `state: "all_done"`：祝贺，建议归档
    - 否则：继续实现
 
@@ -119,7 +111,7 @@ metadata:
 - [x] 任务 2
 ...
 
-所有任务完成！准备归档此变更。
+所有任务完成！你可以使用 `/opsx:archive` 归档此变更。
 ```
 
 **暂停时输出（遇到问题）**

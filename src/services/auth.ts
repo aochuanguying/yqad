@@ -184,6 +184,8 @@ export class AuthService {
 
   /**
    * 检查 Token 是否需要刷新，如需刷新则主动发起请求
+   * 
+   * 优化逻辑：不依赖响应头，调用 getMemberInfo() 成功后即认为 Token 已续期
    */
   private async checkAndRefreshToken(): Promise<void> {
     if (!this.token?.accessToken) {
@@ -218,7 +220,14 @@ export class AuthService {
           logger.info('开始调用 getMemberInfo() 刷新 Token...');
           await (this.api as any).getMemberInfo(this.token.accessToken);
           const duration = Date.now() - beforeTime;
-          const extendedHours = (this.token.expiresAt - beforeExpiresAt) / 1000 / 3600;
+          
+          // 不依赖响应头，调用成功后直接重置过期时间为 83 小时
+          const newExpiresAt = Date.now() + 83 * 3600 * 1000;
+          this.token.expiresAt = newExpiresAt;
+          this.token.savedAt = Date.now();
+          this.persistTokenToRedis();
+          
+          const extendedHours = (newExpiresAt - beforeExpiresAt) / 1000 / 3600;
           
           logger.info('========================================');
           logger.info('【Token 主动刷新结果 - 成功】');
@@ -226,9 +235,9 @@ export class AuthService {
           logger.info(`  请求耗时：${duration}ms`);
           logger.info(`  刷新状态：✅ 成功`);
           logger.info(`  续期前过期时间：${new Date(beforeExpiresAt).toLocaleString('zh-CN')}`);
-          logger.info(`  续期后过期时间：${new Date(this.token.expiresAt).toLocaleString('zh-CN')}`);
+          logger.info(`  续期后过期时间：${new Date(newExpiresAt).toLocaleString('zh-CN')}`);
           logger.info(`  延长小时数：${extendedHours.toFixed(1)} 小时`);
-          logger.info(`  ���新后 Token: ${tokenPrefix}`);
+          logger.info(`  刷新后 Token: ${tokenPrefix}`);
           logger.info('========================================');
         } else {
           logger.warn('API 未初始化或不支持 getMemberInfo，无法主动刷新 Token');

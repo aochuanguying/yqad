@@ -1,20 +1,13 @@
 ---
-name: openspec-continue-change
-description: 通过创建下一个产出物来继续处理 OpenSpec 变更。当用户想推进变更、创建下一个产出物或继续工作流时使用。
-allowed-tools: Bash(openspec-cn:*)
-license: MIT
-compatibility: 需要 openspec-cn CLI。
-metadata:
-  author: openspec
-  version: "1.0"
-  generatedBy: "1.6.0"
+name: "OPSX: Continue"
+description: 继续处理变更 - 创建下一个产出物（实验性）
 ---
 
 通过创建下一个产出物来继续处理变更。
 
 **Store 选择：** 如果用户指定了某个 Store（Store 是在本机注册的独立 OpenSpec 仓库），或者工作位于某个 Store 中，请运行 `openspec-cn store list --json` 来查找已注册的 Store ID，然后在读写规范和变更的命令上传递 `--store <id>` 参数（`new change`、`status`、`instructions`、`list`、`show`、`validate`、`archive`、`doctor`、`context`）。其他命令不需要此参数。命令输出的提示信息中已包含该参数；请在后续操作中保留它。如果没有指定 Store，命令将对最近的本地 `openspec/` 根目录生效。
 
-**输入**：可选地指定变更名。若省略，检查能否从对话上下文推断。若模糊或歧义，你必须提示用户从可用变更中选择。
+**输入**：可选地在 `/opsx:continue` 后指定变更名（例如 `/opsx:continue add-auth`）。若省略，检查能否从对话上下文推断。若模糊或歧义，你必须提示用户从可用变更中选择。
 
 **步骤**
 
@@ -49,7 +42,7 @@ metadata:
    **若所有产出物已完成（`isComplete: true`）**：
    - 祝贺用户
    - 展示包含所用 schema 的最终状态
-   - 建议："所有产出物已创建！你现在可以实现此变更或归档它。"
+   - 建议："所有产出物已创建！你现在可以用 `/opsx:apply` 实现此变更或用 `/opsx:archive` 归档它。"
    - 停止
 
    ---
@@ -93,7 +86,7 @@ metadata:
 - 使用的 schema 工作流
 - 当前进度（N/M 已完成）
 - 现在解锁了哪些产出物
-- 提示："想继续吗？只要让我继续或告诉我接下来做什么。"
+- 提示："运行 `/opsx:continue` 创建下一个产出物"
 
 **产出物创建指南**
 

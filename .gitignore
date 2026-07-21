@@ -36,6 +36,7 @@ coverage/
 .env
 .env.local
 .env.*.local
+.env.production
 
 # IDE
 .vscode/
@@ -72,3 +73,10 @@ test-*.py
 
 # Synology
 .synologyDriveIgnore
+
+# Browser persistent data
+scripts/zhihu_browser_data/
+scripts/xiaohongshu_browser_data/
+
+# Database backups
+database/backups/

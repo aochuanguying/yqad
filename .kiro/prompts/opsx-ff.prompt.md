@@ -1,24 +1,16 @@
 ---
-name: openspec-ff-change
-description: 快速推进 OpenSpec 产出物创建。当用户想快速创建实现所需的所有产出物而无需逐个处理时使用。
-allowed-tools: Bash(openspec-cn:*)
-license: MIT
-compatibility: 需要 openspec-cn CLI。
-metadata:
-  author: openspec
-  version: "1.0"
-  generatedBy: "1.6.0"
+description: 创建变更并一次性生成实现所需的所有产出物
 ---
 
 快速推进产出物创建 - 一次性生成开始实现所需的所有内容。
 
 **Store 选择：** 如果用户指定了某个 Store（Store 是在本机注册的独立 OpenSpec 仓库），或者工作位于某个 Store 中，请运行 `openspec-cn store list --json` 来查找已注册的 Store ID，然后在读写规范和变更的命令上传递 `--store <id>` 参数（`new change`、`status`、`instructions`、`list`、`show`、`validate`、`archive`、`doctor`、`context`）。其他命令不需要此参数。命令输出的提示信息中已包含该参数；请在后续操作中保留它。如果没有指定 Store，命令将对最近的本地 `openspec/` 根目录生效。
 
-**输入**：用户的请求应当包含变更名（kebab-case）或对想要构建内容的描述。
+**输入**：`/opsx:ff` 之后的参数是变更名（kebab-case），或用户想要构建内容的描述。
 
 **步骤**
 
-1. **如果没有提供明确的输入，询问他们想要构建什么**
+1. **如果没有提供输入，询问他们想要构建什么**
 
    使用 **AskUserQuestion tool**（开放式，无预设选项）询问：
    > "您想要处理什么变更？请描述您想要构建或修复的内容。"
@@ -85,7 +77,7 @@ metadata:
 - 变更名称和位置
 - 已创建产出物的列表及简要描述
 - 准备就绪："所有产出物已创建！准备好实现。"
-- 提示："运行 `/opsx:apply` 或要求我实现以开始处理任务。"
+- 提示："运行 `/opsx:apply` 以开始实现。"
 
 **产出物创建指南**
 
@@ -101,5 +93,5 @@ metadata:
 - 创建实现所需的所有产出物（由 Schema 的 `apply.requires` 定义）
 - 在创建新产出物之前始终阅读依赖产出物
 - 如果上下文极其不清楚，询问用户 - 但倾向于做出合理的决定以保持势头
-- 如果同名变更已存在，建议继续处理该变更
+- 如果同名变更已存在，询问用户是否要继续处理它或创建一个新的
 - 在继续下一个之前，验证写入后每个产出物文件是否存在

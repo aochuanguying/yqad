@@ -1,13 +1,6 @@
 ---
-name: openspec-onboard
-description: OpenSpec 引导式入门 - 通过讲解和真实代码库工作走完一个完整的工作流周期。
-allowed-tools: Bash(openspec-cn:*)
-license: MIT
-compatibility: 需要 openspec-cn CLI。
-metadata:
-  author: openspec
-  version: "1.0"
-  generatedBy: "1.6.0"
+name: "OPSX: Onboard"
+description: 引导式入门 - 通过讲解走完一个完整 OpenSpec 工作流周期
 ---
 
 引导用户完成他们的第一个完整 OpenSpec 工作流周期。这是一次教学体验——你将在他们的代码库中做真实工作，同时解释每一步。

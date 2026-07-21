@@ -1,20 +1,13 @@
 ---
-name: openspec-archive-change
-description: 在实验性工作流中归档已完成的变更。当用户想在实现完成后定稿并归档变更时使用。
-allowed-tools: Bash(openspec-cn:*)
-license: MIT
-compatibility: 需要 openspec-cn CLI。
-metadata:
-  author: openspec
-  version: "1.0"
-  generatedBy: "1.6.0"
+name: "OPSX: Archive"
+description: 在实验性工作流中归档已完成的变更
 ---
 
 在实验性工作流中归档已完成的变更。
 
 **Store 选择：** 如果用户指定了某个 Store（Store 是在本机注册的独立 OpenSpec 仓库），或者工作位于某个 Store 中，请运行 `openspec-cn store list --json` 来查找已注册的 Store ID，然后在读写规范和变更的命令上传递 `--store <id>` 参数（`new change`、`status`、`instructions`、`list`、`show`、`validate`、`archive`、`doctor`、`context`）。其他命令不需要此参数。命令输出的提示信息中已包含该参数；请在后续操作中保留它。如果没有指定 Store，命令将对最近的本地 `openspec/` 根目录生效。
 
-**输入**：可选地指定变更名。若省略，检查能否从对话上下文推断。若模糊或歧义，必须提示用户从可用变更中选择。
+**输入**：可选地在 `/opsx:archive` 后指定变更名（例如 `/opsx:archive add-auth`）。若省略，检查能否从对话上下文推断。若模糊或歧义，必须提示用户从可用变更中选择。
 
 **步骤**
 
@@ -38,7 +31,7 @@ metadata:
 
    **若有产出物未 `done`：**
    - 展示警告列出未完成产出物
-   - 使用 **AskUserQuestion tool** 确认用户是否继续
+   - 提示用户确认是否继续
    - 用户确认则继续
 
 3. **检查任务完成状态**
@@ -49,7 +42,7 @@ metadata:
 
    **若发现未完成任务：**
    - 展示警告显示未完成任务数
-   - 使用 **AskUserQuestion tool** 确认用户是否继续
+   - 提示用户确认是否继续
    - 用户确认则继续
 
    **若无任务文件：** 无任务相关警告地继续。
@@ -92,7 +85,7 @@ metadata:
    - 变更名
    - 使用的 schema
    - 归档位置
-   - specs 是否已同步（如适用）
+   - spec 同步状态（已同步 / 跳过同步 / 无 delta specs）
    - 关于任何警告的说明（未完成产出物/任务）
 
 **成功时输出**
@@ -103,9 +96,56 @@ metadata:
 **变更：** <change-name>
 **Schema：** <schema-name>
 **归档到：** 从 `planningHome.changesDir`/YYYY-MM-DD-<name>/ 派生的归档路径
-**Specs：** ✓ 已同步到主 specs（或 "无 delta specs" 或 "跳过同步"）
+**Specs：** ✓ 已同步到主 specs
 
 所有产出物完成。所有任务完成。
+```
+
+**成功时输出（无 Delta Specs）**
+
+```
+## 归档完成
+
+**变更：** <change-name>
+**Schema：** <schema-name>
+**归档到：** 从 `planningHome.changesDir`/YYYY-MM-DD-<name>/ 派生的归档路径
+**Specs：** 无 delta specs
+
+所有产出物完成。所有任务完成。
+```
+
+**成功时输出（带警告）**
+
+```
+## 归档完成（带警告）
+
+**变更：** <change-name>
+**Schema：** <schema-name>
+**归档到：** 从 `planningHome.changesDir`/YYYY-MM-DD-<name>/ 派生的归档路径
+**Specs：** 跳过同步（用户选择跳过）
+
+**警告：**
+- 带 2 个未完成产出物归档
+- 带 3 个未完成任务归档
+- Delta spec 同步被跳过（用户选择跳过）
+
+若非有意，请审查归档。
+```
+
+**出错时输出（归档已存在）**
+
+```
+## 归档失败
+
+**变更：** <change-name>
+**目标：** 从 `planningHome.changesDir`/YYYY-MM-DD-<name>/ 派生的归档路径
+
+目标归档目录已存在。
+
+**选项：**
+1. 重命名现有归档
+2. 若是重复则删除现有归档
+3. 等到不同日期再归档
 ```
 
 **护栏**
@@ -114,5 +154,5 @@ metadata:
 - 不要因警告阻止归档 - 仅告知并确认
 - 移动到归档时保留 .openspec.yaml（随目录一起移动）
 - 展示清晰的发生了什么汇总
-- 若请求同步，使用 openspec-sync-specs 方式（代理驱动）
+- 若请求同步，使用 Skill tool 调用 `openspec-sync-specs`（代理驱动）
 - 若存在 delta specs，始终运行同步评估并在提示前展示合并汇总
