@@ -36,7 +36,7 @@ export class MySQLConnectionManager {
       // 从配置文件读取 MySQL 连接信息
       const config = loadConfig();
       const mysqlConfig = (config as any).mysql;
-      const env = process.env.NODE_ENV === 'production' ? 'production' : 'test';
+      const env = process.env.NODE_ENV === 'production' ? 'production' : ((config as any).env === 'production' ? 'production' : 'test');
       const dbConfig = mysqlConfig?.[env] || mysqlConfig || {};
 
       const host = dbConfig.host;

@@ -144,18 +144,30 @@ export async function prepareImageForVision(filePath: string): Promise<string | 
     const metadata = await image.metadata();
 
     let pipeline = image;
-    const maxDim = 2048;
+    // 限制最大尺寸为 768px（平衡质量和请求体大小）
+    const maxDim = 768;
     if ((metadata.width || 0) > maxDim || (metadata.height || 0) > maxDim) {
       pipeline = pipeline.resize(maxDim, maxDim, { fit: 'inside' });
     }
 
-    const buffer = await pipeline.jpeg({ quality: 85 }).toBuffer();
+    const buffer = await pipeline.jpeg({ quality: 60 }).toBuffer();
     const base64 = buffer.toString('base64');
 
-    // 检查大小（20MB ≈ 20 * 1024 * 1024 字符）
-    if (base64.length > 20 * 1024 * 1024) {
-      logger.warn(`图片压缩后 base64 仍超过 20MB: ${filePath} (${(base64.length / 1024 / 1024).toFixed(1)}MB)`);
-      return null;
+    // 检查大小（限制 base64 在 200KB 以内，确保整个请求体不超过上游限制）
+    const sizeKB = base64.length / 1024;
+    if (sizeKB > 200) {
+      // 进一步压缩
+      const smallerBuffer = await sharp(filePath)
+        .resize(512, 512, { fit: 'inside' })
+        .jpeg({ quality: 45 })
+        .toBuffer();
+      const smallerBase64 = smallerBuffer.toString('base64');
+      
+      if (smallerBase64.length / 1024 > 200) {
+        logger.warn(`图片压缩后仍超过 200KB，跳过 Vision: ${filePath} (${(smallerBase64.length / 1024).toFixed(0)}KB)`);
+        return null;
+      }
+      return smallerBase64;
     }
 
     return base64;

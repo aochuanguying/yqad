@@ -13,6 +13,7 @@
  */
 
 import { ChromaClient, Collection } from 'chromadb';
+import { loadConfig } from './config';
 import { getLogger } from './logger';
 
 const logger = getLogger('chroma-connection');
@@ -45,7 +46,8 @@ export interface CollectionConfig {
  * 获取环境前缀
  */
 function getEnvironmentPrefix(): string {
-  const env = process.env.NODE_ENV || 'development';
+  const config = loadConfig();
+  const env = process.env.NODE_ENV || (config as any).env || 'development';
   const isProduction = env === 'production';
   // 使用下划线而不是冒号，因为 ChromaDB 不支持冒号
   return isProduction ? 'prod_' : 'dev_';

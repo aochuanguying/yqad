@@ -7,22 +7,13 @@ WORKDIR /app
 # 设置环境变量
 ENV NODE_ENV=production \
     PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
-    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+    PLAYWRIGHT_DOWNLOAD_HOST=https://npmmirror.com/mirrors/playwright
 
-# 复制 package.json
-COPY package*.json ./
-
-# 安装依赖（生产环境）
-RUN npm ci --only=production && npm cache clean --force
-
-# 复制应用代码
-COPY dist ./dist
-COPY config ./config
-COPY scripts ./scripts
-
-# 安装浏览器依赖、Xvfb 和必要工具
+# ============ 第一层：系统依赖（极少变动）============
 USER root
 RUN sed -i 's|http://deb.debian.org|http://mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
+    && sed -i 's|https://deb.debian.org|http://mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
     && apt-get update && apt-get install -y \
     xvfb \
     curl \
@@ -35,22 +26,31 @@ RUN sed -i 's|http://deb.debian.org|http://mirrors.aliyun.com|g' /etc/apt/source
     python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
-# 安装 pillow-heif（更好的 HEIC 支持）和 requests、xhshow 库
-RUN python3 -m pip install --no-cache-dir --break-system-packages pillow-heif requests xhshow || pip install --no-cache-dir --break-system-packages pillow-heif requests xhshow || true
+# ============ 第二层：Python 依赖（极少变动）============
+RUN python3 -m pip install --no-cache-dir --break-system-packages \
+    -i https://pypi.tuna.tsinghua.edu.cn/simple \
+    pillow-heif requests xhshow playwright || true
 
-# 安装 Playwright 依赖
+# ============ 第三层：npm 依赖（仅 package.json 变动时重建）============
+COPY package*.json ./
+RUN npm config set registry https://registry.npmmirror.com && \
+    npm ci --only=production && npm cache clean --force
+
+# ============ 第四层：Playwright 浏览器（极少变动）============
 RUN npx playwright install chromium --with-deps
 
-# 创建必要的目录
-RUN mkdir -p /app/data/qr_codes \
-    && mkdir -p /app/logs
+# ============ 第五层：目录与入口脚本（极少变动）============
+RUN mkdir -p /app/data/qr_codes /app/logs
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
+# ============ 第六层：应用代码（频繁变动，放最后）============
+COPY dist ./dist
+COPY config ./config
+COPY scripts ./scripts
 
 # 暴露端口
 EXPOSE 3000
-
-# 启动脚本
-COPY docker-entrypoint.sh /docker-entrypoint.sh
-RUN chmod +x /docker-entrypoint.sh
 
 # 健康检查
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \

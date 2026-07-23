@@ -634,10 +634,12 @@ function checkAnomalies(state: VehicleState, config: VehicleConfig): string[] {
 
 import { alertService } from './alert-service';
 
-// 初始化告警服务（在模块加载时）
-alertService.init().catch(error => {
-  logger.error('初始化告警服务失败:', error instanceof Error ? error.message : String(error));
-});
+// 延迟初始化告警服务（等待 MySQL 连接就绪）
+setTimeout(() => {
+  alertService.init().catch(error => {
+    logger.error('初始化告警服务失败:', error instanceof Error ? error.message : String(error));
+  });
+}, 5000);
 
 async function triggerAlert(config: VehicleConfig, anomalies: string[], location?: { lat: number; lng: number; address?: string }): Promise<void> {
   const reason = `车辆异常：${anomalies.join(', ')}`;

@@ -294,6 +294,29 @@ export class MaterialRecordStorage extends BaseDAO {
   }
 
   /**
+   * 查询降级处理的素材（标签只有文件名，需要 AI 补偿）
+   */
+  async getDegradedRecords(limit: number = 20): Promise<MaterialRecord[]> {
+    // 降级素材特征：matched_keywords 只有一个元素且等于文件名（不含扩展名）
+    const sql = `
+      SELECT * FROM material_records 
+      WHERE JSON_LENGTH(matched_keywords) = 1
+        AND JSON_UNQUOTE(JSON_EXTRACT(matched_keywords, '$[0]')) = SUBSTRING_INDEX(SUBSTRING_INDEX(path, '/', -1), '.', 1)
+      ORDER BY created_at DESC
+      LIMIT ?
+    `;
+    return await this.query<MaterialRecord[]>(sql, [limit]);
+  }
+
+  /**
+   * 更新素材的标签（补偿用）
+   */
+  async updateKeywords(id: string, keywords: string[]): Promise<void> {
+    const sql = `UPDATE material_records SET matched_keywords = ? WHERE id = ?`;
+    await this.query(sql, [JSON.stringify(keywords), id]);
+  }
+
+  /**
    * 获取所有素材记录
    */
   async getAllMaterialRecords(): Promise<MaterialRecord[]> {
@@ -353,9 +376,9 @@ export class MaterialRecordStorage extends BaseDAO {
     const sql = `DELETE FROM material_records WHERE path = ?`;
     
     try {
-      // 1. 从 MySQL 删除
-      const [rows] = await this.query(sql, [filePath]);
-      const deleted = rows?.affectedRows || 0;
+      // 1. 从 MySQL 删除（this.query 对 DELETE 返回 ResultSetHeader）
+      const result: any = await this.query(sql, [filePath]);
+      const deleted = result?.affectedRows || 0;
       
       if (deleted > 0) {
         // 2. 同步删除 ChromaDB 向量（通过 file_path 查找）
