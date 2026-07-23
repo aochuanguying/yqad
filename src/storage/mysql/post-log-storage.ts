@@ -88,7 +88,7 @@ export class PostLogStorage extends BaseDAO {
                             status, error_message, mode, trigger_type, compliance_report_id,
                             pipeline_timings, total_duration, resource_usage,
                             error_stack, context_snapshot, retry_history)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
     
     await this.insert(sql, [

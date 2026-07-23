@@ -42,8 +42,15 @@ export class PendingPostService {
     logger.debug(`保存待确认记录：${post.taskId}`);
   }
 
-  get(taskId: string): PendingPost | undefined {
-    return undefined;
+  async get(taskId: string): Promise<PendingPost | undefined> {
+    const mysqlPost = await this.storage.getPendingPostByTaskId(taskId);
+    if (!mysqlPost) return undefined;
+    // 检查是否过期
+    if (mysqlPost.created_at && Date.now() - mysqlPost.created_at.getTime() >= this.expiryMs) {
+      await this.storage.deleteExpired();
+      return undefined;
+    }
+    return this.convertToPendingPost(mysqlPost);
   }
 
   async getPendingPost(taskId: string): Promise<PendingPost | null> {
