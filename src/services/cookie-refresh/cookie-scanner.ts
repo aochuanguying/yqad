@@ -100,14 +100,34 @@ export class CookieScanner {
       const testResult = await searchService.testConnection();
 
       if (testResult.success) {
-        // 2. Cookie 有效，刷新页面续期
-        logger.info('✅ 当前 Cookie 有效，正在刷新页面以续期...');
+        // 2. Cookie 有效，注入到浏览器后刷新页面续期
+        logger.info('✅ 当前 Cookie 有效，注入 Cookie 到浏览器后刷新续期...');
         
-        // 初始化浏览器（加载持久化数据）
+        // 初始化浏览器（不依赖持久化目录的登录态）
         await this.initBrowser();
         
         try {
-          // 访问主页
+          // 注入数据库中的有效 Cookie 到浏览器 context
+          const currentCookie = (searchService as any).config?.cookie || '';
+          if (currentCookie) {
+            const cookiePairs = currentCookie.split(';').map((s: string) => s.trim()).filter((s: string) => s.includes('='));
+            const cookiesToAdd = cookiePairs.map((pair: string) => {
+              const [name, ...valueParts] = pair.split('=');
+              return {
+                name: name.trim(),
+                value: valueParts.join('=').trim(),
+                domain: '.xiaohongshu.com',
+                path: '/',
+              };
+            });
+            
+            if (cookiesToAdd.length > 0) {
+              await this.page.context().addCookies(cookiesToAdd);
+              logger.info(`🍪 已注入 ${cookiesToAdd.length} 个 Cookie 到浏览器`);
+            }
+          }
+          
+          // 访问主页（此时浏览器带有有效 Cookie，应为登录态）
           await this.page.goto('https://www.xiaohongshu.com', {
             waitUntil: 'networkidle',
             timeout: 15000,
