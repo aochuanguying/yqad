@@ -103,10 +103,19 @@ export class CookieScanner {
         // 2. Cookie 有效，注入到浏览器后刷新页面续期
         logger.info('✅ 当前 Cookie 有效，注入 Cookie 到浏览器后刷新续期...');
         
-        // 初始化浏览器（不依赖持久化目录的登录态）
-        await this.initBrowser();
-        
         try {
+          // 使用普通浏览器（非持久化），避免持久化目录的旧 Cookie 覆盖注入的有效 Cookie
+          const { chromium } = await import('playwright');
+          const isDocker = fs.existsSync('/.dockerenv') || process.env.NODE_ENV === 'production';
+          const browser = await chromium.launch({
+            headless: isDocker,
+            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled'],
+          });
+          const context = await browser.newContext({
+            userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            viewport: { width: 1920, height: 1080 },
+          });
+          
           // 注入数据库中的有效 Cookie 到浏览器 context
           const currentCookie = (searchService as any).config?.cookie || '';
           if (currentCookie) {
@@ -122,28 +131,34 @@ export class CookieScanner {
             });
             
             if (cookiesToAdd.length > 0) {
-              await this.page.context().addCookies(cookiesToAdd);
+              await context.addCookies(cookiesToAdd);
               logger.info(`🍪 已注入 ${cookiesToAdd.length} 个 Cookie 到浏览器`);
             }
           }
           
+          const page = await context.newPage();
+          
           // 访问主页（此时浏览器带有有效 Cookie，应为登录态）
-          await this.page.goto('https://www.xiaohongshu.com', {
+          await page.goto('https://www.xiaohongshu.com', {
             waitUntil: 'networkidle',
             timeout: 15000,
           });
-          await this.page.waitForTimeout(2000);
+          await page.waitForTimeout(2000);
           
           // 刷新页面触发续期
-          await this.page.reload({ waitUntil: 'networkidle', timeout: 15000 });
-          await this.page.waitForTimeout(2000);
+          await page.reload({ waitUntil: 'networkidle', timeout: 15000 });
+          await page.waitForTimeout(2000);
           
           // 提取新 Cookie
           logger.info('🍪 提取续期后的 Cookie...');
-          const cookie = await this.extractCookie();
+          const cookies = await context.cookies();
+          const cookieString = cookies.map((c: any) => `${c.name}=${c.value}`).join('; ');
+          const cookie = cookieString.length > 50 ? cookieString : null;
+          
+          await browser.close();
           
           if (cookie) {
-            // 验证新 Cookie 是否真正有效（避免浏览器续期后 Cookie 仍被封）
+            // 验证新 Cookie 是否真正有效
             logger.info('🔍 验证续期后的 Cookie 有效性...');
             const verifyService = new XiaohongshuSearch();
             (verifyService as any).config = { cookie };

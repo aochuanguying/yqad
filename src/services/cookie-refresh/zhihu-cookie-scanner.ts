@@ -126,11 +126,19 @@ export class ZhihuCookieScanner {
         // 2. Cookie 有效，注入到浏览器后刷新页面续期
         logger.info('✅ 当前知乎 Cookie 有效，注入 Cookie 到浏览器后刷新续期...');
         
-        // 初始化浏览器（不依赖持久化目录的登录态）
-        const userDataDir = path.join(__dirname, '../../../scripts/zhihu_browser_data');
-        await this.initBrowser(userDataDir);
-        
         try {
+          // 使用普通浏览器（非持久化），避免持久化目录的旧 Cookie 覆盖注入的有效 Cookie
+          const { chromium } = await import('playwright');
+          const isDocker = fs.existsSync('/.dockerenv') || process.env.NODE_ENV === 'production';
+          const browser = await chromium.launch({
+            headless: isDocker,
+            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled'],
+          });
+          const context = await browser.newContext({
+            userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            viewport: { width: 1920, height: 1080 },
+          });
+          
           // 注入数据库中的有效 Cookie 到浏览器 context
           const cookieStr = status.cookie!;
           const cookiePairs = cookieStr.split(';').map(s => s.trim()).filter(s => s.includes('='));
@@ -145,24 +153,30 @@ export class ZhihuCookieScanner {
           });
           
           if (cookiesToAdd.length > 0) {
-            await this.page.context().addCookies(cookiesToAdd);
+            await context.addCookies(cookiesToAdd);
             logger.info(`🍪 已注入 ${cookiesToAdd.length} 个 Cookie 到浏览器`);
           }
           
+          const page = await context.newPage();
+          
           // 访问主页（此时浏览器带有有效 Cookie，应为登录态）
-          await this.page.goto('https://www.zhihu.com', {
+          await page.goto('https://www.zhihu.com', {
             waitUntil: 'networkidle',
             timeout: 15000,
           });
-          await this.page.waitForTimeout(2000);
+          await page.waitForTimeout(2000);
           
           // 刷新页面触发续期
-          await this.page.reload({ waitUntil: 'networkidle', timeout: 15000 });
-          await this.page.waitForTimeout(2000);
+          await page.reload({ waitUntil: 'networkidle', timeout: 15000 });
+          await page.waitForTimeout(2000);
           
           // 提取新 Cookie
           logger.info('🍪 提取续期后的 Cookie...');
-          const cookie = await this.extractCookie();
+          const cookies = await context.cookies();
+          const cookieString = cookies.map((c: any) => `${c.name}=${c.value}`).join('; ');
+          const cookie = cookieString.length > 50 ? cookieString : null;
+          
+          await browser.close();
           
           if (cookie) {
             // 验证新 Cookie 是否真正有效
@@ -184,32 +198,27 @@ export class ZhihuCookieScanner {
                 const duration = Date.now() - startTime;
                 await this.storage.updateRefreshLog(duration, 'success', undefined, 'zhihu');
                 logger.info(`✅ 知乎 Cookie 续期成功，版本：${saveResult.version}`);
-                await this.cleanup();
                 return { success: true, version: saveResult.version };
               } else {
                 logger.error('❌ 保存知乎 Cookie 失败:', saveResult.error);
-                await this.cleanup();
                 return { success: false, error: saveResult.error };
               }
             } else {
-              // 新 Cookie 验证失败，但原 Cookie 仍有效（第一步已验证），不覆盖、不标记失败
+              // 新 Cookie 验证失败，但原 Cookie 仍有效，不标记失败
               logger.warn('⚠️ 续期后的 Cookie 验证失败，保留原有效 Cookie，跳过本次续期');
               const duration = Date.now() - startTime;
               await this.storage.updateRefreshLog(duration, 'success', undefined, 'zhihu');
-              await this.cleanup();
-              return { success: true }; // 原 Cookie 仍有效
+              return { success: true };
             }
           } else {
             // 没提取到新 Cookie，但原 Cookie 刚测试过是有效的
             const duration = Date.now() - startTime;
             await this.storage.updateRefreshLog(duration, 'success', undefined, 'zhihu');
             logger.info('✅ 未提取到新 Cookie，但原 Cookie 仍有效');
-            await this.cleanup();
             return { success: true };
           }
         } catch (error) {
           logger.warn('🔄 续期过程出错，但当前 Cookie 仍然有效:', error instanceof Error ? error.message : error);
-          await this.cleanup();
           const duration = Date.now() - startTime;
           await this.storage.updateRefreshLog(duration, 'success', undefined, 'zhihu');
           return { success: true }; // Cookie 仍然有效
