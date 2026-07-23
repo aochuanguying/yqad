@@ -2,6 +2,7 @@ import { loadConfig } from '../utils/config';
 import { getLogger } from '../utils/logger';
 import { IAudiApi } from '../api/types';
 import { authTokenStorage } from '../storage/redis/auth-token-storage';
+import axios from 'axios';
 
 const logger = getLogger('auth');
 
@@ -183,9 +184,9 @@ export class AuthService {
   }
 
   /**
-   * 检查 Token 是否需要刷新，如需刷新则主动发起请求
+   * 检查 Token 是否需要刷新，如需刷新则通过 Telecom API 获取最新 Token
    * 
-   * 优化逻辑：不依赖响应头，调用 getMemberInfo() 成功后即认为 Token 已续期
+   * 优化逻辑：通过 Android Telecom API 从手机 APP 提取最新 Token
    */
   private async checkAndRefreshToken(): Promise<void> {
     if (!this.token?.accessToken) {
@@ -208,44 +209,71 @@ export class AuthService {
       logger.info(`  当前剩余时间：${remainingHours} 小时`);
       logger.info(`  过期时间：${expiresAtDate.toLocaleString('zh-CN')}`);
       logger.info(`  刷新阈值：${this.TOKEN_REFRESH_LEAD_TIME / 1000 / 3600} 小时`);
-      logger.info(`  触发主动刷新：是`);
+      logger.info(`  刷新方式：Telecom API（手机 APP 提取）`);
       logger.info('========================================');
       
       try {
         const beforeTime = Date.now();
         const beforeExpiresAt = this.token.expiresAt;
         
-        // 调用会员信息接口触发 Token 续期
-        if (this.api && 'getMemberInfo' in this.api) {
-          logger.info('开始调用 getMemberInfo() 刷新 Token...');
-          await (this.api as any).getMemberInfo(this.token.accessToken);
-          const duration = Date.now() - beforeTime;
-          
-          // 不依赖响应头，调用成功后直接重置过期时间为 83 小时
-          const newExpiresAt = Date.now() + 83 * 3600 * 1000;
-          this.token.expiresAt = newExpiresAt;
-          this.token.savedAt = Date.now();
-          this.persistTokenToRedis();
-          
-          const extendedHours = (newExpiresAt - beforeExpiresAt) / 1000 / 3600;
-          
-          logger.info('========================================');
-          logger.info('【Token 主动刷新结果 - 成功】');
-          logger.info(`  刷新接口：getMemberInfo`);
-          logger.info(`  请求耗时：${duration}ms`);
-          logger.info(`  刷新状态：✅ 成功`);
-          logger.info(`  续期前过期时间：${new Date(beforeExpiresAt).toLocaleString('zh-CN')}`);
-          logger.info(`  续期后过期时间：${new Date(newExpiresAt).toLocaleString('zh-CN')}`);
-          logger.info(`  延长小时数：${extendedHours.toFixed(1)} 小时`);
-          logger.info(`  刷新后 Token: ${tokenPrefix}`);
-          logger.info('========================================');
-        } else {
-          logger.warn('API 未初始化或不支持 getMemberInfo，无法主动刷新 Token');
+        // 通过 Telecom API 从手机 APP 获取最新 Token
+        const { mobileServiceConfigStorage } = await import('../storage/mysql/mobile-service-config-storage');
+        const serviceConfig = await mobileServiceConfigStorage.getConfig();
+        
+        if (!serviceConfig || !serviceConfig.apiUrl || !serviceConfig.apiToken) {
+          logger.warn('手机服务 API 未配置，无法自动刷新 Token');
+          return;
         }
+        
+        logger.info('开始调用 Telecom API 获取最新 Token...');
+        const response = await axios.get(`${serviceConfig.apiUrl}/api/v1/audi/token`, {
+          headers: {
+            'Authorization': `Bearer ${serviceConfig.apiToken}`,
+          },
+          timeout: 10000,
+        });
+        
+        const duration = Date.now() - beforeTime;
+        const data = response.data;
+        
+        if (!data.success || !data.data?.token) {
+          logger.error(`Telecom API 返回错误：${data.error || '未知错误'}`);
+          return;
+        }
+        
+        const newToken = data.data.token;
+        
+        if (!newToken.startsWith('eyJ')) {
+          logger.error('Telecom API 返回的 Token 格式不正确');
+          return;
+        }
+        
+        // 更新内存中的 Token
+        const oldTokenPrefix = this.token.accessToken.substring(0, 20) + '...';
+        const newTokenPrefix = newToken.substring(0, 20) + '...';
+        
+        this.token.accessToken = newToken;
+        this.token.expiresAt = Date.now() + 83 * 3600 * 1000; // 重置 83h
+        this.token.savedAt = Date.now();
+        this.persistTokenToRedis();
+        
+        const extendedHours = (this.token.expiresAt - beforeExpiresAt) / 1000 / 3600;
+        
+        logger.info('========================================');
+        logger.info('【Token 主动刷新结果 - 成功】');
+        logger.info(`  刷新接口：Telecom API (/api/v1/audi/token)`);
+        logger.info(`  请求耗时：${duration}ms`);
+        logger.info(`  刷新状态：✅ 成功`);
+        logger.info(`  旧 Token: ${oldTokenPrefix}`);
+        logger.info(`  新 Token: ${newTokenPrefix}`);
+        logger.info(`  续期前过期时间：${new Date(beforeExpiresAt).toLocaleString('zh-CN')}`);
+        logger.info(`  续期后过期时间：${new Date(this.token.expiresAt).toLocaleString('zh-CN')}`);
+        logger.info(`  延长小时数：${extendedHours.toFixed(1)} 小时`);
+        logger.info('========================================');
       } catch (error: any) {
         logger.error('========================================');
         logger.error('【Token 主动刷新结果 - 失败】');
-        logger.error(`  刷新接口：getMemberInfo`);
+        logger.error(`  刷新接口：Telecom API`);
         logger.error(`  刷新状态：❌ 失败`);
         logger.error(`  错误类型：${error.constructor.name}`);
         logger.error(`  错误信息：${error.message}`);

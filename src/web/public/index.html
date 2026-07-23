@@ -5151,8 +5151,11 @@
               <button onclick="showSetTokenModal()" id="set-token-btn" class="px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm flex items-center gap-1">
                 ✏️ 设置 Token
               </button>
+              <button onclick="refreshTokenFromTelecom()" id="refresh-token-btn" class="px-3 py-1.5 bg-orange-600 text-white rounded-md hover:bg-orange-700 text-sm flex items-center gap-1">
+                📱 刷新 Token
+              </button>
             </div>
-            <p class="text-xs text-blue-600 mt-2">💡 可从其他环境复制 Token 后粘贴到本系统</p>
+            <p class="text-xs text-blue-600 mt-2">💡 "刷新 Token" 从手机 APP 自动提取最新 Token；"设置 Token" 用于手动粘贴</p>
           </div>
           <!-- 会员信息区 -->
           <div class="mb-6" id="member-info-section">
@@ -5713,11 +5716,65 @@
         }
         
         const token = result.data.token;
-        await navigator.clipboard.writeText(token);
-        alert('✅ Token 已复制到剪贴板！');
+        await copyToClipboard(token);
+        showToast('✅ Token 已复制到剪贴板', 'success');
       } catch (error) {
         console.error('复制 Token 失败:', error);
-        alert('复制失败：' + error.message);
+        showToast('复制失败：' + error.message, 'error');
+      }
+    }
+
+    /**
+     * 兼容性剪贴板复制（支持非 HTTPS 环境）
+     */
+    async function copyToClipboard(text) {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        // 降级方案：使用临时 textarea + execCommand
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.left = '-9999px';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+    }
+
+    /**
+     * 从 Telecom API 刷新 Token（从手机 APP 提取最新 Token）
+     */
+    async function refreshTokenFromTelecom() {
+      const btn = document.getElementById('refresh-token-btn');
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '⏳ 获取中...';
+      }
+      
+      try {
+        const resp = await fetch('/api/token/refresh-from-telecom', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        const result = await resp.json();
+        
+        if (result.success) {
+          showToast('✅ Token 已从手机刷新成功', 'success');
+          // 刷新 Token 状态和会员信息
+          refreshTokenStatus();
+          fetchMemberInfo();
+        } else {
+          showToast('❌ ' + (result.error || '刷新失败'), 'error');
+        }
+      } catch (e) {
+        showToast('❌ 请求失败：' + e.message, 'error');
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = '📱 刷新 Token';
+        }
       }
     }
     

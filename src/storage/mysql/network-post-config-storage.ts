@@ -227,6 +227,15 @@ export class NetworkPostConfigStorage {
       }
 
       const data: any = await response.json();
+      
+      // 检查业务层错误码（Code != 0 表示鉴权失败或其他错误）
+      if (data.Code && data.Code !== 0) {
+        return {
+          success: false,
+          error: `知乎 API 错误：${data.Message || '未知错误'} (Code: ${data.Code})`,
+        };
+      }
+      
       const resultCount = data.Data?.Items?.length || 0;
       
       return {
