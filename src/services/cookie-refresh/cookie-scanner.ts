@@ -143,12 +143,12 @@ export class CookieScanner {
                 return { success: false, error: saveResult.error };
               }
             } else {
-              // 新 Cookie 验证失败，说明账号被封或 session 失效
-              logger.warn(`⚠️ 续期后的 Cookie 验证失败：${verifyResult.error}，标记为失效`);
+              // 新 Cookie 验证失败，但原 Cookie 仍有效（第一步已验证），不覆盖、不标记失败
+              logger.warn(`⚠️ 续期后的 Cookie 验证失败：${verifyResult.error}，保留原有效 Cookie，跳过本次续期`);
               const duration = Date.now() - startTime;
-              await this.storage.updateRefreshLog(duration, 'failed', `Cookie 续期后验证失败：${verifyResult.error || '无权限'}`, 'xiaohongshu');
+              await this.storage.updateRefreshLog(duration, 'success', undefined, 'xiaohongshu');
               await this.cleanup();
-              return { success: false, error: '续期后 Cookie 验证失败，请手动刷新', requiresManualRefresh: true };
+              return { success: true }; // 原 Cookie 仍有效
             }
           } else {
             // 没提取到新 Cookie，但原 Cookie 刚测试过是有效的
