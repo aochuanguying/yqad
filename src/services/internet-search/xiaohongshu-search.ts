@@ -486,7 +486,7 @@ try:
     
     # 初始化 xhshow 客户端
     client = Xhshow()
-    search_id = client.get_search_id()
+    search_id = client.get_search_request_id()
     
     # API 参数
     url = "https://so.xiaohongshu.com/api/sns/web/v2/search/notes"
@@ -500,22 +500,21 @@ try:
         "page_size": actual_page_size,
         "search_id": search_id,
         "sort": "general",
-        "note_type": 0
+        "note_type": 0,
+        "extend": {"title_encoding": 1, "desc_encoding": 1}
     }
     
-    # 生成签名
-    signature = client.sign_xs_post(
+    # 使用 sign_headers 生成完整请求头（避免被识别为自动化请求）
+    headers = client.sign_headers(
+        method="POST",
         uri=uri,
-        a1_value=a1_value,
-        payload=payload
+        cookies=cookie_dict,
+        payload=payload,
+        x_rap=False
     )
-    
-    headers = {
-        "x-s": signature,
-        "x-t": str(int(time.time() * 1000)),
-        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-        "content-type": "application/json;charset=UTF-8",
-    }
+    headers["Content-Type"] = "application/json"
+    headers["Origin"] = "https://www.xiaohongshu.com"
+    headers["Referer"] = "https://www.xiaohongshu.com/explore"
     
     # 发送请求
     response = requests.post(url, headers=headers, json=payload, cookies=cookie_dict, timeout=30)
