@@ -6308,8 +6308,7 @@
           
           // 检查最后一条日志是否为失效
           const lastLog = (recentLogs && recentLogs.length > 0) ? recentLogs[recentLogs.length - 1] : null;
-          const isExpired = lastLog && lastLog.status === 'failed' && 
-            (lastLog.error_message || '').includes('失效');
+          const isExpired = lastLog && lastLog.status === 'failed';
           
           let html = '<div class="space-y-2">';
           
@@ -6405,8 +6404,7 @@
           
           // 检查最后一条日志是否为失效
           const lastLog = (recentLogs && recentLogs.length > 0) ? recentLogs[recentLogs.length - 1] : null;
-          const isExpired = lastLog && lastLog.status === 'failed' && 
-            (lastLog.error_message || '').includes('失效');
+          const isExpired = lastLog && lastLog.status === 'failed';
           
           let html = '<div class="space-y-2">';
           

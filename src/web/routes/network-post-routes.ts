@@ -154,6 +154,8 @@ router.post('/network-post-config/test-zhihu', async (req: Request, res: Respons
     }
     
     if (apiResult.success) {
+      // 测试成功，写成功日志
+      await storage.updateRefreshLog(0, 'success', undefined, 'zhihu');
       res.json({ 
         success: true, 
         message: cookieValid === false 
@@ -164,6 +166,8 @@ router.post('/network-post-config/test-zhihu', async (req: Request, res: Respons
         cookieError,
       });
     } else {
+      // 测试失败，写失效日志到数据库
+      await storage.updateRefreshLog(0, 'failed', `凭证失效：${apiResult.error || '测试失败'}`, 'zhihu');
       res.status(400).json({ 
         success: false, 
         error: apiResult.error || '测试失败',
@@ -173,6 +177,10 @@ router.post('/network-post-config/test-zhihu', async (req: Request, res: Respons
     }
   } catch (error) {
     logger.error('测试知乎连接失败:', error instanceof Error ? error.message : String(error));
+    try {
+      const storage = NetworkPostConfigStorage.getInstance();
+      await storage.updateRefreshLog(0, 'failed', `凭证失效：${error instanceof Error ? error.message : '测试异常'}`, 'zhihu');
+    } catch (e) { /* ignore */ }
     res.status(500).json({ 
       success: false, 
       error: error instanceof Error ? error.message : '测试失败' 
@@ -199,12 +207,16 @@ router.post('/network-post-config/test-xiaohongshu', async (req: Request, res: R
     const result = await storage.testXiaohongshuConnection(cookie);
     
     if (result.success) {
+      // 测试成功，写一条成功日志
+      await storage.updateRefreshLog(0, 'success', undefined, 'xiaohongshu');
       res.json({ 
         success: true, 
         message: '小红书 API 连接测试成功',
         resultCount: result.resultCount,
       });
     } else {
+      // 测试失败，写一条失效日志到数据库（刷新页面后状态面板也能显示失效）
+      await storage.updateRefreshLog(0, 'failed', `Cookie 失效：${result.error || '测试失败'}`, 'xiaohongshu');
       res.status(400).json({ 
         success: false, 
         error: result.error || '测试失败',
@@ -212,6 +224,11 @@ router.post('/network-post-config/test-xiaohongshu', async (req: Request, res: R
     }
   } catch (error) {
     logger.error('测试小红书连接失败:', error instanceof Error ? error.message : String(error));
+    // 异常也写失效日志
+    try {
+      const storage = NetworkPostConfigStorage.getInstance();
+      await storage.updateRefreshLog(0, 'failed', `Cookie 失效：${error instanceof Error ? error.message : '测试异常'}`, 'xiaohongshu');
+    } catch (e) { /* ignore */ }
     res.status(500).json({ 
       success: false, 
       error: error instanceof Error ? error.message : '测试失败' 
