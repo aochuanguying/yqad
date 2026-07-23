@@ -147,24 +147,52 @@ export class ZhihuCookieScanner {
           const cookie = await this.extractCookie();
           
           if (cookie) {
-            const saveResult = await this.storage.saveZhihuCookie(cookie, 'auto');
-            if (saveResult.success) {
-              logger.info(`✅ 知乎 Cookie 续期成功，版本：${saveResult.version}`);
-              await this.cleanup();
-              return { success: true, version: saveResult.version };
+            // 验证新 Cookie 是否真正有效
+            logger.info('🔍 验证续期后的 Cookie 有效性...');
+            const verifyValid = await new Promise<boolean>((resolve) => {
+              const req = https.get('https://www.zhihu.com/api/v4/me', {
+                headers: { 'Cookie': cookie },
+                timeout: 10000,
+              }, (res: any) => {
+                resolve(res.statusCode === 200);
+              });
+              req.on('error', () => resolve(false));
+              req.on('timeout', () => { req.destroy(); resolve(false); });
+            });
+            
+            if (verifyValid) {
+              const saveResult = await this.storage.saveZhihuCookie(cookie, 'auto');
+              if (saveResult.success) {
+                const duration = Date.now() - startTime;
+                await this.storage.updateRefreshLog(duration, 'success', undefined, 'zhihu');
+                logger.info(`✅ 知乎 Cookie 续期成功，版本：${saveResult.version}`);
+                await this.cleanup();
+                return { success: true, version: saveResult.version };
+              } else {
+                logger.error('❌ 保存知乎 Cookie 失败:', saveResult.error);
+                await this.cleanup();
+                return { success: false, error: saveResult.error };
+              }
             } else {
-              logger.error('❌ 保存知乎 Cookie 失败:', saveResult.error);
+              logger.warn('⚠️ 续期后的 Cookie 验证失败，标记为失效');
+              const duration = Date.now() - startTime;
+              await this.storage.updateRefreshLog(duration, 'failed', 'Cookie 续期后验证失败，请手动刷新', 'zhihu');
               await this.cleanup();
-              return { success: false, error: saveResult.error };
+              return { success: false, error: '续期后 Cookie 验证失败，请手动刷新', requiresManualRefresh: true };
             }
           } else {
-            logger.warn('⚠️ 未能提取到 Cookie，但当前 Cookie 仍然有效');
+            // 没提取到新 Cookie，但原 Cookie 刚测试过是有效的
+            const duration = Date.now() - startTime;
+            await this.storage.updateRefreshLog(duration, 'success', undefined, 'zhihu');
+            logger.info('✅ 未提取到新 Cookie，但原 Cookie 仍有效');
             await this.cleanup();
-            return { success: true }; // 即使没提取到，原有 Cookie 仍然有效
+            return { success: true };
           }
         } catch (error) {
           logger.warn('🔄 续期过程出错，但当前 Cookie 仍然有效:', error instanceof Error ? error.message : error);
           await this.cleanup();
+          const duration = Date.now() - startTime;
+          await this.storage.updateRefreshLog(duration, 'success', undefined, 'zhihu');
           return { success: true }; // Cookie 仍然有效
         }
       } else {
@@ -206,13 +234,31 @@ export class ZhihuCookieScanner {
             
             const cookie = await this.extractCookie();
             if (cookie) {
-              const saveResult = await this.storage.saveZhihuCookie(cookie, 'auto');
-              if (saveResult.success) {
-                logger.info(`✅ 浏览器续期成功，版本：${saveResult.version}`);
-                const duration = Date.now() - startTime;
-                await this.storage.updateRefreshLog(duration, 'success', undefined, 'zhihu');
-                await this.cleanup();
-                return { success: true, version: saveResult.version };
+              // 验证新 Cookie 是否真正有效
+              logger.info('🔍 验证浏览器续期后的 Cookie 有效性...');
+              const verifyValid = await new Promise<boolean>((resolve) => {
+                const req = https.get('https://www.zhihu.com/api/v4/me', {
+                  headers: { 'Cookie': cookie },
+                  timeout: 10000,
+                }, (res: any) => {
+                  resolve(res.statusCode === 200);
+                });
+                req.on('error', () => resolve(false));
+                req.on('timeout', () => { req.destroy(); resolve(false); });
+              });
+              
+              if (verifyValid) {
+                const saveResult = await this.storage.saveZhihuCookie(cookie, 'auto');
+                if (saveResult.success) {
+                  logger.info(`✅ 浏览器续期成功，版本：${saveResult.version}`);
+                  const duration = Date.now() - startTime;
+                  await this.storage.updateRefreshLog(duration, 'success', undefined, 'zhihu');
+                  await this.cleanup();
+                  return { success: true, version: saveResult.version };
+                }
+              } else {
+                logger.warn('⚠️ 浏览器续期后 Cookie 验证失败');
+                // 不保存无效 Cookie，走后面的失效逻辑
               }
             }
           }
