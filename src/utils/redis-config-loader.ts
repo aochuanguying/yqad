@@ -38,7 +38,7 @@ export function loadRedisConfigFile(): RedisConfigFile {
  * 验证环境变量
  */
 export function validateEnvironment(): void {
-  const nodeEnv = process.env.NODE_ENV || 'test';
+  const nodeEnv = process.env.NODE_ENV || 'production';
   
   logger.info(`当前环境：${nodeEnv}`);
   
@@ -56,8 +56,9 @@ export function validateEnvironment(): void {
  * 获取 Redis 配置（支持环境变量覆盖）
  */
 export function getRedisConfig(): RedisConfig {
-  const nodeEnv = process.env.NODE_ENV || 'test';
   const configFile = loadRedisConfigFile();
+  // 优先使用 NODE_ENV 环境变量，其次使用配置文件中的 env 字段，最后默认 test
+  const nodeEnv = process.env.NODE_ENV || (configFile as any).env || 'test';
   
   // 根据环境选择配置
   let baseConfig: RedisConfig;

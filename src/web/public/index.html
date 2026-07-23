@@ -4812,6 +4812,7 @@
                 <span class="text-gray-400 cursor-grab text-lg" title="拖拽排序">⠿</span>
                 <h4 class="font-medium text-gray-800">${escapeHtml(provider.name)}</h4>
                 <span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">#${displayIdx + 1}</span>
+                ${provider.supportsVision ? '<span class="px-2 py-0.5 bg-purple-100 text-purple-700 rounded text-xs">👁 Vision</span>' : ''}
               </div>
               <div class="flex gap-1">
                 <button onclick="editAIProvider(${originalIdx})" class="px-2 py-1 text-xs bg-white border rounded hover:bg-gray-50">编辑</button>
@@ -4961,6 +4962,10 @@
             <label class="block text-xs text-gray-600 mb-1">请求超时 (毫秒)</label>
             <input id="new-ai-requestTimeout" type="number" min="5000" max="120000" value="30000" class="w-full px-2 py-1.5 border rounded text-sm" />
           </div>
+          <div class="flex items-center gap-2 col-span-2">
+            <input id="new-ai-supportsVision" type="checkbox" class="rounded" />
+            <label for="new-ai-supportsVision" class="text-xs text-gray-600">支持多模态（Vision）</label>
+          </div>
         </div>
         <div class="flex gap-2 mt-3">
           <button onclick="submitNewAIProvider()" class="px-4 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">添加</button>
@@ -4982,6 +4987,7 @@
       const temperature = parseFloat(document.getElementById('new-ai-temperature').value) || 0.7;
       const maxTokens = parseInt(document.getElementById('new-ai-maxTokens').value) || 4000;
       const requestTimeout = parseInt(document.getElementById('new-ai-requestTimeout').value) || 30000;
+      const supportsVision = document.getElementById('new-ai-supportsVision').checked;
 
       if (!name || !model || !baseUrl || !apiKey) {
         showToast('名称、模型、Base URL、API Key 为必填', 'error');
@@ -4991,7 +4997,7 @@
       if (!configData.ai) configData.ai = {};
       if (!configData.ai.providers) configData.ai.providers = [];
 
-      configData.ai.providers.push({ name, model, baseUrl, apiKey, temperature, maxTokens, requestTimeout });
+      configData.ai.providers.push({ name, model, baseUrl, apiKey, temperature, maxTokens, requestTimeout, supportsVision });
 
       // 自动加入调用顺序末尾
       if (!configData.ai.providerOrder) configData.ai.providerOrder = [];
@@ -5070,6 +5076,10 @@
           <label class="block text-xs text-gray-600 mb-1">请求超时 (毫秒)</label>
           <input id="edit-ai-requestTimeout-${idx}" type="number" min="5000" max="120000" value="${provider.requestTimeout || 30000}" class="w-full px-2 py-1.5 border rounded text-sm" />
         </div>
+        <div class="flex items-center gap-2 col-span-2">
+          <input id="edit-ai-supportsVision-${idx}" type="checkbox" class="rounded" ${provider.supportsVision ? 'checked' : ''} />
+          <label for="edit-ai-supportsVision-${idx}" class="text-xs text-gray-600">支持多模态（Vision）</label>
+        </div>
       </div>
       <div class="flex gap-2 mt-2">
         <button onclick="saveEditAIProvider(${idx})" class="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">确认修改</button>
@@ -5088,13 +5098,14 @@
       const temperature = parseFloat(document.getElementById('edit-ai-temperature-' + idx).value) || 0.7;
       const maxTokens = parseInt(document.getElementById('edit-ai-maxTokens-' + idx).value) || 4000;
       const requestTimeout = parseInt(document.getElementById('edit-ai-requestTimeout-' + idx).value) || 30000;
+      const supportsVision = document.getElementById('edit-ai-supportsVision-' + idx).checked;
 
       if (!name || !model || !baseUrl || !apiKey) {
         showToast('名称、模型、Base URL、API Key 为必填', 'error');
         return;
       }
 
-      providers[idx] = { name, model, baseUrl, apiKey, temperature, maxTokens, requestTimeout };
+      providers[idx] = { name, model, baseUrl, apiKey, temperature, maxTokens, requestTimeout, supportsVision };
 
       // 更新调用顺序中的名称
       if (configData.ai.providerOrder && oldName !== name) {

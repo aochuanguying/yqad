@@ -19,6 +19,7 @@ import { generateContent } from '../ai/client';
 import { getMaterialRecordStorage, CreateMaterialRecordInput } from '../storage/mysql/material-record-storage';
 import { materialVectorStorage } from '../storage/chroma/material-vector-storage';
 import { embeddingVectorizer } from '../utils/embedding-vectorizer';
+import { aiProviderStorage } from '../storage/mysql/ai-provider-storage';
 import { MaterialFileInfo, MaterialMetadata, MaterialProcessResult } from '../types/materials';
 
 const execAsync = promisify(exec);
@@ -135,11 +136,73 @@ except Exception as e:
 }
 
 /**
- * AI 生成描述
+ * 为 Vision 分析准备图片：压缩至长边 ≤ 2048px、JPEG quality 85、转 base64
  */
-export async function generateDescription(filePath: string, metadata: MaterialMetadata): Promise<string> {
+export async function prepareImageForVision(filePath: string): Promise<string | null> {
+  try {
+    const image = sharp(filePath);
+    const metadata = await image.metadata();
+
+    let pipeline = image;
+    const maxDim = 2048;
+    if ((metadata.width || 0) > maxDim || (metadata.height || 0) > maxDim) {
+      pipeline = pipeline.resize(maxDim, maxDim, { fit: 'inside' });
+    }
+
+    const buffer = await pipeline.jpeg({ quality: 85 }).toBuffer();
+    const base64 = buffer.toString('base64');
+
+    // 检查大小（20MB ≈ 20 * 1024 * 1024 字符）
+    if (base64.length > 20 * 1024 * 1024) {
+      logger.warn(`图片压缩后 base64 仍超过 20MB: ${filePath} (${(base64.length / 1024 / 1024).toFixed(1)}MB)`);
+      return null;
+    }
+
+    return base64;
+  } catch (error) {
+    logger.error(`图片读取/编码失败: ${filePath}, ${error instanceof Error ? error.message : String(error)}`);
+    return null;
+  }
+}
+
+/**
+ * AI 生成描述
+ * @param imageBase64 可选的 base64 图片数据，有值时使用 Vision 分析
+ */
+export async function generateDescription(filePath: string, metadata: MaterialMetadata, imageBase64?: string | null): Promise<string> {
   try {
     const fileName = path.basename(filePath);
+
+    // 有图片时使用 Vision 增强 prompt
+    if (imageBase64) {
+      const systemPrompt = `你是图片描述专家。请根据图片内容进行视觉分析，生成 1-2 句自然语言描述。
+要求：
+1. 根据图片实际内容描述场景、物体、人物、氛围等
+2. 使用中文，简洁生动
+3. 适合用于语义搜索
+4. 不要其他文字，只输出描述`;
+
+      const userPrompt = `文件名：${fileName}
+格式：${metadata.format}
+尺寸：${metadata.width}x${metadata.height}
+文件大小：${Math.round(metadata.fileSize / 1024)}KB
+
+请根据图片内容生成图片描述。`;
+
+      const response = await generateContent({
+        systemPrompt,
+        userPrompt,
+        images: [imageBase64],
+        requireVision: true,
+        timeout: 60000,
+      });
+
+      const description = response.trim().replace(/^["']|["']$/g, '').slice(0, 200);
+      logger.debug(`生成描述（Vision）：${description}`);
+      return description;
+    }
+
+    // 无图片时走纯文件名推测
     const systemPrompt = `你是图片描述专家。根据文件名和图片信息生成 1-2 句自然语言描述。
 要求：
 1. 描述图片内容、场景、特点
@@ -170,10 +233,54 @@ export async function generateDescription(filePath: string, metadata: MaterialMe
 
 /**
  * AI 生成标签
+ * @param imageBase64 可选的 base64 图片数据，有值时使用 Vision 分析
  */
-export async function generateTags(filePath: string, metadata: MaterialMetadata): Promise<string[]> {
+export async function generateTags(filePath: string, metadata: MaterialMetadata, imageBase64?: string | null): Promise<string[]> {
   try {
     const fileName = path.basename(filePath);
+
+    // 有图片时使用 Vision 增强 prompt
+    if (imageBase64) {
+      const systemPrompt = `你是标签生成专家。请根据图片内容进行视觉分析，为图片生成 3-5 个标签。
+要求：
+1. 根据图片实际内容涵盖场景、物体、情感维度
+2. 每个标签单独一行
+3. 只保留中文、英文、数字
+4. 不要其他文字`;
+
+      const userPrompt = `文件名：${fileName}
+格式：${metadata.format}
+尺寸：${metadata.width}x${metadata.height}
+
+请根据图片内容生成 3-5 个标签，每个标签一行。`;
+
+      const response = await generateContent({
+        systemPrompt,
+        userPrompt,
+        images: [imageBase64],
+        requireVision: true,
+        timeout: 60000,
+      });
+
+      logger.debug(`AI 响应（Vision）：${response}`);
+
+      const splitTags = response.split(/[\n\r,,]/)
+        .map((t: string) => t.trim().replace(/^"|"$/g, '').replace(/^'|'$/g, '').replace(/^\[|\]$/g, ''))
+        .map((t: string) => t.replace(/[^\u4e00-\u9fa5a-zA-Z0-9]/g, ''))
+        .filter((t: string) => t.trim().length > 0)
+        .slice(0, 5);
+
+      if (splitTags.length > 0) {
+        logger.debug(`生成标签（Vision）：${splitTags.join(', ')}`);
+        return splitTags;
+      }
+
+      // Vision 返回无效结果时降级为文件名
+      logger.debug(`Vision 标签结果为空，使用降级方案：文件名分词`);
+      return [path.basename(filePath, path.extname(filePath))];
+    }
+
+    // 无图片时走纯文件名推测
     const systemPrompt = `你是标签生成专家。为图片生成 3-5 个标签。
 要求：
 1. 涵盖场景、物体、情感维度
@@ -312,14 +419,29 @@ export async function processMaterial(fileInfo: MaterialFileInfo): Promise<Mater
       }
     }
     
-    // 3. AI 生成描述
-    const description = await generateDescription(fileInfo.path, metadata);
+    // 3. Vision 准备：检查是否启用 Vision 并准备图片 base64
+    const enableVision = config.materials?.processing?.enableVision ?? false;
+    let imageBase64: string | null = null;
+
+    if (enableVision) {
+      // 检查是否有可用的 vision provider
+      const providers = await aiProviderStorage.getEnabledProviders();
+      const hasVisionProvider = providers.some(p => p.supportsVision === true);
+      if (hasVisionProvider) {
+        imageBase64 = await prepareImageForVision(destPath); // 使用 processed 后的文件路径
+      } else {
+        logger.warn('enableVision=true 但无可用 vision provider，降级为纯文件名推测');
+      }
+    }
+
+    // 4. AI 生成描述
+    const description = await generateDescription(fileInfo.path, metadata, imageBase64);
     
-    // 4. AI 生成标签
-    const tags = await generateTags(fileInfo.path, metadata);
+    // 5. AI 生成标签
+    const tags = await generateTags(fileInfo.path, metadata, imageBase64);
     logger.debug(`生成标签：${tags.join(', ')}`);
     
-    // 5. 录入数据库（使用复制后的路径）
+    // 6. 录入数据库（使用复制后的路径）
     const input: CreateMaterialRecordInput = {
       source: 'local',
       path: destPath, // 使用 processed 目录的路径
@@ -333,7 +455,7 @@ export async function processMaterial(fileInfo: MaterialFileInfo): Promise<Mater
     const record = await materialRecordStorage.upsertMaterialRecord(input);
     logger.info(`素材录入数据库：${record.id}`);
     
-    // 5. 生成向量（如果 ChromaDB 已初始化）
+    // 7. 生成向量（如果 ChromaDB 已初始化）
     try {
       if (materialVectorStorage.isInitialized) {
         const vectorText = path.basename(fileInfo.path);

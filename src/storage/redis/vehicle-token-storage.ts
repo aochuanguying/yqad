@@ -8,7 +8,6 @@ import { getLogger } from '../../utils/logger';
 const logger = getLogger('vehicle-token-storage');
 
 const VEHICLE_TOKEN_KEY = 'vehicle:token';
-const VEHICLE_TOKEN_TTL = 86400 * 7; // 7 天
 
 export class VehicleTokenStorage {
   private redis = getRedisClient();
@@ -18,7 +17,7 @@ export class VehicleTokenStorage {
    */
   async saveToken(token: string): Promise<void> {
     try {
-      await this.redis.set(VEHICLE_TOKEN_KEY, token, { EX: VEHICLE_TOKEN_TTL });
+      await this.redis.set(VEHICLE_TOKEN_KEY, token);
       logger.debug('车辆 Token 已保存到 Redis');
     } catch (error: any) {
       logger.error(`保存车辆 Token 失败：${error.message}`);

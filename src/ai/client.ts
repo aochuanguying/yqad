@@ -30,6 +30,8 @@ export interface GenerateContentOptions {
   maxTokens?: number;
   timeout?: number;
   scene?: 'comment' | 'post' | 'analysis';
+  images?: string[];         // base64 编码的图片数组，最多 5 张
+  requireVision?: boolean;   // 是否需要 vision provider
 }
 
 /**
@@ -70,6 +72,46 @@ export function initFallbackChain(): void {
 
   fallbackChain.initProviders(aiConfig.providers);
   logger.info(`✓ FallbackChain 初始化完成 (${aiConfig.providers.length} 个 provider)`);
+}
+
+/**
+ * 校验 base64 图片数组
+ * - 超过 5 张抛错
+ * - 含非法 base64 字符抛错并指明索引
+ */
+export function validateBase64Images(images: string[]): void {
+  if (images.length > 5) {
+    throw new Error('images 数组最多包含 5 张图片');
+  }
+  const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
+  for (let i = 0; i < images.length; i++) {
+    if (!base64Regex.test(images[i])) {
+      throw new Error(`images[${i}] 包含非法 base64 字符`);
+    }
+  }
+}
+
+/**
+ * 构造 user message
+ * - 无图时返回纯文本格式 { role: 'user', content: text }
+ * - 有图时构造 OpenAI Vision content 数组格式
+ */
+export function buildUserMessage(text: string, images?: string[]): any {
+  if (!images || images.length === 0) {
+    return { role: 'user', content: text };
+  }
+
+  // 校验 base64 合法性
+  validateBase64Images(images);
+
+  const content: any[] = [{ type: 'text', text }];
+  for (const img of images) {
+    content.push({
+      type: 'image_url',
+      image_url: { url: `data:image/jpeg;base64,${img}`, detail: 'auto' },
+    });
+  }
+  return { role: 'user', content };
 }
 
 /**
@@ -120,7 +162,7 @@ export async function generateContent(
         if (systemPrompt) {
           messages.push({ role: 'system', content: systemPrompt });
         }
-        messages.push({ role: 'user', content: finalUserPrompt });
+        messages.push(buildUserMessage(finalUserPrompt!, options?.images));
 
         const requestBody: any = {
           model: provider.model,
@@ -152,7 +194,8 @@ export async function generateContent(
 
         throw new Error('AI 响应格式异常');
       },
-      options?.scene
+      options?.scene,
+      options?.requireVision
     );
 
     if (result.success && result.content) {
@@ -176,7 +219,7 @@ export async function generateContent(
   if (systemPrompt) {
     messages.push({ role: 'system', content: systemPrompt });
   }
-  messages.push({ role: 'user', content: finalUserPrompt });
+  messages.push(buildUserMessage(finalUserPrompt, options?.images));
 
   const requestBody: any = {
     model: provider.model,

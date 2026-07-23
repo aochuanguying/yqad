@@ -98,7 +98,8 @@ export class FallbackChain {
    */
   async execute(
     executeFn: (provider: AIProviderConfig, timeout: number) => Promise<string>,
-    scene?: 'comment' | 'post' | 'analysis'
+    scene?: 'comment' | 'post' | 'analysis',
+    requireVision?: boolean
   ): Promise<FallbackResult> {
     const startTime = Date.now();
     const fallbacks: string[] = [];
@@ -109,8 +110,20 @@ export class FallbackChain {
       ? this.config.providerOrder
       : Array.from(this.providers.keys());
 
+    // 当 requireVision=true 时，过滤仅保留支持 vision 的 provider
+    let candidates = providerOrder;
+    if (requireVision) {
+      candidates = providerOrder.filter(name => {
+        const instance = this.providers.get(name);
+        return instance?.config.supportsVision === true;
+      });
+      if (candidates.length === 0) {
+        return { success: false, usedProvider: '', responseTime: 0, fallbacks: [], errors: [] };
+      }
+    }
+
     // 遍历 provider
-    for (const providerName of providerOrder) {
+    for (const providerName of candidates) {
       const providerInstance = this.providers.get(providerName);
       if (!providerInstance) {
         logger.warn(`Provider "${providerName}" 未找到，跳过`);

@@ -10,6 +10,7 @@ export interface AIProviderConfig {
   temperature?: number;
   maxTokens?: number;
   requestTimeout?: number;  // 单个模型的请求超时 (毫秒)
+  supportsVision?: boolean; // 是否支持多模态 (Vision)
 }
 
 export interface AppConfig {

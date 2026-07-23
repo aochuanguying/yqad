@@ -21,6 +21,7 @@ export interface AIProviderRecord {
   request_timeout: number;
   enabled: boolean;
   priority: number;
+  supports_vision: boolean;
   created_at: Date;
   updated_at: Date;
 }
@@ -36,6 +37,7 @@ export interface AIProviderConfig {
   temperature?: number;
   maxTokens?: number;
   requestTimeout?: number;
+  supportsVision?: boolean;
 }
 
 /**
@@ -80,6 +82,9 @@ export class AIProviderStorage {
           logger.warn('ai_providers 表不存在，将自动创建');
           // 自动创建表
           await this.createTable(connection);
+        } else {
+          // 表已存在，检查 supports_vision 字段是否存在
+          await this.ensureSupportsVisionColumn(connection);
         }
 
         this.initialized = true;
@@ -109,6 +114,7 @@ export class AIProviderStorage {
         request_timeout INT DEFAULT 30000 COMMENT '请求超时 (毫秒)',
         enabled TINYINT(1) DEFAULT 1 COMMENT '是否启用',
         priority INT DEFAULT 0 COMMENT '优先级（数字越小优先级越高）',
+        supports_vision TINYINT(1) DEFAULT 0 COMMENT '是否支持多模态',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
         INDEX idx_priority (priority),
@@ -148,11 +154,33 @@ export class AIProviderStorage {
   }
 
   /**
+   * 检测并添加 supports_vision 字段（兼容旧表）
+   */
+  private async ensureSupportsVisionColumn(connection: any): Promise<void> {
+    const [columns]: any[] = await connection.execute(
+      "SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'ai_providers' AND COLUMN_NAME = 'supports_vision'"
+    );
+
+    if (columns.length === 0) {
+      logger.info('检测到 ai_providers 表缺少 supports_vision 字段，正在添加...');
+      try {
+        await connection.execute(
+          "ALTER TABLE ai_providers ADD COLUMN supports_vision TINYINT(1) DEFAULT 0 COMMENT '是否支持多模态'"
+        );
+        logger.info('✅ supports_vision 字段添加成功');
+      } catch (error) {
+        logger.error('添加 supports_vision 字段失败:', error instanceof Error ? error.message : String(error));
+        throw new Error(`添加 supports_vision 字段失败: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  }
+
+  /**
    * 获取所有启用的 AI 提供商（按优先级排序）
    */
   async getEnabledProviders(): Promise<AIProviderConfig[]> {
     const sql = `
-      SELECT name, model, base_url, api_key, temperature, max_tokens, request_timeout
+      SELECT name, model, base_url, api_key, temperature, max_tokens, request_timeout, supports_vision
       FROM ai_providers
       WHERE enabled = 1
       ORDER BY priority ASC, id ASC
@@ -170,6 +198,7 @@ export class AIProviderStorage {
         temperature: row.temperature,
         maxTokens: row.max_tokens,
         requestTimeout: row.request_timeout,
+        supportsVision: !!row.supports_vision,
       }));
     } finally {
       await connection.release();
@@ -181,7 +210,7 @@ export class AIProviderStorage {
    */
   async getAllProviders(): Promise<AIProviderConfig[]> {
     const sql = `
-      SELECT name, model, base_url, api_key, temperature, max_tokens, request_timeout, enabled, priority
+      SELECT name, model, base_url, api_key, temperature, max_tokens, request_timeout, enabled, priority, supports_vision
       FROM ai_providers
       ORDER BY priority ASC, id ASC
     `;
@@ -198,6 +227,7 @@ export class AIProviderStorage {
         temperature: row.temperature,
         maxTokens: row.max_tokens,
         requestTimeout: row.request_timeout,
+        supportsVision: !!row.supports_vision,
       }));
     } finally {
       await connection.release();
@@ -209,7 +239,7 @@ export class AIProviderStorage {
    */
   async getProviderByName(name: string): Promise<AIProviderConfig | null> {
     const sql = `
-      SELECT name, model, base_url, api_key, temperature, max_tokens, request_timeout
+      SELECT name, model, base_url, api_key, temperature, max_tokens, request_timeout, supports_vision
       FROM ai_providers
       WHERE name = ?
     `;
@@ -231,6 +261,7 @@ export class AIProviderStorage {
         temperature: row.temperature,
         maxTokens: row.max_tokens,
         requestTimeout: row.request_timeout,
+        supportsVision: !!row.supports_vision,
       };
     } finally {
       await connection.release();
@@ -253,7 +284,7 @@ export class AIProviderStorage {
         // 更新现有记录
         const updateSql = `
           UPDATE ai_providers
-          SET model = ?, base_url = ?, api_key = ?, temperature = ?, max_tokens = ?, request_timeout = ?
+          SET model = ?, base_url = ?, api_key = ?, temperature = ?, max_tokens = ?, request_timeout = ?, supports_vision = ?
           WHERE name = ?
         `;
         await connection.execute(updateSql, [
@@ -263,14 +294,15 @@ export class AIProviderStorage {
           provider.temperature ?? 0.7,
           provider.maxTokens ?? 4000,
           provider.requestTimeout ?? 30000,
+          provider.supportsVision ? 1 : 0,
           provider.name,
         ]);
         logger.info(`更新 AI 提供商配置：${provider.name}`);
       } else {
         // 插入新记录
         const insertSql = `
-          INSERT INTO ai_providers (name, model, base_url, api_key, temperature, max_tokens, request_timeout, enabled, priority)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO ai_providers (name, model, base_url, api_key, temperature, max_tokens, request_timeout, enabled, priority, supports_vision)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
         await connection.execute(insertSql, [
           provider.name,
@@ -282,6 +314,7 @@ export class AIProviderStorage {
           provider.requestTimeout ?? 30000,
           provider.enabled ?? 1,
           provider.priority ?? 0,
+          provider.supportsVision ? 1 : 0,
         ]);
         logger.info(`插入 AI 提供商配置：${provider.name}`);
       }
@@ -310,8 +343,8 @@ export class AIProviderStorage {
 
       // 批量插入
       const insertSql = `
-        INSERT INTO ai_providers (name, model, base_url, api_key, temperature, max_tokens, request_timeout, enabled, priority)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)
+        INSERT INTO ai_providers (name, model, base_url, api_key, temperature, max_tokens, request_timeout, enabled, priority, supports_vision)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
       `;
 
       for (let i = 0; i < providers.length; i++) {
@@ -325,6 +358,7 @@ export class AIProviderStorage {
           provider.maxTokens ?? 4000,
           provider.requestTimeout ?? 30000,
           provider.priority ?? i,
+          provider.supportsVision ? 1 : 0,
         ]);
       }
 
