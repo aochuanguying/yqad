@@ -328,13 +328,24 @@ export class CookieScanner {
           logger.info('🍪 获取续期后的 Cookie...');
           const cookie = await this.extractCookie();
           if (cookie) {
-            const saveResult = await this.storage.saveCookie(cookie, 'auto');
-            if (saveResult.success) {
-              logger.info(`✅ Cookie 自动续期成功，版本：${saveResult.version}`);
-              const duration = Date.now() - startTime;
-              await this.storage.updateRefreshLog(duration, 'success', undefined, 'xiaohongshu');
-              await this.cleanup();
-              return { success: true, version: saveResult.version };
+            // 验证新 Cookie 是否真正有效
+            logger.info('🔍 验证续期后的 Cookie 有效性...');
+            const { XiaohongshuSearch } = await import('../../services/internet-search/xiaohongshu-search');
+            const verifyService = new XiaohongshuSearch();
+            (verifyService as any).config = { cookie };
+            const verifyResult = await verifyService.testConnection();
+            
+            if (verifyResult.success) {
+              const saveResult = await this.storage.saveCookie(cookie, 'auto');
+              if (saveResult.success) {
+                logger.info(`✅ Cookie 自动续期成功，版本：${saveResult.version}`);
+                const duration = Date.now() - startTime;
+                await this.storage.updateRefreshLog(duration, 'success', undefined, 'xiaohongshu');
+                await this.cleanup();
+                return { success: true, version: saveResult.version };
+              }
+            } else {
+              logger.warn(`⚠️ 浏览器持久化 session 提取的 Cookie 验证失败：${verifyResult.error}，进入扫码流程`);
             }
           }
         }
