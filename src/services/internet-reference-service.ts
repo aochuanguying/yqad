@@ -52,74 +52,149 @@ export async function canQuery(): Promise<boolean> {
 
 /**
  * 去除图片水印
- * 支持多种去水印方式：
- * 1. 第三方 API 去水印（如果有配置）
- * 2. 简单裁剪（如果图片有固定水印位置）
- * 3. 降级方案：直接返回原图
+ * 
+ * 策略：
+ * 1. 小红书图片：去掉 URL 中的水印参数，直接获取无水印原图
+ * 2. 其他平台图片：下载后用 sharp 裁剪底部水印区域（约 5%）
  */
 async function removeWatermark(imageUrls: string[]): Promise<string[]> {
   if (!imageUrls || imageUrls.length === 0) {
     return [];
   }
 
-  try {
-    // 方案 1：使用第三方去水印 API（需要配置）
-    // 示例：可以使用 Remove.bg、WatermarkRemover.io 等服务
-    // 这里预留接口，实际使用时需要配置 API Key
-    const watermarkRemoverApiKey = process.env.WATERMARK_REMOVER_API_KEY;
-    if (watermarkRemoverApiKey) {
-      logger.info('使用第三方 API 去水印');
-      const processedUrls = await removeWatermarkWithApi(imageUrls, watermarkRemoverApiKey);
-      return processedUrls;
-    }
-
-    // 方案 2：简单裁剪（针对固定位置的水印）
-    // 例如：小红书图片水印通常在右下角，可以裁剪掉
-    logger.info('使用简单裁剪去水印（降级方案）');
-    return imageUrls; // 暂时直接返回，后续可以实现图片处理逻辑
-
-  } catch (error) {
-    logger.error(`去水印失败，返回原图：${error instanceof Error ? error.message : String(error)}`);
-    // 降级方案：返回原图
-    return imageUrls;
-  }
-}
-
-/**
- * 使用第三方 API 去水印
- * @param imageUrls 图片 URL 列表
- * @param apiKey API Key
- */
-async function removeWatermarkWithApi(
-  imageUrls: string[],
-  apiKey: string
-): Promise<string[]> {
   const processedUrls: string[] = [];
 
   for (const imageUrl of imageUrls) {
     try {
-      // 示例：调用第三方去水印 API
-      // 实际使用时需要根据具体 API 文档调整
-      // const response = await fetch('https://api.watermarkremover.io/v1/remove', {
-      //   method: 'POST',
-      //   headers: {
-      //     'Authorization': `Bearer ${apiKey}`,
-      //     'Content-Type': 'application/json',
-      //   },
-      //   body: JSON.stringify({ image_url: imageUrl }),
-      // });
-      // const data = await response.json();
-      // processedUrls.push(data.output_url);
-
-      // 暂时返回原图，等待实际配置
-      processedUrls.push(imageUrl);
+      if (isXiaohongshuImage(imageUrl)) {
+        // 小红书图片：去掉 URL 参数获取无水印原图
+        const cleanUrl = removeXiaohongshuWatermarkParams(imageUrl);
+        processedUrls.push(cleanUrl);
+      } else if (isZhihuImage(imageUrl)) {
+        // 知乎图片：替换为原图尺寸（知乎水印在缩略图上，原图无水印）
+        const cleanUrl = getZhihuOriginalImage(imageUrl);
+        processedUrls.push(cleanUrl);
+      } else {
+        // 其他平台：下载后裁剪底部水印
+        const croppedPath = await cropBottomWatermark(imageUrl);
+        processedUrls.push(croppedPath || imageUrl);
+      }
     } catch (error) {
-      logger.warn(`单张图片去水印失败：${imageUrl}, 使用原图`);
+      logger.warn(`去水印失败（${imageUrl}），使用原图：${error instanceof Error ? error.message : String(error)}`);
       processedUrls.push(imageUrl);
     }
   }
 
+  const removedCount = processedUrls.filter((url, i) => url !== imageUrls[i]).length;
+  if (removedCount > 0) {
+    logger.info(`去水印处理完成：${removedCount}/${imageUrls.length} 张图片已处理`);
+  }
+
   return processedUrls;
+}
+
+/**
+ * 判断是否为小红书图片
+ */
+function isXiaohongshuImage(url: string): boolean {
+  return url.includes('xhscdn.com') || url.includes('xiaohongshu.com');
+}
+
+/**
+ * 判断是否为知乎图片
+ */
+function isZhihuImage(url: string): boolean {
+  return url.includes('zhimg.com') || url.includes('pic.zhihu.com');
+}
+
+/**
+ * 小红书图片去水印：去掉 URL 中的图片处理参数
+ * 
+ * 小红书图片 URL 格式：
+ * https://sns-webpic-qc.xhscdn.com/202x/xxx.jpg?imageView2/2/w/1080/format/webp
+ * https://ci.xiaohongshu.com/xxx?imageView2/2/w/1080/format/webp
+ * 
+ * 去掉 ? 后的参数即可获取无水印原图
+ */
+function removeXiaohongshuWatermarkParams(url: string): string {
+  // 去掉所有查询参数（imageView2 等图片处理指令会添加水印）
+  const cleanUrl = url.split('?')[0];
+  return cleanUrl;
+}
+
+/**
+ * 知乎图片获取原图：替换缩略图后缀为原图
+ * 
+ * 知乎图片格式：
+ * https://pic1.zhimg.com/v2-xxx_r.jpg (原图，无水印)
+ * https://pic1.zhimg.com/v2-xxx_720w.jpg (缩略图)
+ * https://pic1.zhimg.com/v2-xxx_b.jpg (缩略图)
+ */
+function getZhihuOriginalImage(url: string): string {
+  // 替换常见缩略图后缀为 _r（原图）
+  return url
+    .replace(/_\d+w\./, '_r.')
+    .replace(/_b\./, '_r.')
+    .replace(/_xl\./, '_r.');
+}
+
+/**
+ * 本地裁剪底部水印（通用方案）
+ * 下载图片后裁剪底部 5% 区域
+ */
+async function cropBottomWatermark(imageUrl: string): Promise<string | null> {
+  try {
+    const sharp = (await import('sharp')).default;
+    const axios = (await import('axios')).default;
+    const fs = (await import('fs')).default;
+    const path = (await import('path')).default;
+    const crypto = (await import('crypto')).default;
+
+    // 下载图片
+    const response = await axios.get(imageUrl, {
+      responseType: 'arraybuffer',
+      timeout: 10000,
+      maxContentLength: 10 * 1024 * 1024,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+      },
+    });
+
+    const imageBuffer = Buffer.from(response.data);
+    
+    // 获取图片元数据
+    const metadata = await sharp(imageBuffer).metadata();
+    if (!metadata.width || !metadata.height) {
+      logger.warn('无法获取图片尺寸，跳过裁剪');
+      return null;
+    }
+
+    // 裁剪底部 5%（水印通常在底部）
+    const cropHeight = Math.floor(metadata.height * 0.95);
+    const croppedBuffer = await sharp(imageBuffer)
+      .extract({ left: 0, top: 0, width: metadata.width, height: cropHeight })
+      .toBuffer();
+
+    // 保存到临时目录
+    const config = (await import('../utils/config')).loadConfig();
+    const tempDir = path.resolve(config.materials.processedPath || './data/materials/processed', 'temp-images');
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+
+    const hash = crypto.createHash('md5').update(imageUrl).digest('hex').substring(0, 12);
+    const ext = path.extname(imageUrl.split('?')[0]) || '.jpg';
+    const filename = `nowm_${hash}${ext}`;
+    const filePath = path.join(tempDir, filename);
+
+    fs.writeFileSync(filePath, croppedBuffer);
+    logger.debug(`裁剪水印完成：${filename} (原${metadata.height}px → ${cropHeight}px)`);
+
+    return filePath;
+  } catch (error) {
+    logger.warn(`裁剪水印失败：${error instanceof Error ? error.message : String(error)}`);
+    return null;
+  }
 }
 
 /**
