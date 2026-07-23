@@ -239,13 +239,14 @@ export class Scheduler {
    * 带随机偏移执行任务
    */
   private async executeWithRandomOffset(task: ScheduledTask): Promise<void> {
-    const offsetMs = randomDelay(
-      task.randomOffsetMin * 60 * 1000,
-      task.randomOffsetMax * 60 * 1000
-    );
+    const minMs = (task.randomOffsetMin || 0) * 60 * 1000;
+    const maxMs = (task.randomOffsetMax || 0) * 60 * 1000;
+    const offsetMs = randomDelay(minMs, maxMs);
 
-    logger.info(`任务 "${task.name}" 将在 ${Math.round(offsetMs / 60000)} 分钟后执行`);
-    await sleep(offsetMs);
+    if (offsetMs > 0 && !isNaN(offsetMs)) {
+      logger.info(`任务 "${task.name}" 将在 ${Math.round(offsetMs / 60000)} 分钟后执行`);
+      await sleep(offsetMs);
+    }
     await this.executeTask(task);
   }
 
