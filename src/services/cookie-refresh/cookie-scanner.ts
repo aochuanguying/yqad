@@ -939,7 +939,7 @@ export class CookieScanner {
       // 再关闭浏览器（使用超时保护）
       if (this.browser) {
         try {
-          const closePromise = this.browser.close();
+          const closePromise = this.browser.close().catch(() => {}); // 捕获 close 的潜在 reject
           const timeoutPromise = new Promise<void>((resolve) => 
             setTimeout(() => {
               logger.warn('⚠️ 浏览器关闭超时（5 秒），强制清理');

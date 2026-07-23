@@ -233,8 +233,7 @@ process.on('unhandledRejection', (reason, promise) => {
   const error = reason instanceof Error ? reason : new Error(String(reason));
   logger.error(`[未处理 Promise 拒绝] ${error.message}`);
   logger.error(error.stack);
-  logger.error('进程即将退出，将由进程管理器自动重启...');
-  setTimeout(() => process.exit(1), 1000);
+  // 不再强制退出进程，仅记录错误（避免因非致命异步错误导致服务崩溃）
 });
 
 main().catch(error => {
