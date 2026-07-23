@@ -358,45 +358,62 @@ export class XiaohongshuSearch implements ISearchPlatform {
     // 搜索间延迟（模拟人工操作）
     await this.requestDelay();
     
-    const results = await this.searchViaPython(keyword, maxResults);
-    logger.info(`小红书搜索完成，返回 ${results.length} 条结果`);
-    
-    if (results.length === 0) {
-      throw new Error('小红书搜索结果为空');
-    }
-    
-    // 对前 2 条有 xsecToken 的结果补充完整正文（搜索 API 只返回 desc 摘要）
-    const enrichCount = Math.min(2, results.length);
-    for (let i = 0; i < enrichCount; i++) {
-      const result = results[i];
-      if (!result.xsecToken || !result.url) continue;
+    try {
+      const results = await this.searchViaPython(keyword, maxResults);
+      logger.info(`小红书搜索完成，返回 ${results.length} 条结果`);
       
-      // 从 URL 提取 noteId
-      const noteIdMatch = result.url.match(/explore\/([a-f0-9]+)/);
-      if (!noteIdMatch) continue;
-      
-      try {
-        const detail = await this.getNoteDetail(noteIdMatch[1], result.xsecToken);
-        if (detail.success && detail.data) {
-          // 用完整正文替换简短描述
-          if (detail.data.content && detail.data.content.length > (result.content?.length || 0)) {
-            results[i] = {
-              ...result,
-              content: detail.data.content,
-              imageUrls: detail.data.images.length > 0 ? detail.data.images : result.imageUrls,
-            };
-            logger.info(`【正文增强】笔记 ${noteIdMatch[1]} 正文补充成功（${detail.data.content.length} 字）`);
-          }
-        }
-        // 详情请求间随机延迟（避免风控）
-        await this.requestDelay();
-      } catch (err) {
-        logger.debug(`笔记 ${noteIdMatch[1]} 正文补充失败，使用搜索摘要：${err instanceof Error ? err.message : String(err)}`);
-        // 补充失败不影响整体结果
+      if (results.length === 0) {
+        throw new Error('小红书搜索结果为空');
       }
+      
+      // 对前 2 条有 xsecToken 的结果补充完整正文（搜索 API 只返回 desc 摘要）
+      const enrichCount = Math.min(2, results.length);
+      for (let i = 0; i < enrichCount; i++) {
+        const result = results[i];
+        if (!result.xsecToken || !result.url) continue;
+        
+        // 从 URL 提取 noteId
+        const noteIdMatch = result.url.match(/explore\/([a-f0-9]+)/);
+        if (!noteIdMatch) continue;
+        
+        try {
+          const detail = await this.getNoteDetail(noteIdMatch[1], result.xsecToken);
+          if (detail.success && detail.data) {
+            // 用完整正文替换简短描述
+            if (detail.data.content && detail.data.content.length > (result.content?.length || 0)) {
+              results[i] = {
+                ...result,
+                content: detail.data.content,
+                imageUrls: detail.data.images.length > 0 ? detail.data.images : result.imageUrls,
+              };
+              logger.info(`【正文增强】笔记 ${noteIdMatch[1]} 正文补充成功（${detail.data.content.length} 字）`);
+            }
+          }
+          // 详情请求间随机延迟（避免风控）
+          await this.requestDelay();
+        } catch (err) {
+          logger.debug(`笔记 ${noteIdMatch[1]} 正文补充失败，使用搜索摘要：${err instanceof Error ? err.message : String(err)}`);
+          // 补充失败不影响整体结果
+        }
+      }
+      
+      return results;
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      // 检测 Cookie 失效类错误，主动记录到数据库日志
+      const cookieInvalidPatterns = ['权限', '登录', '没有权限', 'cookie', 'unauthorized', '403', '401'];
+      const isCookieInvalid = cookieInvalidPatterns.some(p => errMsg.toLowerCase().includes(p.toLowerCase()));
+      if (isCookieInvalid) {
+        logger.warn(`小红书 Cookie 已失效：${errMsg}`);
+        try {
+          const storage = NetworkPostConfigStorage.getInstance();
+          await storage.updateRefreshLog(0, 'failed', `Cookie 失效：${errMsg}`, 'xiaohongshu');
+        } catch (logErr) {
+          logger.error('写入 Cookie 失效日志失败:', logErr);
+        }
+      }
+      throw error;
     }
-    
-    return results;
   }
 
   /**
@@ -604,7 +621,22 @@ except Exception as e:
           } else {
             logger.error(`Python 进程异常退出 - 退出码：${code}, 信号：${signal}, stdout: ${output.substring(0, 200)}`);
           }
-          reject(new Error(errorOutput || `Python 进程退出码：${code}`));
+          // 尝试从 stdout 解析错误 JSON（Python 脚本可能输出 {"error": "..."} 后 sys.exit(1)）
+          let errorMsg = errorOutput || `Python 进程退出码：${code}`;
+          if (output.trim()) {
+            try {
+              const errResult = JSON.parse(output);
+              if (errResult.error) {
+                errorMsg = errResult.error;
+              }
+            } catch (e) {
+              // stdout 不是 JSON，保持原错误信息
+              if (!errorOutput.trim()) {
+                errorMsg = output.trim() || errorMsg;
+              }
+            }
+          }
+          reject(new Error(errorMsg));
           return;
         }
 

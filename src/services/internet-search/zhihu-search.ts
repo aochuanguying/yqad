@@ -114,7 +114,21 @@ export class ZhihuSearch implements ISearchPlatform {
       return results;
       
     } catch (error) {
-      logger.error('知乎搜索失败:', error instanceof Error ? error.message : String(error));
+      const errMsg = error instanceof Error ? error.message : String(error);
+      logger.error('知乎搜索失败:', errMsg);
+      // 检测鉴权/Cookie 失效类错误，主动记录到数据库日志
+      const invalidPatterns = ['authorization', 'failed', '权限', '登录', '过期', 'expired', '401', '403'];
+      const isInvalid = invalidPatterns.some(p => errMsg.toLowerCase().includes(p.toLowerCase()));
+      if (isInvalid) {
+        logger.warn(`知乎凭证已失效：${errMsg}`);
+        try {
+          const { NetworkPostConfigStorage } = await import('../../storage/mysql/network-post-config-storage');
+          const storage = NetworkPostConfigStorage.getInstance();
+          await storage.updateRefreshLog(0, 'failed', `凭证失效：${errMsg}`, 'zhihu');
+        } catch (logErr) {
+          logger.error('写入知乎失效日志失败:', logErr);
+        }
+      }
       throw error;
     }
   }
@@ -188,7 +202,18 @@ export class ZhihuSearch implements ISearchPlatform {
     const data: any = await response.json();
     
     if (data.Code !== 0) {
+      const errMsg = data.Message || `Code=${data.Code}`;
       logger.warn(`知乎 API 返回错误：Code=${data.Code}, Message=${data.Message}`);
+      // 鉴权失败时主动记录失效日志
+      if (data.Code === 20001 || data.Code === 401) {
+        try {
+          const { NetworkPostConfigStorage } = await import('../../storage/mysql/network-post-config-storage');
+          const storage = NetworkPostConfigStorage.getInstance();
+          await storage.updateRefreshLog(0, 'failed', `Access Secret 失效：${errMsg}`, 'zhihu');
+        } catch (logErr) {
+          logger.error('写入知乎失效日志失败:', logErr);
+        }
+      }
       return [];
     }
     

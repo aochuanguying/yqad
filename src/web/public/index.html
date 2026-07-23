@@ -6256,9 +6256,27 @@
           }
           showToast(msg, data.cookieValid === false ? 'warning' : 'success');
           if (statusSpan) statusSpan.textContent = '测试成功';
+          // 更新状态面板为有效
+          const statusDiv = document.getElementById('zhihu-cookie-status');
+          if (statusDiv) {
+            statusDiv.className = 'p-4 border border-green-200 rounded-md mb-4 bg-green-50';
+            statusDiv.innerHTML = `<div class="space-y-2">
+              <p class="text-sm text-green-800"><strong>✅ 状态：</strong>API 连接有效（${data.resultCount || 0} 条结果）${data.cookieValid === false ? '，Cookie 无效' : ''}</p>
+            </div>`;
+          }
         } else {
           showToast('❌ 测试失败：' + (data.error || '未知错误'), 'error');
           if (statusSpan) statusSpan.textContent = '测试失败';
+          // 更新状态面板为失效
+          const statusDiv = document.getElementById('zhihu-cookie-status');
+          if (statusDiv) {
+            statusDiv.className = 'p-4 border border-red-200 rounded-md mb-4 bg-red-50';
+            statusDiv.innerHTML = `<div class="space-y-2">
+              <p class="text-sm text-red-800"><strong>❌ 状态：</strong>连接失效</p>
+              <p class="text-xs text-red-600">${data.error || '未知错误'}</p>
+              <p class="text-xs text-gray-600 mt-1">💡 请检查 Access Secret 是否过期，或刷新 Cookie</p>
+            </div>`;
+          }
         }
       } catch (error) {
         showToast('测试失败：' + error.message, 'error');
@@ -6607,9 +6625,27 @@
         if (data.success) {
           showToast(`✅ 测试成功！找到 ${data.resultCount || 0} 条结果`, 'success');
           if (statusSpan) statusSpan.textContent = '测试成功';
+          // 更新状态面板为有效
+          const statusDiv = document.getElementById('xiaohongshu-cookie-status');
+          if (statusDiv) {
+            statusDiv.className = 'p-4 border border-green-200 rounded-md mb-4 bg-green-50';
+            statusDiv.innerHTML = `<div class="space-y-2">
+              <p class="text-sm text-green-800"><strong>✅ 状态：</strong>Cookie 有效（测试通过，${data.resultCount || 0} 条结果）</p>
+            </div>`;
+          }
         } else {
           showToast('❌ 测试失败：' + (data.error || '未知错误'), 'error');
           if (statusSpan) statusSpan.textContent = '测试失败';
+          // 更新状态面板为失效
+          const statusDiv = document.getElementById('xiaohongshu-cookie-status');
+          if (statusDiv) {
+            statusDiv.className = 'p-4 border border-red-200 rounded-md mb-4 bg-red-50';
+            statusDiv.innerHTML = `<div class="space-y-2">
+              <p class="text-sm text-red-800"><strong>❌ 状态：</strong>Cookie 已失效</p>
+              <p class="text-xs text-red-600">${data.error || '未知错误'}</p>
+              <p class="text-xs text-gray-600 mt-1">💡 请点击"刷新 Cookie"扫码重新获取</p>
+            </div>`;
+          }
         }
       } catch (error) {
         showToast('测试失败：' + error.message, 'error');
