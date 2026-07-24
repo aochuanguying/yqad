@@ -11,15 +11,16 @@
 
 ## 生产环境连接信息
 
-- MySQL: `192.168.50.50:3306`，用户 `root`，密码 `Wfw7539148@`，库名 `yqad_prod_db`
-- Redis: `192.168.50.50:6379`，db `1`，keyPrefix `prod:`
-- ChromaDB: `http://192.168.50.50:8000`
+- MySQL: `192.168.50.10:3306`（x5 本地 MariaDB 11），用户 `root`，密码 `Wfw7539148@`，库名 `yqad_prod_db`
+- Redis: `192.168.50.10:6379`（x5 本地 Redis 7），db `1`，keyPrefix `prod:`
+- ChromaDB: `http://192.168.50.10:8000`（x5 本地）
 - 生产部署服务器（x5-server）: `192.168.50.10`，用户 `root`，密码 `Wfw7539148@`
   - Docker 数据目录: `/opt/docker/yqad/`
   - 编排文件: `/opt/docker/docker-compose.yml`
   - 网络模式: 尽量用bridge，特殊情况下可使用host
   - 服务端口: 3080（3000 被 Nginx Proxy Manager 占用）
   - 访问地址: `http://192.168.50.10:3080`
+  - 容器内数据库连接使用服务名: `mysql`、`redis`、`chromadb`（docker compose 内部 DNS）
 
 ## 构建与部署
 

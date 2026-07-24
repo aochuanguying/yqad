@@ -415,14 +415,14 @@ export class AutohomeSearch implements ISearchPlatform {
         }
       });
 
-      // 超时处理（25 秒）
+      // 超时处理（60 秒，含详情获取时间）
       setTimeout(() => {
         if (settled) return;
         settled = true;
         pyProcess.kill();
-        logger.warn('搜索超时（25 秒）');
+        logger.warn('搜索超时（60 秒）');
         resolve([]);
-      }, 25000);
+      }, 60000);
     });
   }
 

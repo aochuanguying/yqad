@@ -13,7 +13,7 @@
  * - 语义相似度（cosine similarity）
  */
 
-import { loadConfig } from '../utils/config';
+import { getContentDeduplicationStorage } from '../storage/mysql/content-deduplication-storage';
 import { getLogger } from '../utils/logger';
 import { getPostHistoryStorage } from '../storage/mysql/post-history-storage';
 import { chromaSearchService } from './chroma-search-service';
@@ -61,8 +61,15 @@ class ContentDeduplicationService {
    * @returns 相似度检测结果
    */
   async checkSimilarity(title: string, content: string): Promise<SimilarityCheckResult> {
-    const config = loadConfig();
-    const threshold = config.contentDeduplication?.similarityThreshold || 0.85;
+    let threshold = 0.85;
+    try {
+      const dedupConfig = await getContentDeduplicationStorage().getConfig();
+      if (dedupConfig) {
+        threshold = dedupConfig.similarityThreshold || 0.85;
+      }
+    } catch (error: any) {
+      // 使用默认值
+    }
 
     try {
       // 使用 ChromaDB Service 进行语义去重检测

@@ -7,7 +7,7 @@
  * 3. 紧急发帖豁免
  */
 
-import { loadConfig } from '../utils/config';
+import { getPostingIntervalControlStorage } from '../storage/mysql/posting-interval-control-storage';
 import { getLogger } from '../utils/logger';
 import { getTopicStorage } from '../storage/mysql/topic-storage';
 
@@ -36,10 +36,19 @@ class PostingIntervalControlService {
    * 检查主题发帖间隔
    */
   async checkPostingInterval(topicId: string, topicName?: string): Promise<PostingIntervalCheckResult> {
-    const config = loadConfig();
-    const minIntervalDays = config.postingIntervalControl?.minIntervalDays || 5;
-    const whitelist = config.postingIntervalControl?.whitelist || [];
-    const enableEmergencyOverride = config.postingIntervalControl?.enableEmergencyOverride || false;
+    let minIntervalDays = 5;
+    let whitelist: string[] = [];
+    let enableEmergencyOverride = false;
+    try {
+      const intervalConfig = await getPostingIntervalControlStorage().getConfig();
+      if (intervalConfig) {
+        minIntervalDays = intervalConfig.minIntervalDays || 5;
+        whitelist = intervalConfig.whitelist || [];
+        enableEmergencyOverride = intervalConfig.enableEmergencyOverride || false;
+      }
+    } catch (error: any) {
+      // 使用默认值
+    }
 
     // 检查白名单
     if (whitelist.includes(topicId)) {
@@ -160,9 +169,16 @@ class PostingIntervalControlService {
   /**
    * 检查紧急发帖豁免
    */
-  checkEmergencyOverride(topicId: string, topicName?: string): boolean {
-    const config = loadConfig();
-    const enableEmergencyOverride = config.postingIntervalControl?.enableEmergencyOverride || false;
+  async checkEmergencyOverride(topicId: string, topicName?: string): Promise<boolean> {
+    let enableEmergencyOverride = false;
+    try {
+      const intervalConfig = await getPostingIntervalControlStorage().getConfig();
+      if (intervalConfig) {
+        enableEmergencyOverride = intervalConfig.enableEmergencyOverride || false;
+      }
+    } catch (error: any) {
+      // 使用默认值
+    }
 
     if (!enableEmergencyOverride) {
       logger.debug('紧急发帖豁免功能未启用');

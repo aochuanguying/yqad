@@ -466,7 +466,7 @@ export class NetworkPostConfigStorage {
              xiaohongshu_cookie_refresh_logs = JSON_ARRAY_APPEND(
                IFNULL(xiaohongshu_cookie_refresh_logs, JSON_ARRAY()),
                '$',
-               CAST(? AS JSON)
+               JSON_EXTRACT(?, '$')
              )
          WHERE id = 1`,
         [cookie, JSON.stringify(refreshLog)]
@@ -660,7 +660,7 @@ export class NetworkPostConfigStorage {
              zhihu_cookie_refresh_logs = JSON_ARRAY_APPEND(
                IFNULL(zhihu_cookie_refresh_logs, JSON_ARRAY()),
                '$',
-               CAST(? AS JSON)
+               JSON_EXTRACT(?, '$')
              )
          WHERE id = 1`,
         [cookie, JSON.stringify(refreshLog)]

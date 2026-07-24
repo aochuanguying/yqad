@@ -366,8 +366,8 @@ export class XiaohongshuSearch implements ISearchPlatform {
         throw new Error('小红书搜索结果为空');
       }
       
-      // 对前 2 条有 xsecToken 的结果补充完整正文（搜索 API 只返回 desc 摘要）
-      const enrichCount = Math.min(2, results.length);
+      // 对前 5 条有 xsecToken 的结果补充完整正文和图片
+      const enrichCount = Math.min(5, results.length);
       for (let i = 0; i < enrichCount; i++) {
         const result = results[i];
         if (!result.xsecToken || !result.url) continue;

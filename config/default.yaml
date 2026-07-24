@@ -1,14 +1,14 @@
 env: "production"
 mysql:
   test:
-    host: "192.168.50.50"
+    host: "192.168.50.10"
     port: 3306
     user: "root"
     password: "Wfw7539148@"
     database: "yqad_db"
     connectionLimit: 5
   production:
-    host: "192.168.50.50"
+    host: "192.168.50.10"
     port: 3306
     user: "root"
     password: "Wfw7539148@"
@@ -19,20 +19,20 @@ mysql:
   timeout: 30000
 redis:
   test:
-    host: "192.168.50.50"
+    host: "192.168.50.10"
     port: 6379
     db: 0
     keyPrefix: "test:"
   production:
-    host: "192.168.50.50"
+    host: "192.168.50.10"
     port: 6379
     db: 1
     keyPrefix: "prod:"
 chromadb:
   test:
-    baseUrl: "http://192.168.50.50:8000"
+    baseUrl: "http://192.168.50.10:8000"
   production:
-    baseUrl: "http://192.168.50.50:8000"
+    baseUrl: "http://192.168.50.10:8000"
 web:
   enabled: true
   port: 3000

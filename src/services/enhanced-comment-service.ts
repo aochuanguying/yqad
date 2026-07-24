@@ -16,7 +16,6 @@ import { getCommentService } from './comment-service';
 import { commentSentimentStorage, CommentVectorMetadata } from '../storage/chroma/comment-sentiment-storage';
 import { embeddingVectorizer } from '../utils/embedding-vectorizer';
 import { getLogger } from '../utils/logger';
-import { loadConfig } from '../utils/config';
 
 const logger = getLogger('enhanced-comment-service');
 
@@ -35,24 +34,20 @@ class EnhancedCommentService {
     user_id?: string;
     parent_id?: string;
   }) {
-    const config = loadConfig();
-    
     // 1. 使用基础服务创建评论（MySQL 存储）
     const comment = await this.baseService.createComment(input);
     logger.info(`评论创建成功：${comment.id}`);
 
     // 2. 异步进行情感分析（不阻塞主流程）
-    if (config.enhancedCommentService?.enableSentimentAnalysis !== false) {
-      // 使用 setImmediate 异步执行，不阻塞返回
-      setImmediate(async () => {
-        try {
-          await this.analyzeCommentSentiment(comment);
-        } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : String(error);
-          logger.warn(`评论情感分析失败：${errorMsg}`);
-        }
-      });
-    }
+    // 使用 setImmediate 异步执行，不阻塞返回
+    setImmediate(async () => {
+      try {
+        await this.analyzeCommentSentiment(comment);
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        logger.warn(`评论情感分析失败：${errorMsg}`);
+      }
+    });
 
     return comment;
   }

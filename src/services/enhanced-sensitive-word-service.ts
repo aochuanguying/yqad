@@ -14,7 +14,7 @@
  * - ChromaDB: 语义匹配敏感词变体
  */
 
-import { loadConfig } from '../utils/config';
+import { getSensitiveWordFilterStorage } from '../storage/mysql/sensitive-word-filter-storage';
 import { getLogger } from '../utils/logger';
 import { sensitiveWordFilterService, SensitiveWordDetectionResult, SensitiveWordLevel } from './sensitive-word-filter-service';
 import { sensitiveVariantStorage, VariantDetectionResult } from '../storage/chroma/sensitive-variant-storage';
@@ -48,12 +48,15 @@ class EnhancedSensitiveWordService {
    * @returns 检测结果
    */
   async detectAndReplace(text: string): Promise<EnhancedDetectionResult> {
-    const config = loadConfig();
-    
     // 如果敏感词过滤被禁用，直接通过
-    if (config.sensitiveWordFilter?.enabled === false) {
-      logger.debug('敏感词过滤已禁用');
-      return { passed: true };
+    try {
+      const sensitiveConfig = await getSensitiveWordFilterStorage().getConfig();
+      if (sensitiveConfig?.enabled === false) {
+        logger.debug('敏感词过滤已禁用');
+        return { passed: true };
+      }
+    } catch (error: any) {
+      // 获取配置失败，继续执行检测
     }
 
     try {

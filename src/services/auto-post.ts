@@ -593,6 +593,8 @@ export class AutoPostService {
     // 使用 pipeline 上下文中已缓存的配置
     const featuredConfig = ctx.config;
     const minImages = featuredConfig?.minImages || 3;
+    // 精华帖模式选推荐数量（6张），普通模式选最少数量
+    const neededImages = featuredEnabled ? (minImages + Math.floor(Math.random() * (9 - minImages + 1))) : minImages;
     
     let imagePaths: string[] = [];
     let materialSelectionResult: MaterialSelectionResult | null = null;
@@ -609,7 +611,7 @@ export class AutoPostService {
           localRatio: 1.0,  // 100% 本地素材
           title: generated!.title,
           internetReferences: [],
-          neededCount: minImages,
+          neededCount: neededImages,
         });
         
         if (materialSelectionResult && materialSelectionResult.selectedMaterials.length > 0) {
@@ -812,7 +814,7 @@ export class AutoPostService {
 
     // 评估精华准备度
     const featuredReadiness = featuredEnabled
-      ? evaluateFeaturedPostingReadiness({ 
+      ? await evaluateFeaturedPostingReadiness({ 
           title: finalTitle, 
           content: finalContent, 
           imageUrls,
@@ -1145,6 +1147,7 @@ export class AutoPostService {
       ]);
       const featuredEnabled = featuredConfig?.enabled ?? false;
       const minImages = featuredConfig?.minImages || 3;
+      const neededImages = featuredEnabled ? (minImages + Math.floor(Math.random() * (9 - minImages + 1))) : minImages;
 
       // 使用预加载的 CommonJS 模块
       const { canQuery, search } = internetReferenceService || require('./internet-reference-service');
@@ -1188,7 +1191,7 @@ export class AutoPostService {
         
         // 获取图片（从本地素材库）
         const localMaterials = await hybridMaterialService.matchLocalMaterials([generated.title], 50);
-        const imagePaths = localMaterials.slice(0, featuredConfig?.minImages || 3).map(m => m.path);
+        const imagePaths = localMaterials.slice(0, neededImages).map(m => m.path);
         
         // 上传图片（需要 accessToken）
         const imageUrls: string[] = [];
@@ -1401,7 +1404,7 @@ export class AutoPostService {
 
       // 评估精华帖就绪状态（如果仍启用精华模式）
       const featuredReadiness = featuredEnabled
-        ? evaluateFeaturedPostingReadiness({ 
+        ? await evaluateFeaturedPostingReadiness({ 
             title: generated.title, 
             content: generated.content, 
             imageUrls,
@@ -1630,6 +1633,7 @@ export class AutoPostService {
 
         // 3. 【第三步优化】选择素材（主题发帖优先使用本地素材）
         const minImages = featuredConfig?.minImages || 3;
+        const neededImages = featuredEnabled ? (minImages + Math.floor(Math.random() * (9 - minImages + 1))) : minImages;
         
         // ⭐ 主题发帖逻辑：优先使用本地素材，不足时才从网络获取
         const hasLocalMaterials = topic.materialPaths && topic.materialPaths.length > 0;
@@ -1643,7 +1647,7 @@ export class AutoPostService {
               localRatio: 1.0,  // 100% 本地素材
               title: generated!.title,
               internetReferences: [],
-              neededCount: minImages,
+              neededCount: neededImages,
             });
             
             if (materialSelectionResult && materialSelectionResult.selectedMaterials.length > 0) {
@@ -1792,6 +1796,7 @@ export class AutoPostService {
 
         // 【第三步优化】使用混合素材服务选择图片
         const minImages = featuredConfig?.minImages || 3;
+        const neededImages = featuredEnabled ? (minImages + Math.floor(Math.random() * (9 - minImages + 1))) : minImages;
         
         // 收集互联网参考素材
         const internetReferences: InternetReference[] = [];
@@ -1819,7 +1824,7 @@ export class AutoPostService {
               localRatio: 0.6,
               title: generated.title,
               internetReferences,
-              neededCount: minImages,
+              neededCount: neededImages,
             });
             
             // 提取本地素材路径

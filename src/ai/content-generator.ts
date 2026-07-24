@@ -2,9 +2,9 @@ import { generateContent } from './client';
 import { buildCommentSystemPrompt, buildCommentUserPrompt, buildPostSystemPrompt, buildPostUserPrompt, buildFeaturedPostUserPrompt, buildHumanToneCommentPrompt } from './prompts';
 import { PostFeatures } from '../services/comment-analyzer';
 import { PostGenerationOptions } from '../types/posting-optimization';
-import { loadConfig } from '../utils/config';
 import { getLogger } from '../utils/logger';
 import { getContentLimitsStorage } from '../storage/mysql/content-limits-storage';
+import { getFeaturedPostingStorage } from '../storage/mysql/featured-posting-storage';
 import { ReferencePost as InternetReference } from '../types/posting-optimization';
 
 const logger = getLogger('content-gen');
@@ -349,7 +349,6 @@ export async function generatePost(
   topicConstraint?: string,
   options?: PostGenerationOptions
 ): Promise<GeneratedPost> {
-  const config = loadConfig();
   const mode = options?.mode ?? 'normal';
   
   // 从数据库获取内容限制配置
@@ -366,12 +365,21 @@ export async function generatePost(
   }
 
   if (mode === 'featured') {
-    min = Math.max(min, config.featuredPosting.minContentChars);
+    let featuredMin = 250;
+    try {
+      const featuredConfig = await getFeaturedPostingStorage().getConfig();
+      if (featuredConfig) {
+        featuredMin = featuredConfig.minContentChars;
+      }
+    } catch (error: any) {
+      logger.warn(`获取精选发帖配置失败，使用默认值：${error.message}`);
+    }
+    min = Math.max(min, featuredMin);
     max = Math.max(max, min);
   }
 
-  // 严格控制最大长度：预留标题和换行的空间（标题平均 30 字 + 2 换行）
-  const maxBodyLength = max - 32;
+  // 严格控制最大长度：总字数(post_max)需预留标题(~20字) + 话题标签(~50字) + 分隔换行(4字)
+  const maxBodyLength = max - 80;
 
   // 任务 3.6: 如果有参考素材，使用分平台提示词生成逻辑
   if (options?.references && options.references.length > 0) {

@@ -8,7 +8,6 @@
  * 4. 过期报告定期清理
  */
 
-import { loadConfig } from '../utils/config';
 import { getLogger } from '../utils/logger';
 import { SimilarityCheckResult } from './content-deduplication-service';
 import { SensitiveWordDetectionResult } from './sensitive-word-filter-service';
@@ -16,6 +15,7 @@ import { EnhancedDetectionResult } from './enhanced-sensitive-word-service';
 import { ScoringDetails } from './content-quality-scoring-service';
 import { PostingIntervalCheckResult } from './posting-interval-control-service';
 import { complianceReportStorage, CreateComplianceReportInput, MySQLComplianceReport } from '../storage/mysql/compliance-report-storage';
+import { getComplianceReportConfigStorage } from '../storage/mysql/compliance-report-config-storage';
 
 const logger = getLogger('compliance-check-report');
 
@@ -229,8 +229,15 @@ class ComplianceCheckReportService {
    * 清理过期报告
    */
   async cleanupExpiredReports(): Promise<void> {
-    const config = loadConfig();
-    const retainDays = config.complianceCheckReport?.retainDays || 30;
+    let retainDays = 30;
+    try {
+      const reportConfig = await getComplianceReportConfigStorage().getConfig();
+      if (reportConfig) {
+        retainDays = reportConfig.retainDays || 30;
+      }
+    } catch (error: any) {
+      // 使用默认值
+    }
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - retainDays);
 

@@ -1,5 +1,5 @@
-import { loadConfig } from '../utils/config';
 import { FeaturedPostingReadiness, FeaturedPostingMetrics } from '../types/posting-optimization';
+import { getFeaturedPostingStorage } from '../storage/mysql/featured-posting-storage';
 
 /**
  * 评估标题质量
@@ -90,12 +90,11 @@ function evaluateContentStructure(content: string): {
  * @param imageCount 图片数量
  * @returns 评估结果
  */
-function evaluateImageQuality(imageCount: number): {
+function evaluateImageQuality(imageCount: number, minImages: number): {
   quality: string;
   eligible: boolean;
   reason?: string;
 } {
-  const minImages = loadConfig().featuredPosting.minImages;
   const recommendedMin = 6;
   const recommendedMax = 9;
   
@@ -129,16 +128,25 @@ function evaluateImageQuality(imageCount: number): {
   };
 }
 
-export function evaluateFeaturedPostingReadiness(params: {
+export async function evaluateFeaturedPostingReadiness(params: {
   title: string;
   content: string;
   imageUrls: string[];
   topicNames?: string[];  // 话题名称列表
-}): FeaturedPostingReadiness {
-  const config = loadConfig();
-  const minContentChars = config.featuredPosting.minContentChars;
-  const minImages = config.featuredPosting.minImages;
-  const maxImages = config.featuredPosting.maxImages || 9;
+}): Promise<FeaturedPostingReadiness> {
+  let minContentChars = 250;
+  let minImages = 4;
+  let maxImages = 9;
+  try {
+    const featuredConfig = await getFeaturedPostingStorage().getConfig();
+    if (featuredConfig) {
+      minContentChars = featuredConfig.minContentChars;
+      minImages = featuredConfig.minImages;
+      maxImages = featuredConfig.maxImages || 9;
+    }
+  } catch (error: any) {
+    // 使用默认值
+  }
 
   const contentChars = (params.content || '').length;
   const titleChars = (params.title || '').length;
@@ -193,7 +201,7 @@ export function evaluateFeaturedPostingReadiness(params: {
   }
 
   // 3. 图片质量评估
-  const imageEval = evaluateImageQuality(imageCount);
+  const imageEval = evaluateImageQuality(imageCount, minImages);
   metrics.imageQuality = imageEval.quality;
   
   if (!imageEval.eligible) {

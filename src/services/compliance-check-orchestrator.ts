@@ -7,12 +7,16 @@
  * 3. 提供通过/拒绝决策
  */
 
-import { loadConfig } from '../utils/config';
 import { getLogger } from '../utils/logger';
 import { contentDeduplicationService, SimilarityCheckResult } from './content-deduplication-service';
 import { contentQualityScoringService, ScoringDetails } from './content-quality-scoring-service';
 import { postingIntervalControlService, PostingIntervalCheckResult } from './posting-interval-control-service';
 import { complianceCheckReportService, ComplianceCheckReport } from './compliance-check-report-service';
+import { getContentDeduplicationStorage } from '../storage/mysql/content-deduplication-storage';
+import { getSensitiveWordFilterStorage } from '../storage/mysql/sensitive-word-filter-storage';
+import { getContentQualityScoringStorage } from '../storage/mysql/content-quality-scoring-storage';
+import { getPostingIntervalControlStorage } from '../storage/mysql/posting-interval-control-storage';
+import { getComplianceReportConfigStorage } from '../storage/mysql/compliance-report-config-storage';
 import { enhancedSensitiveWordService, EnhancedDetectionResult } from './enhanced-sensitive-word-service';
 
 const logger = getLogger('compliance-check-orchestrator');
@@ -52,7 +56,15 @@ class ComplianceCheckOrchestrator {
    * 执行完整的合规性检查
    */
   async performComplianceCheck(input: ComplianceCheckInput): Promise<ComplianceCheckResult> {
-    const config = loadConfig();
+    // 从数据库读取各模块的启用状态
+    const [dedupConfig, sensitiveConfig, scoringConfig, intervalConfig, reportConfig] = await Promise.all([
+      getContentDeduplicationStorage().getConfig().catch(() => null),
+      getSensitiveWordFilterStorage().getConfig().catch(() => null),
+      getContentQualityScoringStorage().getConfig().catch(() => null),
+      getPostingIntervalControlStorage().getConfig().catch(() => null),
+      getComplianceReportConfigStorage().getConfig().catch(() => null),
+    ]);
+
     const result: ComplianceCheckResult = {
       passed: true,
       rejectReasons: [],
@@ -62,7 +74,7 @@ class ComplianceCheckOrchestrator {
 
     try {
       // 1. 内容去重检查
-      if (config.contentDeduplication?.enabled !== false) {
+      if (dedupConfig?.enabled !== false) {
         logger.debug(`开始内容去重检查："${input.title}"`);
         const similarityResult = await contentDeduplicationService.checkSimilarity(input.title, input.content);
         result.similarityCheck = similarityResult;
@@ -76,7 +88,7 @@ class ComplianceCheckOrchestrator {
       }
 
       // 2. 敏感词检查（两级检测：Redis + ChromaDB）
-      if (config.sensitiveWordFilter?.enabled !== false) {
+      if (sensitiveConfig?.enabled !== false) {
         logger.debug(`开始敏感词检查（两级检测）："${input.title}"`);
         
         try {
@@ -102,7 +114,7 @@ class ComplianceCheckOrchestrator {
       }
 
       // 3. 内容质量评分
-      if (config.contentQualityScoring?.enabled !== false) {
+      if (scoringConfig?.enabled !== false) {
         logger.debug(`开始内容质量评分："${input.title}"`);
         const qualityScore = await contentQualityScoringService.calculateScore({
           title: input.title,
@@ -112,7 +124,7 @@ class ComplianceCheckOrchestrator {
         });
         result.qualityScore = qualityScore;
 
-        const minScore = config.contentQualityScoring?.minScore || 60;
+        const minScore = scoringConfig?.minScore || 60;
         if (qualityScore.finalScore < minScore) {
           result.passed = false;
           result.rejectReasons.push(
@@ -122,7 +134,7 @@ class ComplianceCheckOrchestrator {
       }
 
       // 4. 发帖间隔检查（如果有主题）
-      if (config.postingIntervalControl?.enabled !== false && input.topicId) {
+      if (intervalConfig?.enabled !== false && input.topicId) {
         logger.debug(`开始发帖间隔检查：主题 "${input.topicName || input.topicId}"`);
         const intervalResult = await postingIntervalControlService.checkPostingInterval(
           input.topicId,
@@ -143,7 +155,7 @@ class ComplianceCheckOrchestrator {
       }
 
       // 5. 生成合规性检查报告
-      if (config.complianceCheckReport?.enabled !== false) {
+      if (reportConfig?.enabled !== false) {
         const report: Omit<ComplianceCheckReport, 'id' | 'createdAt'> = {
           postId: this.generatePostId(),
           title: input.title,

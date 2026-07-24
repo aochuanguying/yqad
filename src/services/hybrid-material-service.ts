@@ -166,8 +166,8 @@ class HybridMaterialService {
       
       const searchResults = await chromaSearchService.searchMaterials({
         query,
-        nResults: neededCount * 2,  // 多返回一些用于筛选
-        minSimilarity: 0.5,
+        nResults: Math.max(neededCount * 5, 30),  // 返回更大候选池用于随机选取
+        minSimilarity: 0.3,
       });
       
       if (searchResults.length > 0) {
@@ -208,7 +208,8 @@ class HybridMaterialService {
         
         if (materials.length > 0) {
           logger.info(`【语义搜索】成功加载 ${materials.length} 个素材`);
-          return materials.slice(0, neededCount);
+          // 从候选中随机选取（避免每次返回相同结果）
+          return this.randomPickFromCandidates(materials, neededCount);
         }
       } else {
         logger.info(`【语义搜索】无匹配结果，回退到关键词匹配`);
@@ -255,15 +256,16 @@ class HybridMaterialService {
       logger.info(`  #${index + 1}: ${item.material.path} - 总分=${item.totalScore.toFixed(1)}, 匹配=${item.matchScore.toFixed(1)}, 质量=${item.qualityScore}`);
     });
 
-    // 选择前 N 个
-    const selected = scoredMaterials.slice(0, neededCount);
+    // 从 top 候选池中随机选取（取 3 倍于 neededCount 的候选，增加多样性）
+    const poolSize = Math.min(scoredMaterials.length, neededCount * 3);
+    const candidatePool = scoredMaterials.slice(0, poolSize).map(s => s.material);
     
     logger.info(
       `matchLocalMaterials: 智能匹配完成，关键词=[${keywords.join(', ')}], ` +
-      `选中${selected.length}个素材，平均分数=${selected.length > 0 ? (selected.reduce((sum, s) => sum + s.totalScore, 0) / selected.length).toFixed(1) : 'N/A'}`
+      `候选池${poolSize}个，需要${neededCount}个`
     );
 
-    return selected.map(s => s.material);
+    return this.randomPickFromCandidates(candidatePool, neededCount);
   }
 
   /**
@@ -559,14 +561,17 @@ class HybridMaterialService {
         strategy = `混合模式：候选不足，使用全部${selected.length}个（本地${localCount}+网络${internetCount}）`;
       } else {
         // 候选素材充足，按贴合度排序选择前 N 个
-        // 本地素材有 matchScore，网络素材默认质量分为 60
+        // 网络素材是当前话题直接相关的参考图片，给予更高的基础分
         const scoredCandidates = allCandidates.map(material => {
           const matchScore = material.matchedKeywords ? 
             this.calculateMatchScore(material, options.title ? [options.title] : []) : 0;
           const qualityScore = material.qualityScore?.totalScore || 60;
           
-          // 综合分数 = 匹配度 70% + 质量 30%
-          const totalScore = matchScore * 0.7 + qualityScore * 0.3;
+          // 网络素材加权：来自互联网参考的图片与帖子内容高度相关
+          const sourceBonus = material.source === 'internet' ? 40 : 0;
+          
+          // 综合分数 = 匹配度 70% + 质量 30% + 来源加分
+          const totalScore = matchScore * 0.7 + qualityScore * 0.3 + sourceBonus;
           
           return {
             material,
@@ -727,6 +732,23 @@ class HybridMaterialService {
         ? totalUsage / allRecords.length 
         : 0,
     };
+  }
+
+  /**
+   * 从候选素材池中随机选取，排除最近已使用的图片
+   * 优先选择使用次数少的素材，相同使用次数则随机
+   */
+  private randomPickFromCandidates(candidates: MaterialRecord[], count: number): MaterialRecord[] {
+    if (candidates.length <= count) return [...candidates];
+
+    // 按 usageCount 升序排序（优先选用少的），同 usageCount 随机打乱
+    const shuffled = [...candidates].sort((a, b) => {
+      const usageDiff = (a.usageCount || 0) - (b.usageCount || 0);
+      if (usageDiff !== 0) return usageDiff;
+      return Math.random() - 0.5;
+    });
+
+    return shuffled.slice(0, count);
   }
 }
 

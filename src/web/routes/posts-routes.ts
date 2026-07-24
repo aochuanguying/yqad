@@ -392,6 +392,25 @@ router.post('/confirm', apiTokenMiddleware, async (req, res) => {
         logger.warn(`记录回调成功日志失败：${logError.message}`);
       }
       
+      // 更新素材使用计数
+      try {
+        const { getMaterialRecordStorage } = await import('../../storage/mysql/material-record-storage');
+        const materialStorage = getMaterialRecordStorage();
+        for (const img of pendingPost.images) {
+          const filename = img.filename || '';
+          if (filename) {
+            // 通过路径匹配更新 usage_count
+            const records = await materialStorage.getAllMaterialRecords();
+            const matched = records.find(r => r.path.includes(filename));
+            if (matched) {
+              await materialStorage.incrementUsedCount(matched.id);
+            }
+          }
+        }
+      } catch (usageError: any) {
+        logger.warn(`更新素材使用计数失败：${usageError.message}`);
+      }
+
       res.json({
         success: true,
       } as ConfirmPostResponse);
@@ -417,6 +436,24 @@ router.post('/confirm', apiTokenMiddleware, async (req, res) => {
         logger.warn(`记录回调成功日志失败：${logError.message}`);
       }
       
+      // 更新素材使用计数（自由模式）
+      try {
+        const { getMaterialRecordStorage } = await import('../../storage/mysql/material-record-storage');
+        const materialStorage = getMaterialRecordStorage();
+        for (const img of pendingPost.images) {
+          const filename = img.filename || '';
+          if (filename) {
+            const records = await materialStorage.getAllMaterialRecords();
+            const matched = records.find(r => r.path.includes(filename));
+            if (matched) {
+              await materialStorage.incrementUsedCount(matched.id);
+            }
+          }
+        }
+      } catch (usageError: any) {
+        logger.warn(`更新素材使用计数失败：${usageError.message}`);
+      }
+
       res.json({
         success: true,
         message: '回调成功',

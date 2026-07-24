@@ -7,9 +7,10 @@
  * 3. 评分详情和优化建议生成
  */
 
-import { loadConfig } from '../utils/config';
 import { getLogger } from '../utils/logger';
 import { contentDeduplicationService } from './content-deduplication-service';
+import { getFeaturedPostingStorage } from '../storage/mysql/featured-posting-storage';
+import { getContentQualityScoringStorage } from '../storage/mysql/content-quality-scoring-storage';
 
 const logger = getLogger('content-quality-scoring');
 
@@ -57,10 +58,18 @@ class ContentQualityScoringService {
    * 评估内容完整性
    * 评分维度：标题长度、正文长度、图片数量
    */
-  private evaluateCompleteness(input: ScoringInput): number {
-    const config = loadConfig();
-    const minContentChars = config.featuredPosting?.minContentChars || 250;
-    const minImages = config.featuredPosting?.minImages || 4;
+  private async evaluateCompleteness(input: ScoringInput): Promise<number> {
+    let minContentChars = 250;
+    let minImages = 4;
+    try {
+      const featuredConfig = await getFeaturedPostingStorage().getConfig();
+      if (featuredConfig) {
+        minContentChars = featuredConfig.minContentChars;
+        minImages = featuredConfig.minImages;
+      }
+    } catch (error: any) {
+      // 使用默认值
+    }
 
     let score = 0;
 
@@ -295,16 +304,23 @@ class ContentQualityScoringService {
    * 计算综合评分
    */
   async calculateScore(input: ScoringInput): Promise<ScoringDetails> {
-    const config = loadConfig();
-    const weights = config.contentQualityScoring?.weights || {
+    let weights = {
       completeness: 0.3,
       originality: 0.3,
       diversity: 0.2,
       attractiveness: 0.2,
     };
+    try {
+      const scoringConfig = await getContentQualityScoringStorage().getConfig();
+      if (scoringConfig?.weights) {
+        weights = scoringConfig.weights;
+      }
+    } catch (error: any) {
+      // 使用默认值
+    }
 
     // 各维度评分
-    const completeness = this.evaluateCompleteness(input);
+    const completeness = await this.evaluateCompleteness(input);
     const originality = await this.evaluateOriginality(input);
     const diversity = this.evaluateDiversity(input);
     const attractiveness = this.evaluateAttractiveness(input);
