@@ -15,8 +15,6 @@ const logger = getLogger('alert-service');
 
 // ===================== 常量 =====================
 
-const ALERT_COOLDOWN_MS = 30 * 60 * 1000; // 30 分钟冷却时间
-const SMS_CALL_INTERVAL_MS = 5000; // 5 秒短信电话间隔
 const MAX_ALERT_HISTORY = 100; // 最多保留 100 条历史记录
 
 // ===================== 类型定义 =====================
@@ -51,7 +49,6 @@ export interface TriggerAlertResult {
 // ===================== 告警服务类 =====================
 
 class AlertService {
-  private lastAlertTime: number = 0;
   private alertHistory: AlertRecord[] = [];
   private telecomConfig: TelecomConfig | null = null;
   private serviceConfig: MobileServiceConfig | null = null;
@@ -167,82 +164,43 @@ class AlertService {
    * @param location 车辆位置信息（可选）
    */
   async triggerAlert(anomalies: string[], location?: { lat: number; lng: number; address?: string }): Promise<TriggerAlertResult> {
-    // 检查冷却时间
-    const now = Date.now();
-    if (now - this.lastAlertTime < ALERT_COOLDOWN_MS) {
-      const minutesLeft = Math.round((ALERT_COOLDOWN_MS - (now - this.lastAlertTime)) / 60000);
-      logger.info(`告警冷却中，距离下次告警还有 ${minutesLeft} 分钟`);
-      return { 
-        success: false, 
-        skipped: true, 
-        skipReason: `冷却时间剩余 ${minutesLeft} 分钟` 
-      };
-    }
-
     logger.warn(`触发告警通知：${anomalies.join(', ')}`);
+    const now = Date.now();
 
     const result: TriggerAlertResult = {
       success: false,
     };
 
-    // 收集所有告警任务
-    const alertTasks: Promise<any>[] = [];
-    const alertTypes: ('sms' | 'call' | 'bark')[] = [];
-
-    // 1. 手机告警（短信 + 电话）
+    // 优化策略：优先电话 + Bark，Bark 失败时短信兜底
+    // 1. 并行执行电话和 Bark 推送
+    const primaryTasks: Promise<any>[] = [];
+    
+    // 1.1 电话告警（优先）
     if (this.telecomConfig && this.serviceConfig && this.telecomConfig.alertPhone) {
-      // 构造短信内容
-      const smsContent = this.buildSmsContent(anomalies, location);
-      
-      // 发送短信
-      logger.info('开始发送告警短信');
-      const smsTask = telecomClient.sendSms(this.telecomConfig.alertPhone, smsContent)
-        .then(smsResult => {
-          result.smsResult = smsResult;
-          return { type: 'sms' as const, result: smsResult };
+      const callTask = telecomClient.makePhoneCall(this.telecomConfig.alertPhone)
+        .then(callResult => {
+          result.callResult = callResult;
+          return { type: 'call' as const, result: callResult };
         });
-      alertTasks.push(smsTask);
-      alertTypes.push('sms');
-      
-      // 等待 5 秒间隔后拨打电话
-      const callTask = smsTask.then(() => {
-        if (result.smsResult?.success) {
-          logger.info('短信发送成功，等待 5 秒后拨打电话');
-          return this.sleep(SMS_CALL_INTERVAL_MS);
-        }
-      }).then(() => {
-        // 拨打电话（无论短信是否成功都尝试）
-        logger.info('开始拨打告警电话');
-        if (!this.telecomConfig) {
-          return { type: 'call' as const, result: { success: false, error: '配置未初始化' } };
-        }
-        return telecomClient.makePhoneCall(this.telecomConfig.alertPhone)
-          .then(callResult => {
-            result.callResult = callResult;
-            return { type: 'call' as const, result: callResult };
-          });
-      });
-      alertTasks.push(callTask);
-      alertTypes.push('call');
+      primaryTasks.push(callTask);
     } else {
-      logger.warn('手机号未配置，跳过短信和电话告警');
+      logger.warn('手机号未配置，跳过电话告警');
     }
-
-    // 2. Bark 告警
+    
+    // 1.2 Bark 推送（优先）
     if (this.barkConfig && this.barkConfig.barkKey) {
       const barkTask = this.sendBarkAlert(anomalies, location)
         .then(barkResult => {
           result.barkResult = barkResult;
           return { type: 'bark' as const, result: barkResult };
         });
-      alertTasks.push(barkTask);
-      alertTypes.push('bark');
+      primaryTasks.push(barkTask);
     } else {
       logger.warn('Bark 键未配置，跳过 Bark 告警');
     }
-
+    
     // 如果没有配置任何告警渠道
-    if (alertTasks.length === 0) {
+    if (primaryTasks.length === 0) {
       logger.warn('未配置任何告警渠道，跳过告警通知');
       return { 
         success: false, 
@@ -250,37 +208,58 @@ class AlertService {
         skipReason: '未配置任何告警渠道' 
       };
     }
-
-    // 并行执行所有告警任务
-    const taskResults = await Promise.allSettled(alertTasks);
     
-    // 处理结果
-    let smsStatus: AlertStatus | undefined;
+    // 并行执行电话和 Bark
+    logger.info('开始执行主要告警（电话 + Bark）');
+    const primaryResults = await Promise.allSettled(primaryTasks);
+    
+    // 处理主要告警结果
     let callStatus: AlertStatus | undefined;
     let barkStatus: AlertStatus | undefined;
     
-    taskResults.forEach((taskResult, index) => {
-      if (taskResult.status === 'fulfilled' && taskResult.value) {
-        const { type, result } = taskResult.value;
-        if (type === 'sms') {
-          smsStatus = result.success ? 'success' : (result.error?.includes('超时') ? 'timeout' : 'failed');
-        } else if (type === 'call') {
-          callStatus = result.success ? 'success' : (result.error?.includes('超时') ? 'timeout' : 'failed');
+    primaryResults.forEach((result) => {
+      if (result.status === 'fulfilled' && result.value) {
+        const { type, result: taskResult } = result.value;
+        if (type === 'call') {
+          callStatus = taskResult.success ? 'success' : (taskResult.error?.includes('超时') ? 'timeout' : 'failed');
         } else if (type === 'bark') {
-          barkStatus = result.success ? 'success' : (result.error?.includes('超时') ? 'timeout' : 'failed');
+          barkStatus = taskResult.success ? 'success' : (taskResult.error?.includes('超时') ? 'timeout' : 'failed');
         }
       }
     });
-
-    // 更新冷却时间
-    this.lastAlertTime = now;
-    logger.info(`告警通知完成，冷却时间 30 分钟`);
+    
+    // 2. 短信兜底：如果 Bark 失败，发送短信
+    let smsStatus: AlertStatus | undefined;
+    if (barkStatus === 'failed' || barkStatus === 'timeout') {
+      logger.warn('Bark 推送失败，启动短信兜底');
+      
+      if (this.telecomConfig && this.serviceConfig && this.telecomConfig.alertPhone) {
+        const smsContent = this.buildSmsContent(anomalies, location);
+        logger.info('开始发送兜底短信');
+        
+        const smsResult = await telecomClient.sendSms(this.telecomConfig.alertPhone, smsContent);
+        result.smsResult = smsResult;
+        smsStatus = smsResult.success ? 'success' : (smsResult.error?.includes('超时') ? 'timeout' : 'failed');
+        
+        if (smsStatus === 'success') {
+          logger.info('兜底短信发送成功');
+        } else {
+          logger.warn('兜底短信发送失败:', smsResult.error);
+        }
+      } else {
+        logger.warn('手机号未配置，无法发送兜底短信');
+      }
+    } else if (barkStatus === 'success') {
+      logger.info('Bark 推送成功，无需短信兜底');
+    }
+    
+    // 判断总体成功（电话或 Bark 任一成功即可）
+    result.success = (callStatus === 'success') || (barkStatus === 'success') || (smsStatus === 'success');
+    
+    logger.info('告警通知完成');
 
     // 记录告警历史
     this.recordAlert(anomalies, smsStatus, callStatus, barkStatus);
-
-    // 判断总体成功（至少一个渠道成功）
-    result.success = (smsStatus === 'success') || (callStatus === 'success') || (barkStatus === 'success');
 
     return result;
   }

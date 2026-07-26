@@ -665,16 +665,31 @@ export async function runVehicleMonitor(): Promise<void> {
   try {
     // 从数据库读取配置
     const { vehicleMonitorStorage } = await import('../storage/mysql/vehicle-monitor-storage');
-    const vehicleConfig = await vehicleMonitorStorage.getConfig();
+    let vehicleConfig = await vehicleMonitorStorage.getConfig();
     
     logger.debug('车辆监控配置:', JSON.stringify(vehicleConfig, null, 2));
     
-    // 检查是否启用
-    if (!vehicleConfig || vehicleConfig.enabled === false) {
-      logger.warn('车辆监控未启用，跳过', { hasConfig: !!vehicleConfig, enabled: vehicleConfig?.enabled });
-      return;
+    // 外部调用接口不检查 enabled 状态，始终执行监控
+    // 但如果配置为 null，使用默认配置
+    if (!vehicleConfig) {
+      vehicleConfig = {
+        enabled: true,
+        intervalMinutes: 10,
+        quickIntervalMinutes: 1,
+        safeDistanceMeters: 100,
+        moveThresholdMeters: 50,
+        minBatteryVolt: 11.5,
+        alertPhone: '',
+        barkKey: '',
+        barkServer: '',
+        haBaseUrl: '',
+        haToken: '',
+        deviceTrackerEntity: '',
+        token: '',
+      };
+      logger.warn('车辆监控配置为空，使用默认配置');
     }
-
+    
     logger.info('开始车辆监控...');
 
     // 1. 从数据库/Redis 加载 Token（如果内存和 Redis 中都没有）

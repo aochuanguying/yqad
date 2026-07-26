@@ -55,8 +55,9 @@ class BarkClient {
     
     const serverUrl = config.barkServer || DEFAULT_BARK_SERVER;
     
+    // Bark API 需要将 key 包含在 URL 路径中：https://api.day.app/{key}/push
     this.axiosInstance = axios.create({
-      baseURL: serverUrl,
+      baseURL: `${serverUrl}/${config.barkKey}`,
       timeout: API_TIMEOUT_MS,
       headers: {
         'Content-Type': 'application/json',
