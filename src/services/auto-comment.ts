@@ -128,8 +128,22 @@ export class AutoCommentService {
     };
     const generated = await generateComment(postFeatures, genOptions);
 
-    // 发布评论
-    const currentToken = await this.authService.getAccessToken();
+    // 发布评论 - 使用增强的 Token 验证和刷新
+    let currentToken: string;
+    try {
+      currentToken = await this.authService.validateAndRefreshToken();
+    } catch (error: any) {
+      logger.error(`评论发布失败：Token 验证/刷新错误 - ${error.message}`);
+      const postTitle = enrichedPost.title || '未知帖子';
+      results.push({
+        success: false,
+        postId: enrichedPost.id,
+        postTitle: postTitle,
+        error: `Token 验证失败：${error.message}`,
+      });
+      return results;
+    }
+
     const response = await this.api.publishComment(currentToken, enrichedPost.id, generated.content, enrichedPost.contentType);
 
     if (response.success) {
@@ -293,9 +307,27 @@ export class AutoCommentService {
     // 生成评论
     const generated = await generateComment(postFeatures, genOptions);
 
-        // 发布评论
-        const currentToken = await this.authService.getAccessToken();
-        const response = await this.api.publishComment(currentToken, enrichedPost.id, generated.content, enrichedPost.contentType);
+    // 发布评论 - 使用增强的 Token 验证和刷新
+    let currentToken: string;
+    try {
+      currentToken = await this.authService.validateAndRefreshToken();
+    } catch (error: any) {
+      logger.error(`批量评论失败：Token 验证/刷新错误 - ${error.message}`);
+      // 将剩余帖子标记为失败
+      for (let j = i; j < postsToComment.length; j++) {
+        const enrichedPost = postsToComment[j];
+        const postTitle = enrichedPost.title || '未知帖子';
+        results.push({
+          success: false,
+          postId: enrichedPost.id,
+          postTitle: postTitle,
+          error: `Token 验证失败：${error.message}`,
+        });
+      }
+      break;
+    }
+
+    const response = await this.api.publishComment(currentToken, enrichedPost.id, generated.content, enrichedPost.contentType);
 
         if (response.success) {
           // 记录评论历史（含新元数据）

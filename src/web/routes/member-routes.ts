@@ -21,18 +21,22 @@ router.get('/info', async (req: Request, res: Response) => {
     const { authService: auth } = await getAuthService();
     const api = await getRealApi();
 
-    // 检查 token 有效性
-    const tokenStatus = auth.getTokenStatus();
-    if (!tokenStatus.valid) {
-      return res.status(401).json({ error: 'Token 缺失或已过期，请重新登录' });
-    }
-
     if (!api) {
       return res.status(502).json({ error: '上游服务错误：API 客户端未初始化为 real 模式' });
     }
 
-    // 获取 accessToken 并调用上游接口
-    const accessToken = await auth.getAccessToken();
+    // 使用增强的 Token 验证和刷新
+    let accessToken: string;
+    try {
+      accessToken = await auth.validateAndRefreshToken();
+    } catch (error: any) {
+      logger.error(`会员信息查询：Token 验证/刷新失败 - ${error.message}`);
+      return res.status(401).json({ 
+        error: `Token 验证失败：${error.message}`,
+        code: 'TOKEN_VALIDATION_FAILED'
+      });
+    }
+
     const memberInfo = await api.getMemberInfo(accessToken);
 
     res.json({
@@ -47,21 +51,21 @@ router.get('/info', async (req: Request, res: Response) => {
     if (axios.isAxiosError(error)) {
       if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
         const reason = error.message || '请求超时';
-        logger.error(`会员信息获取超时: ${reason}`);
-        return res.status(503).json({ error: `无法连接上游服务: ${reason}` });
+        logger.error(`会员信息获取超时：${reason}`);
+        return res.status(503).json({ error: `无法连接上游服务：${reason}` });
       }
       if (!error.response) {
         // 网络连接错误（无响应）
         const reason = error.message || '网络连接失败';
-        logger.error(`会员信息网络错误: ${reason}`);
-        return res.status(503).json({ error: `无法连接上游服务: ${reason}` });
+        logger.error(`会员信息网络错误：${reason}`);
+        return res.status(503).json({ error: `无法连接上游服务：${reason}` });
       }
     }
 
     // 上游返回错误（code ≠ 0 时 getMemberInfo 会抛出 Error）
     const msg = error instanceof Error ? error.message : String(error);
-    logger.error(`获取会员信息失败: ${msg}`);
-    return res.status(502).json({ error: `上游服务错误: ${msg}` });
+    logger.error(`获取会员信息失败：${msg}`);
+    return res.status(502).json({ error: `上游服务错误：${msg}` });
   }
 });
 

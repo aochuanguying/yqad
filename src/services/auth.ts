@@ -24,8 +24,8 @@ export class AuthService {
   private token: TokenData | null = null;
   private api: IAudiApi;
   private tokenRefreshTimer?: NodeJS.Timeout;
-  private readonly TOKEN_REFRESH_INTERVAL = 12 * 60 * 60 * 1000; // 12 小时（毫秒）
-  private readonly TOKEN_REFRESH_LEAD_TIME = 6 * 60 * 60 * 1000; // 提前 6 小时刷新（毫秒）
+  private readonly TOKEN_REFRESH_INTERVAL = 6 * 60 * 60 * 1000; // 6 小时（毫秒）
+  private readonly TOKEN_REFRESH_LEAD_TIME = 24 * 60 * 60 * 1000; // 提前 24 小时刷新（毫秒）
 
   private constructor(api: IAudiApi) {
     this.api = api;
@@ -74,6 +74,156 @@ export class AuthService {
 
     // 自动登录
     return this.login();
+  }
+
+  /**
+   * 校验 Token 有效性并在需要时自动刷新
+   * 如果刷新失败则抛出异常
+   * 
+   * @returns 有效的 Token
+   * @throws Error 当 Token 刷新失败时抛出异常
+   */
+  async validateAndRefreshToken(): Promise<string> {
+    // 从 Redis 读取最新 Token
+    await this.syncTokenFromRedis();
+
+    // 检查 Token 是否存在
+    if (!this.token?.accessToken) {
+      logger.error('Token 不存在，需要重新登录');
+      throw new Error('Token 不存在，请通过 Web UI 重新登录');
+    }
+
+    // 检查 Token 是否有效
+    if (this.isTokenValid()) {
+      logger.debug('Token 有效，继续使用');
+      return this.token.accessToken;
+    }
+
+    // Token 已过期或即将过期，尝试刷新
+    logger.warn('Token 已过期或即将过期，开始自动刷新...');
+    const refreshed = await this.forceRefreshToken();
+    
+    if (!refreshed) {
+      logger.error('Token 自动刷新失败，请检查 Telecom API 服务状态');
+      throw new Error('Token 自动刷新失败，请检查 Telecom API 服务状态');
+    }
+
+    logger.info('Token 自动刷新成功');
+    return this.token!.accessToken;
+  }
+
+  /**
+   * 从 Redis 同步 Token 到内存
+   */
+  private async syncTokenFromRedis(): Promise<void> {
+    const redisToken = await authTokenStorage.getToken();
+    if (redisToken && this.token?.accessToken !== redisToken) {
+      logger.info('检测到 Redis 中 Token 已更新，同步到内存');
+      this.token = {
+        accessToken: redisToken,
+        refreshToken: '',
+        expiresAt: Date.now() + 83 * 3600 * 1000,
+        savedAt: Date.now(),
+      };
+    }
+  }
+
+  /**
+   * 强制刷新 Token（通过 Telecom API）
+   * @returns 是否刷新成功
+   */
+  private async forceRefreshToken(): Promise<boolean> {
+    if (!this.token?.accessToken) {
+      logger.debug('无 Token，无法刷新');
+      return false;
+    }
+
+    const remainingTime = this.token.expiresAt - Date.now();
+    const remainingHours = Math.round(remainingTime / 1000 / 3600);
+    const expiresAtDate = new Date(this.token.expiresAt);
+    const tokenPrefix = this.token.accessToken.substring(0, 20) + '...';
+
+    logger.info('========================================');
+    logger.info('【Token 强制刷新】');
+    logger.info(`  当前 Token: ${tokenPrefix}`);
+    logger.info(`  当前剩余时间：${remainingHours} 小时`);
+    logger.info(`  过期时间：${expiresAtDate.toLocaleString('zh-CN')}`);
+    logger.info(`  刷新方式：Telecom API（手机 APP 提取）`);
+    logger.info('========================================');
+    
+    try {
+      const beforeTime = Date.now();
+      const beforeExpiresAt = this.token.expiresAt;
+      
+      // 通过 Telecom API 从手机 APP 获取最新 Token
+      const { mobileServiceConfigStorage } = await import('../storage/mysql/mobile-service-config-storage');
+      const serviceConfig = await mobileServiceConfigStorage.getConfig();
+      
+      if (!serviceConfig || !serviceConfig.apiUrl || !serviceConfig.apiToken) {
+        logger.error('手机服务 API 未配置，无法自动刷新 Token');
+        return false;
+      }
+      
+      logger.info('开始调用 Telecom API 获取最新 Token...');
+      const response = await axios.get(`${serviceConfig.apiUrl}/api/v1/audi/token`, {
+        headers: {
+          'Authorization': `Bearer ${serviceConfig.apiToken}`,
+        },
+        timeout: 10000,
+      });
+      
+      const duration = Date.now() - beforeTime;
+      const data = response.data;
+      
+      if (!data.success || !data.data?.token) {
+        logger.error(`Telecom API 返回错误：${data.error || '未知错误'}`);
+        return false;
+      }
+      
+      const newToken = data.data.token;
+      
+      if (!newToken.startsWith('eyJ')) {
+        logger.error('Telecom API 返回的 Token 格式不正确');
+        return false;
+      }
+      
+      // 更新内存中的 Token
+      const oldTokenPrefix = this.token.accessToken.substring(0, 20) + '...';
+      const newTokenPrefix = newToken.substring(0, 20) + '...';
+      
+      this.token.accessToken = newToken;
+      this.token.expiresAt = Date.now() + 83 * 3600 * 1000; // 重置 83h
+      this.token.savedAt = Date.now();
+      this.persistTokenToRedis();
+      
+      const extendedHours = (this.token.expiresAt - beforeExpiresAt) / 1000 / 3600;
+      
+      logger.info('========================================');
+      logger.info('【Token 强制刷新结果 - 成功】');
+      logger.info(`  刷新接口：Telecom API (/api/v1/audi/token)`);
+      logger.info(`  请求耗时：${duration}ms`);
+      logger.info(`  刷新状态：✅ 成功`);
+      logger.info(`  旧 Token: ${oldTokenPrefix}`);
+      logger.info(`  新 Token: ${newTokenPrefix}`);
+      logger.info(`  续期前过期时间：${new Date(beforeExpiresAt).toLocaleString('zh-CN')}`);
+      logger.info(`  续期后过期时间：${new Date(this.token.expiresAt).toLocaleString('zh-CN')}`);
+      logger.info(`  延长小时数：${extendedHours.toFixed(1)} 小时`);
+      logger.info('========================================');
+      
+      return true;
+    } catch (error: any) {
+      logger.error('========================================');
+      logger.error('【Token 强制刷新结果 - 失败】');
+      logger.error(`  刷新接口：Telecom API`);
+      logger.error(`  刷新状态：❌ 失败`);
+      logger.error(`  错误类型：${error.constructor.name}`);
+      logger.error(`  错误信息：${error.message}`);
+      if (error.code) {
+        logger.error(`  错误代码：${error.code}`);
+      }
+      logger.error('========================================');
+      return false;
+    }
   }
 
   /**
@@ -318,24 +468,46 @@ export class AuthService {
   }
 
   /**
-   * 持久化 Token 到 Redis（使用 authTokenStorage，支持降级）
+   * 持久化 Token 到 Redis 和数据库（双重存储）
    */
   private async persistTokenToRedis(): Promise<void> {
     if (!this.token) return;
+    
+    // 1. 保存到 Redis（主存储）
     try {
       await authTokenStorage.saveToken(this.token.accessToken);
       logger.debug('Token 已保存到 Redis');
     } catch (error) {
-      logger.warn('保存到 Redis 失败，已降级到内存存储:', error);
+      logger.warn('保存到 Redis 失败，降级到内存存储:', error);
+    }
+    
+    // 2. 保存到数据库（持久化备份）
+    try {
+      const { authTokenDatabaseStorage } = await import('../storage/mysql/auth-token-storage');
+      const saved = await authTokenDatabaseStorage.saveToken({
+        access_token: this.token.accessToken,
+        expires_at: new Date(this.token.expiresAt),
+        refreshed_at: new Date(this.token.savedAt),
+        refresh_source: 'telecom_api',
+      });
+      
+      if (saved) {
+        logger.debug('Token 已保存到数据库');
+      } else {
+        logger.warn('保存到数据库失败');
+      }
+    } catch (error: any) {
+      logger.warn('保���到数据库失败:', error.message);
     }
   }
 
   /**
-   * 从 Redis 加载 Token
+   * 从 Redis 加载 Token（失败时从数据库恢复）
    * 注意：从 Redis 加载时无法知道 Token 的实际过期时间，只能设置一个较长的默认值
    * 实际的 Token 有效性通过远端验证确认
    */
   private async loadStoredToken(): Promise<void> {
+    // 1. 尝试从 Redis 加载
     try {
       const redisToken = await authTokenStorage.getToken();
       if (redisToken) {
@@ -351,11 +523,39 @@ export class AuthService {
         return;
       }
     } catch (error) {
-      logger.warn('从 Redis 加载 Token 失败，使用内存存储:', error);
+      logger.warn('从 Redis 加载 Token 失败，尝试从数据库恢复:', error);
     }
     
-    // Redis 没有 Token，使用内存存储（需要重新登录）
-    logger.info('Redis 中无 Token，需要重新登录');
+    // 2. Redis 没有 Token，尝试从数据库恢复
+    try {
+      const { authTokenDatabaseStorage } = await import('../storage/mysql/auth-token-storage');
+      const dbToken = await authTokenDatabaseStorage.getToken();
+      
+      if (dbToken && dbToken.access_token) {
+        logger.info('已从数据库恢复 Token');
+        this.token = {
+          accessToken: dbToken.access_token,
+          refreshToken: '',
+          expiresAt: dbToken.expires_at.getTime(),
+          savedAt: dbToken.refreshed_at ? dbToken.refreshed_at.getTime() : Date.now(),
+        };
+        
+        // 同步回 Redis
+        try {
+          await authTokenStorage.saveToken(this.token.accessToken);
+          logger.info('Token 已同步到 Redis');
+        } catch (error) {
+          logger.warn('同步 Token 到 Redis 失败:', error);
+        }
+        
+        return;
+      }
+    } catch (error) {
+      logger.warn('从数据库加载 Token 失败:', error);
+    }
+    
+    // 3. Redis 和数据库都没有 Token，需要重新登录
+    logger.info('Redis 和数据库中均无 Token，需要重新登录');
     this.token = null;
   }
 }

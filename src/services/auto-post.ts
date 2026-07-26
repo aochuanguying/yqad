@@ -687,7 +687,17 @@ export class AutoPostService {
    */
   private async matchHotTopics(ctx: PostPipelineContext): Promise<void> {
     const { generated } = ctx;
-    const token = await this.authService.getAccessToken();
+    let token: string;
+    
+    // 使用增强的 Token 验证和刷新
+    try {
+      token = await this.authService.validateAndRefreshToken();
+    } catch (error: any) {
+      logger.warn(`话题匹配：Token 验证/刷新失败 - ${error.message}，以无话题方式继续发帖`);
+      ctx.matchedTopics = [];
+      return;
+    }
+    
     let topicList: MatchedTopic[] = [];
 
     try {

@@ -5,7 +5,7 @@ let loggerInstance: winston.Logger | null = null;
 
 export function getLogger(moduleName: string): winston.Logger {
   if (!loggerInstance) {
-    const logDir = process.env.LOG_DIR || '/app/logs';
+    const logDir = process.env.LOG_DIR || './logs';
     const logFile = path.join(logDir, 'app.log');
 
     loggerInstance = winston.createLogger({
