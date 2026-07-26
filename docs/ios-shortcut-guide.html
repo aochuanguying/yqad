@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🚗 CarPlay 断开告警 - 快捷指令配置</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+            color: #667eea;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        .step {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-left: 4px solid #667eea;
+        }
+        .step-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: #333;
+        }
+        .code {
+            background: #2d3748;
+            color: #68d391;
+            padding: 12px;
+            border-radius: 8px;
+            font-family: "Courier New", monospace;
+            font-size: 13px;
+            margin: 10px 0;
+            overflow-x: auto;
+        }
+        .highlight {
+            background: #fef3c7;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-weight: 500;
+        }
+        .button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 20px;
+        }
+        .button:hover {
+            background: #5568d3;
+        }
+        .note {
+            background: #e3f2fd;
+            border-left: 4px solid #2196f3;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            font-size: 14px;
+        }
+        ul {
+            margin-left: 20px;
+            margin-top: 10px;
+        }
+        li {
+            margin-bottom: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚗 CarPlay 断开告警</h1>
+        <p class="subtitle">iOS 快捷指令自动配置指南</p>
+
+        <div class="step">
+            <div class="step-title">第 1 步：打开快捷指令 App</div>
+            <p>在 iPhone 上找到并打开 <span class="highlight">快捷指令</span> App</p>
+        </div>
+
+        <div class="step">
+            <div class="step-title">第 2 步：创建新快捷指令</div>
+            <p>点击右上角的 <span class="highlight">+</span> 号创建新快捷指令</p>
+        </div>
+
+        <div class="step">
+            <div class="step-title">第 3 步：添加 URL 操作</div>
+            <p>搜索 <span class="highlight">"URL"</span> 并添加，输入：</p>
+            <div class="code">https://yqad.hxfssc.com:8088/api/vehicle-monitor/manual-alert</div>
+        </div>
+
+        <div class="step">
+            <div class="step-title">第 4 步：添加字典操作</div>
+            <p>搜索 <span class="highlight">"字典"</span> 并添加，输入：</p>
+            <div class="code">anomalies → ["CarPlay 已断开"]</div>
+        </div>
+
+        <div class="step">
+            <div class="step-title">第 5 步：添加请求操作</div>
+            <p>搜索 <span class="highlight">"请求"</span> 并配置：</p>
+            <ul>
+                <li><strong>URL</strong>: 从第 3 步获取</li>
+                <li><strong>方法</strong>: POST</li>
+                <li><strong>请求体</strong>: 从第 4 步获取</li>
+            </ul>
+            <p style="margin-top: 10px;">展开请求（点击 ▶），添加请求头：</p>
+            <div class="code">Authorization: Bearer api_token_1640a8b188784e52e08e11eb8dcab3a9fcea5a8d6b03e1235d6705938eed853a<br>Content-Type: application/json</div>
+        </div>
+
+        <div class="step">
+            <div class="step-title">第 6 步：命名并保存</div>
+            <p>给快捷指令命名：<span class="highlight">🚗 CarPlay 断开告警</span></p>
+        </div>
+
+        <div class="step">
+            <div class="step-title">第 7 步：配置自动化</div>
+            <ul>
+                <li>切换到 <span class="highlight">自动化</span> 标签</li>
+                <li>点击 <span class="highlight">创建个人自动化</span></li>
+                <li>选择 <span class="highlight">CarPlay 连接</span> → <span class="highlight">断开连接时</span></li>
+                <li>添加操作：<span class="highlight">运行快捷指令</span></li>
+                <li>选择刚创建的 <span class="highlight">🚗 CarPlay 断开告警</span></li>
+                <li><strong>重要</strong>: 关闭 <span class="highlight">"运行前询问"</span></li>
+                <li>点击 <span class="highlight">完成</span></li>
+            </ul>
+        </div>
+
+        <div class="note">
+            <strong>✅ 完成！</strong><br>
+            现在每次断开 CarPlay 时，都会自动触发告警（电话 + Bark 推送）
+        </div>
+
+        <button class="button" onclick="window.print()">📄 打印此页面</button>
+    </div>
+</body>
+</html>

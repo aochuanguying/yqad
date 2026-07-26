@@ -360,9 +360,58 @@ async function validateToken(): Promise<boolean> {
 
 // ===================== 车辆数据获取 =====================
 
+/**
+ * 获取最新车辆状态（供外部调用）
+ */
+export async function fetchLatestVehicleState(): Promise<VehicleState | null> {
+  try {
+    logger.info('获取最新车辆状态');
+    
+    // 1. 获取车辆信息
+    const carInfo = await getNowCar();
+    if (!carInfo) {
+      logger.warn('获取车辆信息失败');
+      return null;
+    }
+    
+    // 2. 获取 OBD 数据
+    const obd = await getCarOBD();
+    if (!obd) {
+      logger.warn('获取 OBD 数据失败');
+      return null;
+    }
+    
+    // 3. 获取位置（需要 machineId）
+    const location = carInfo.machineId ? await getLocation(carInfo.machineId) : null;
+    
+    // 4. 构建车辆状态
+    const state: VehicleState = {
+      carInfo,
+      obd,
+      location,
+      lastLocation: null,  // 首次获取，无上次位置
+      isAnomaly: false,
+      anomalies: [],
+      lastCheckTime: new Date().toISOString(),
+    };
+    
+    logger.info('获取车辆状态成功', {
+      plate: carInfo.plate,
+      isOnline: carInfo.isOnline,
+      engineOn: obd.engineOn,
+      isDefence: obd.isDefence,
+    });
+    
+    return state;
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    logger.error('获取车辆状态失败:', msg);
+    return null;
+  }
+}
+
 async function getNowCar(): Promise<CarInfo | null> {
   try {
-    console.log('[VehicleMonitor] 请求车辆信息...');
     const response = await vehicleAPI.get('/api/car/getNowCar');
     console.log('[VehicleMonitor] 响应状态:', response.data?.status);
     console.log('[VehicleMonitor] 响应消息:', response.data?.message);
@@ -778,7 +827,7 @@ export async function runVehicleMonitor(): Promise<void> {
 // ===================== 导出 =====================
 
 export type { VehicleConfig, VehicleState };
-export { calculateDistance, md5 };
+export { calculateDistance, md5, checkAnomalies };
 
 // ===================== 车辆监控服务类（用于 Web 路由） =====================
 

@@ -20,10 +20,12 @@ URL: https://yqad.hxfssc.com:8088/api/vehicle-monitor/manual-alert
 ```
 
 #### 操作 2: 字典
-搜索"字典"，添加：
+搜索"字典"，添加（**留空，不传任何内容**）：
 ```
-anomalies → ["CarPlay 已断开"]
+什么都不用填！
 ```
+
+**或者删除字典操作，直接传空对象**
 
 #### 操作 3: 请求
 搜索"请求"，配置：

@@ -208,17 +208,70 @@ router.delete('/alerts', async (req: Request, res: Response) => {
 /**
  * POST /api/vehicle-monitor/manual-alert
  * 手动触发告警（用于外部系统集成、快捷指令等场景）
+ * 逻辑：检查车辆最新状态，有异常才触发告警
  */
 router.post('/manual-alert', async (req: Request, res: Response) => {
   try {
-    const { anomalies = ['手动触发告警'], lat, lng, address } = req.body || {};
+    const { lat, lng, address } = req.body || {};
     
-    logger.info('手动触发告警', { anomalies, location: address });
+    logger.info('手动触发告警 - 检查车辆状态');
     
-    // 从数据库读取配置
+    // 1. 获取车辆最新状态（直接调用 API）
+    const { fetchLatestVehicleState } = await import('../../services/vehicle-monitor-service');
+    const lastState = await fetchLatestVehicleState();
+    
+    if (!lastState) {
+      logger.warn('获取车辆状态失败，跳过告警');
+      res.json({
+        code: 'NO_DATA',
+        message: '获取车辆状态失败，无法检查',
+        data: { success: false, skipped: true, skipReason: '获取车辆状态失败' }
+      });
+      return;
+    }
+    
+    // 2. 从数据库读取配置
     const vehicleConfig = await vehicleMonitorStorage.getConfig();
     
-    // 初始化告警服务
+    if (!vehicleConfig) {
+      logger.warn('车辆配置为空，跳过告警');
+      res.json({
+        code: 'NO_CONFIG',
+        message: '车辆配置为空',
+        data: { success: false, skipped: true, skipReason: '车辆配置为空' }
+      });
+      return;
+    }
+    
+    // 3. 检查车辆异常
+    const { checkAnomalies } = await import('../../services/vehicle-monitor-service');
+    const detectedAnomalies = checkAnomalies(lastState, vehicleConfig);
+    
+    // 4. 如果没有异常，跳过告警
+    if (detectedAnomalies.length === 0) {
+      logger.info('车辆状态正常，无需告警');
+      res.json({
+        code: 'NO_ANOMALY',
+        message: '车辆状态正常',
+        data: { 
+          success: false, 
+          skipped: true, 
+          skipReason: '车辆状态正常，无需告警',
+          vehicleState: {
+            isOnline: lastState.carInfo?.isOnline,
+            engineOn: lastState.obd?.engineOn,
+            isDefence: lastState.obd?.isDefence,
+            anyDoorOpen: lastState.obd?.anyDoorOpen,
+            anyWindowOpen: lastState.obd?.anyWindowOpen,
+          }
+        }
+      });
+      return;
+    }
+    
+    logger.info('检测到异常', { anomalies: detectedAnomalies });
+    
+    // 6. 初始化告警服务并触发
     const { alertService } = await import('../../services/alert-service');
     await alertService.init();
     
@@ -226,25 +279,25 @@ router.post('/manual-alert', async (req: Request, res: Response) => {
     const location = (lat && lng) ? {
       lat: Number(lat),
       lng: Number(lng),
-      address: address || '测试位置'
-    } : undefined;
+      address: address || undefined
+    } : (lastState.location || undefined);
     
-    // 触发告警
-    const result = await alertService.triggerAlert(anomalies, location);
+    // 7. 触发告警
+    const result = await alertService.triggerAlert(detectedAnomalies, location);
     
-    logger.info('测试告警完成', {
+    logger.info('告警完成', {
       success: result.success,
-      skipped: result.skipped,
-      skipReason: result.skipReason,
+      anomalies: detectedAnomalies,
     });
     
     res.json({
       code: 'SUCCESS',
-      message: '告警已触发',
+      message: `告警已触发：${detectedAnomalies.join(', ')}`,
       data: {
         success: result.success,
         skipped: result.skipped,
         skipReason: result.skipReason,
+        anomalies: detectedAnomalies,
         barkResult: result.barkResult,
         smsResult: result.smsResult,
         callResult: result.callResult,
