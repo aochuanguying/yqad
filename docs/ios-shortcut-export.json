@@ -1,0 +1,77 @@
+{
+  "name": "🚗 车辆告警触发",
+  "description": "当 CarPlay 断开时调用车辆告警接口",
+  "version": "1.0",
+  "author": "自定义",
+  "operations": [
+    {
+      "type": "url",
+      "name": "告警接口 URL",
+      "url": "http://192.168.50.10:3080/api/vehicle-monitor/test-alert"
+    },
+    {
+      "type": "dictionary",
+      "name": "请求体",
+      "items": {
+        "anomalies": ["CarPlay 已断开"],
+        "lat": 36.10772373923576,
+        "lng": 120.41258170164984,
+        "address": "CarPlay 断开位置"
+      }
+    },
+    {
+      "type": "request",
+      "name": "调用告警接口",
+      "method": "POST",
+      "url": "从 '告警接口 URL' 获取",
+      "body": "从 '请求体' 获取",
+      "headers": {
+        "Authorization": "Bearer api_token_1640a8b188784e52e08e11eb8dcab3a9fcea5a8d6b03e1235d6705938eed853a",
+        "Content-Type": "application/json"
+      },
+      "showResult": true
+    },
+    {
+      "type": "if",
+      "name": "检查响应",
+      "condition": "如果 '请求的响应' 包含 'success'",
+      "then": [
+        {
+          "type": "notification",
+          "message": "✅ 告警触发成功"
+        }
+      ],
+      "else": [
+        {
+          "type": "notification",
+          "message": "❌ 告警失败"
+        }
+      ]
+    }
+  ],
+  "automation": {
+    "trigger": "carplay_disconnect",
+    "name": "CarPlay 断开连接",
+    "runImmediately": true,
+    "notifyWhenRun": false,
+    "action": "运行快捷指令 '🚗 车辆告警触发'"
+  },
+  "configuration": {
+    "server": {
+      "production": "http://192.168.50.10:3080",
+      "development": "http://192.168.50.10:3000"
+    },
+    "apiToken": "api_token_1640a8b188784e52e08e11eb8dcab3a9fcea5a8d6b03e1235d6705938eed853a",
+    "defaultLocation": {
+      "lat": 36.10772373923576,
+      "lng": 120.41258170164984,
+      "address": "山东省青岛市即墨区奥捷智行汽车"
+    }
+  },
+  "notes": [
+    "1. 在 iOS 快捷指令 App 中手动创建此快捷指令",
+    "2. 配置自动化：当 CarPlay 断开连接时触发",
+    "3. 确保关闭'运行前询问'，实现自动执行",
+    "4. 测试：手动运行快捷指令，确认收到告警"
+  ]
+}
