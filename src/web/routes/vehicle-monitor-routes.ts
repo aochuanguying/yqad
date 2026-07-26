@@ -261,65 +261,6 @@ router.post('/manual-alert', async (req: Request, res: Response) => {
 });
 
 /**
- * POST /api/vehicle-monitor/test-alert
- * 测试告警功能（保留向后兼容，已废弃，请使用 /manual-alert）
- * @deprecated 使用 /manual-alert 代替
- */
-router.post('/test-alert', async (req: Request, res: Response) => {
-  logger.warn('/test-alert 接口已废弃，请使用 /manual-alert');
-  // 调用新的 manual-alert 处理逻辑
-  req.body = req.body || {};
-  if (!req.body.anomalies) {
-    req.body.anomalies = ['测试告警'];
-  }
-  
-  // 复用 manual-alert 的处理逻辑
-  const { anomalies = req.body.anomalies, lat, lng, address } = req.body || {};
-  
-  try {
-    logger.info('手动触发测试告警（兼容接口）');
-    
-    const vehicleConfig = await vehicleMonitorStorage.getConfig();
-    const { alertService } = await import('../../services/alert-service');
-    await alertService.init();
-    
-    const location = (lat && lng) ? {
-      lat: Number(lat),
-      lng: Number(lng),
-      address: address || '测试位置'
-    } : undefined;
-    
-    const result = await alertService.triggerAlert(anomalies, location);
-    
-    logger.info('测试告警完成', {
-      success: result.success,
-      skipped: result.skipped,
-      skipReason: result.skipReason,
-    });
-    
-    res.json({
-      code: 'SUCCESS',
-      message: '测试告警已触发（兼容接口）',
-      data: {
-        success: result.success,
-        skipped: result.skipped,
-        skipReason: result.skipReason,
-        barkResult: result.barkResult,
-        smsResult: result.smsResult,
-        callResult: result.callResult,
-      },
-    });
-  } catch (error: any) {
-    const msg = error instanceof Error ? error.message : String(error);
-    logger.error(`测试告警失败：${msg}`);
-    res.status(500).json({
-      code: 'ERROR',
-      message: `测试失败：${msg}`,
-    });
-  }
-});
-
-/**
  * GET /api/vehicle-monitor/device-location
  * 获取手机设备位置（通过 Home Assistant）
  */
