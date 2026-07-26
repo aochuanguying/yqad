@@ -206,14 +206,14 @@ router.delete('/alerts', async (req: Request, res: Response) => {
 });
 
 /**
- * POST /api/vehicle-monitor/test-alert
- * 测试告警功能（手动触发告警，用于验证告警渠道配置）
+ * POST /api/vehicle-monitor/manual-alert
+ * 手动触发告警（用于外部系统集成、快捷指令等场景）
  */
-router.post('/test-alert', async (req: Request, res: Response) => {
+router.post('/manual-alert', async (req: Request, res: Response) => {
   try {
-    const { anomalies = ['测试告警'], lat, lng, address } = req.body || {};
+    const { anomalies = ['手动触发告警'], lat, lng, address } = req.body || {};
     
-    logger.info('手动触发测试告警');
+    logger.info('手动触发告警', { anomalies, location: address });
     
     // 从数据库读取配置
     const vehicleConfig = await vehicleMonitorStorage.getConfig();
@@ -240,7 +240,66 @@ router.post('/test-alert', async (req: Request, res: Response) => {
     
     res.json({
       code: 'SUCCESS',
-      message: '测试告警已触发',
+      message: '告警已触发',
+      data: {
+        success: result.success,
+        skipped: result.skipped,
+        skipReason: result.skipReason,
+        barkResult: result.barkResult,
+        smsResult: result.smsResult,
+        callResult: result.callResult,
+      },
+    });
+  } catch (error: any) {
+    const msg = error instanceof Error ? error.message : String(error);
+    logger.error(`手动触发告警失败：${msg}`);
+    res.status(500).json({
+      code: 'ERROR',
+      message: `触发失败：${msg}`,
+    });
+  }
+});
+
+/**
+ * POST /api/vehicle-monitor/test-alert
+ * 测试告警功能（保留向后兼容，已废弃，请使用 /manual-alert）
+ * @deprecated 使用 /manual-alert 代替
+ */
+router.post('/test-alert', async (req: Request, res: Response) => {
+  logger.warn('/test-alert 接口已废弃，请使用 /manual-alert');
+  // 调用新的 manual-alert 处理逻辑
+  req.body = req.body || {};
+  if (!req.body.anomalies) {
+    req.body.anomalies = ['测试告警'];
+  }
+  
+  // 复用 manual-alert 的处理逻辑
+  const { anomalies = req.body.anomalies, lat, lng, address } = req.body || {};
+  
+  try {
+    logger.info('手动触发测试告警（兼容接口）');
+    
+    const vehicleConfig = await vehicleMonitorStorage.getConfig();
+    const { alertService } = await import('../../services/alert-service');
+    await alertService.init();
+    
+    const location = (lat && lng) ? {
+      lat: Number(lat),
+      lng: Number(lng),
+      address: address || '测试位置'
+    } : undefined;
+    
+    const result = await alertService.triggerAlert(anomalies, location);
+    
+    logger.info('测试告警完成', {
+      success: result.success,
+      skipped: result.skipped,
+      skipReason: result.skipReason,
+    });
+    
+    res.json({
+      code: 'SUCCESS',
+      message: '测试告警已触发（兼容接口）',
       data: {
         success: result.success,
         skipped: result.skipped,

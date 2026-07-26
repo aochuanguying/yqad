@@ -7,7 +7,7 @@
     {
       "type": "url",
       "name": "告警接口 URL",
-      "url": "https://yqad.hxfssc.com:8088/api/vehicle-monitor/test-alert"
+      "url": "https://yqad.hxfssc.com:8088/api/vehicle-monitor/manual-alert"
     },
     {
       "type": "dictionary",

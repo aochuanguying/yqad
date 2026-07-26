@@ -29,7 +29,7 @@ api_token_1640a8b188784e52e08e11eb8dcab3a9fcea5a8d6b03e1235d6705938eed853a
 
 **1. 添加"URL"操作**
 ```
-URL: https://yqad.hxfssc.com:8088/api/vehicle-monitor/test-alert
+URL: https://yqad.hxfssc.com:8088/api/vehicle-monitor/manual-alert
 ```
 
 **2. 添加"请求"操作**

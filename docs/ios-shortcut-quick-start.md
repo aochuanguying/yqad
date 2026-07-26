@@ -10,7 +10,7 @@
 
 #### 操作 1: URL
 ```
-URL: https://yqad.hxfssc.com:8088/api/vehicle-monitor/test-alert
+URL: https://yqad.hxfssc.com:8088/api/vehicle-monitor/manual-alert
 ```
 
 #### 操作 2: 字典
