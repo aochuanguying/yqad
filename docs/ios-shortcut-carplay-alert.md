@@ -13,7 +13,7 @@ api_token_1640a8b188784e52e08e11eb8dcab3a9fcea5a8d6b03e1235d6705938eed853a
 
 ### 2. 确认服务器地址
 - **本地开发**: http://192.168.50.10:3000
-- **生产环境**: http://192.168.50.10:3080
+- **生产环境（公网）**: https://yqad.hxfssc.com:8080
 
 ## 快捷指令创建
 
@@ -29,7 +29,7 @@ api_token_1640a8b188784e52e08e11eb8dcab3a9fcea5a8d6b03e1235d6705938eed853a
 
 **1. 添加"URL"操作**
 ```
-URL: http://192.168.50.10:3080/api/vehicle-monitor/test-alert
+URL: https://yqad.hxfssc.com:8088/api/vehicle-monitor/test-alert
 ```
 
 **2. 添加"请求"操作**
@@ -211,31 +211,21 @@ URL: http://192.168.50.10:3080/api/vehicle-monitor/test-alert
 
 ## 网络配置
 
-### 本地网络访问
+### 网络配置
 
-如果服务器在本地网络，需要确保：
-1. iPhone 连接同一 WiFi
-2. 或使用蜂窝数据 + 公网 IP
+#### 使用公网地址（推荐）
 
-### 公网访问配置
-
-如果需要从外网访问：
-
-**方案 1: 端口映射**
+快捷指令已配置公网地址，可在任何网络环境下使用：
 ```
-路由器配置端口映射：
-  外部端口：3080
-  内部 IP: 192.168.50.10
-  内部端口：3080
-  
-快捷指令 URL: http://[公网 IP]:3080/api/vehicle-monitor/test-alert
+https://yqad.hxfssc.com:8088/api/vehicle-monitor/test-alert
 ```
 
-**方案 2: 内网穿透**
-使用 frp、ngrok 等工具暴露内网服务
+**优势**:
+- ✅ 无需配置端口映射
+- ✅ 支持 HTTPS 加密
+- ✅ 任何网络都可访问
 
-**方案 3: Cloudflare Tunnel**
-配置 Cloudflare Tunnel 实现公网访问
+**注意**: 确保服务器防火墙已开放 8088 端口
 
 ## 安全建议
 

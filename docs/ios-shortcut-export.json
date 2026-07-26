@@ -7,7 +7,7 @@
     {
       "type": "url",
       "name": "告警接口 URL",
-      "url": "http://192.168.50.10:3080/api/vehicle-monitor/test-alert"
+      "url": "https://yqad.hxfssc.com:8088/api/vehicle-monitor/test-alert"
     },
     {
       "type": "dictionary",
@@ -58,7 +58,7 @@
   },
   "configuration": {
     "server": {
-      "production": "http://192.168.50.10:3080",
+      "production": "https://yqad.hxfssc.com:8088",
       "development": "http://192.168.50.10:3000"
     },
     "apiToken": "api_token_1640a8b188784e52e08e11eb8dcab3a9fcea5a8d6b03e1235d6705938eed853a",

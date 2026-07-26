@@ -10,7 +10,7 @@
 
 #### 操作 1: URL
 ```
-URL: http://192.168.50.10:3080/api/vehicle-monitor/test-alert
+URL: https://yqad.hxfssc.com:8088/api/vehicle-monitor/test-alert
 ```
 
 #### 操作 2: 字典
