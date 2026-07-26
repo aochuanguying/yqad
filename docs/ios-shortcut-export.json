@@ -1,7 +1,7 @@
 {
-  "name": "🚗 车辆告警触发",
-  "description": "当 CarPlay 断开时调用车辆告警接口",
-  "version": "1.0",
+  "name": "🚗 CarPlay 断开告警",
+  "description": "极简版 - 断开 CarPlay 时调用告警接口",
+  "version": "2.0",
   "author": "自定义",
   "operations": [
     {
@@ -13,10 +13,7 @@
       "type": "dictionary",
       "name": "请求体",
       "items": {
-        "anomalies": ["CarPlay 已断开"],
-        "lat": 36.10772373923576,
-        "lng": 120.41258170164984,
-        "address": "CarPlay 断开位置"
+        "anomalies": ["CarPlay 已断开"]
       }
     },
     {
@@ -61,17 +58,13 @@
       "production": "https://yqad.hxfssc.com:8088",
       "development": "http://192.168.50.10:3000"
     },
-    "apiToken": "api_token_1640a8b188784e52e08e11eb8dcab3a9fcea5a8d6b03e1235d6705938eed853a",
-    "defaultLocation": {
-      "lat": 36.10772373923576,
-      "lng": 120.41258170164984,
-      "address": "山东省青岛市即墨区奥捷智行汽车"
-    }
+    "apiToken": "api_token_1640a8b188784e52e08e11eb8dcab3a9fcea5a8d6b03e1235d6705938eed853a"
   },
   "notes": [
-    "1. 在 iOS 快捷指令 App 中手动创建此快捷指令",
-    "2. 配置自动化：当 CarPlay 断开连接时触发",
-    "3. 确保关闭'运行前询问'，实现自动执行",
-    "4. 测试：手动运行快捷指令，确认收到告警"
+    "极简版本：仅发送 CarPlay 断开事件，不包含位置信息",
+    "1. 创建快捷指令，添加 URL、字典、请求操作",
+    "2. 配置自动化：CarPlay 断开连接时触发",
+    "3. 关闭'运行前询问'",
+    "4. 测试运行"
   ]
 }
