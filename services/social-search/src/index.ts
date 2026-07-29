@@ -1,13 +1,13 @@
 import { getConfig } from './config/default';
 
-type Mode = 'stdio' | 'sse' | 'rest' | 'all';
+type Mode = 'stdio' | 'rest' | 'all';
 
 function parseMode(): Mode {
   const args = process.argv.slice(2);
   const modeIndex = args.indexOf('--mode');
   if (modeIndex !== -1 && args[modeIndex + 1]) {
     const mode = args[modeIndex + 1] as Mode;
-    if (['stdio', 'sse', 'rest', 'all'].includes(mode)) {
+    if (['stdio', 'rest', 'all'].includes(mode)) {
       return mode;
     }
   }
@@ -23,14 +23,11 @@ async function main() {
   if (mode === 'stdio') {
     const { startMcpStdio } = await import('./mcp/server');
     await startMcpStdio();
-  } else if (mode === 'sse') {
-    const { startMcpSse } = await import('./mcp/server');
-    await startMcpSse(config.port);
   } else if (mode === 'rest') {
     const { startRestServer } = await import('./rest/app');
     await startRestServer(config.port);
   } else {
-    // all: REST + MCP SSE 共享同一端口
+    // all: REST + MCP Streamable HTTP 共享同一端口
     const { startCombinedServer } = await import('./rest/app');
     await startCombinedServer(config.port);
   }

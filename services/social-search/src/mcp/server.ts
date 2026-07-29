@@ -1,11 +1,9 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { z } from 'zod';
 import { zhihuAdapter } from '../adapters/zhihu-adapter';
 import { xiaohongshuAdapter } from '../adapters/xiaohongshu-adapter';
 import { cookiePool } from '../infra/cookie-pool';
-import express from 'express';
 
 function createServer(): McpServer {
   const server = new McpServer({
@@ -84,43 +82,6 @@ export async function startMcpStdio(): Promise<void> {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error('[mcp] stdio 模式已启动');
-}
-
-/**
- * SSE 模式启动（独立 HTTP 服务）
- */
-export async function startMcpSse(port: number): Promise<void> {
-  await cookiePool.init();
-  const server = createServer();
-
-  const app = express();
-  const transports: Map<string, SSEServerTransport> = new Map();
-
-  app.get('/sse', async (req, res) => {
-    const transport = new SSEServerTransport('/messages', res);
-    const sessionId = transport.sessionId;
-    transports.set(sessionId, transport);
-
-    res.on('close', () => {
-      transports.delete(sessionId);
-    });
-
-    await server.connect(transport);
-  });
-
-  app.post('/messages', async (req, res) => {
-    const sessionId = req.query.sessionId as string;
-    const transport = transports.get(sessionId);
-    if (!transport) {
-      res.status(404).json({ error: 'Session not found' });
-      return;
-    }
-    await transport.handlePostMessage(req, res);
-  });
-
-  app.listen(port, () => {
-    console.log(`[mcp] SSE 模式已启动: http://0.0.0.0:${port}/sse`);
-  });
 }
 
 export { createServer };
