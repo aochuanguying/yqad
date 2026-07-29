@@ -269,8 +269,8 @@ export class ZhihuSearch implements ISearchPlatform {
           if (errorOutput) {
             logger.debug(`错误输出：${errorOutput}`);
           }
-          // Fallback：只使用 API 搜索结果（无正文图片）
-          resolve(this.mapToSearchResult(searchResults));
+          // Fallback：只使用 API 搜索结果，通过 API 补充图片
+          this.enrichWithImages(this.mapToSearchResult(searchResults), cookie).then(resolve);
           return;
         }
 
@@ -298,7 +298,7 @@ export class ZhihuSearch implements ISearchPlatform {
           
           if (!result.success || !result.results) {
             logger.warn('Python 脚本返回格式错误');
-            resolve(this.mapToSearchResult(searchResults));
+            this.enrichWithImages(this.mapToSearchResult(searchResults), cookie).then(resolve);
             return;
           }
 
@@ -319,16 +319,21 @@ export class ZhihuSearch implements ISearchPlatform {
 
           logger.info(`Playwright 提取完成，${finalResults.length} 条结果`);
           
-          // 统计图片数量
+          // 统计图片数量，如果 Playwright 也没提取到图片则用 API 补充
           const totalImages = finalResults.reduce((sum, r) => sum + (r.imageUrls?.length || 0), 0);
           logger.info(`共提取 ${totalImages} 张图片`);
           
-          resolve(finalResults);
+          if (totalImages === 0) {
+            logger.info('Playwright 未提取到图片，尝试通过 API 补充');
+            this.enrichWithImages(finalResults, cookie).then(resolve);
+          } else {
+            resolve(finalResults);
+          }
 
         } catch (e) {
           logger.warn('解析 Python 脚本输出失败:', e instanceof Error ? e.message : String(e));
           logger.debug(`原始输出：${output.substring(0, 500)}`);
-          resolve(this.mapToSearchResult(searchResults));
+          this.enrichWithImages(this.mapToSearchResult(searchResults), cookie).then(resolve);
         }
       });
 
@@ -338,7 +343,7 @@ export class ZhihuSearch implements ISearchPlatform {
         settled = true;
         pyProcess.kill();
         logger.warn('Python 脚本执行超时，使用 Fallback 结果');
-        resolve(this.mapToSearchResult(searchResults));
+        this.enrichWithImages(this.mapToSearchResult(searchResults), cookie).then(resolve);
       }, 90000);
     });
   }
@@ -363,6 +368,7 @@ export class ZhihuSearch implements ISearchPlatform {
         author: author,
         likes: item.VoteUpCount || 0,
         comments: item.CommentCount || 0,
+        imageUrls: [],
         metadata: {
           contentType: item.ContentType || '',
           contentId: item.ContentID || '',
@@ -371,6 +377,87 @@ export class ZhihuSearch implements ISearchPlatform {
         },
       };
     });
+  }
+
+  /**
+   * 通过 API 补充获取正文和图片（Playwright 失败时的增强 fallback）
+   * 从 content HTML 中提取 data-actualsrc 图片 URL
+   */
+  private async enrichWithImages(results: SearchResult[], cookie: string): Promise<SearchResult[]> {
+    const enrichCount = Math.min(5, results.length);
+    
+    for (let i = 0; i < enrichCount; i++) {
+      const result = results[i];
+      if (!result.url) continue;
+      
+      try {
+        let apiUrl: string | null = null;
+        
+        if (result.url.includes('/answer/')) {
+          const id = result.url.split('/answer/')[1]?.split(/[?#&]/)[0];
+          if (id) apiUrl = `https://www.zhihu.com/api/v4/answers/${id}?include=content`;
+        } else if (result.url.includes('zhuanlan.zhihu.com/p/')) {
+          const id = result.url.split('/p/')[1]?.split(/[?#]/)[0];
+          if (id) apiUrl = `https://www.zhihu.com/api/v4/articles/${id}`;
+        }
+        
+        if (!apiUrl) continue;
+        
+        const response = await fetch(apiUrl, {
+          headers: {
+            'Cookie': cookie,
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Referer': 'https://www.zhihu.com/',
+          },
+        });
+        
+        if (!response.ok) continue;
+        
+        const data: any = await response.json();
+        const html = data.content || '';
+        
+        // 提取图片：优先 data-actualsrc，其次 src 中的知乎 CDN 链接
+        const images: string[] = [];
+        const actualSrcRegex = /data-actualsrc="([^"]+)"/g;
+        let match;
+        while ((match = actualSrcRegex.exec(html)) !== null) {
+          images.push(match[1]);
+        }
+        if (images.length === 0) {
+          const srcRegex = /src="(https:\/\/pic[^"]+)"/g;
+          while ((match = srcRegex.exec(html)) !== null) {
+            images.push(match[1]);
+          }
+        }
+        
+        if (images.length > 0) {
+          results[i] = { ...result, imageUrls: images };
+          logger.info(`【图片增强】回答 ${result.url.split('/').pop()} 提取到 ${images.length} 张图片`);
+        }
+        
+        // 如果 API 返回了更完整的正文，也一并补充
+        if (html && html.length > (result.content?.length || 0)) {
+          const textContent = html
+            .replace(/<[^>]+>/g, '')
+            .replace(/&nbsp;/g, ' ')
+            .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .trim();
+          if (textContent.length > (result.content?.length || 0)) {
+            results[i] = { ...results[i], content: textContent };
+          }
+        }
+        
+        // 请求间延迟，避免频率限制
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+      } catch (err) {
+        logger.debug(`图片增强失败 ${result.url}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    
+    return results;
   }
   
   async isAvailable(): Promise<boolean> {
