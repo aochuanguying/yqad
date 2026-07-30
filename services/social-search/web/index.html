@@ -75,10 +75,31 @@
     .toast.success { background: #52c41a; }
     .toast.error { background: #ff4d4f; }
     @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+    /* 登录页面样式 */
+    .login-container { max-width: 400px; margin: 100px auto; background: #fff; padding: 32px; border-radius: 12px; box-shadow: 0 8px 40px rgba(0,0,0,0.15); }
+    .login-container h1 { text-align: center; margin-bottom: 24px; font-size: 24px; }
+    .logout-btn { position: absolute; top: 20px; right: 20px; }
   </style>
 </head>
 <body>
-  <div class="container">
+  <!-- 登录页面 -->
+  <div id="login-page" class="login-container" style="display:none">
+    <h1>Cookie 配置管理</h1>
+    <div class="form-group">
+      <label>用户名</label>
+      <input type="text" id="login-username" placeholder="请输入用户名">
+    </div>
+    <div class="form-group">
+      <label>密码</label>
+      <input type="password" id="login-password" placeholder="请输入密码" onkeypress="if(event.keyCode===13) login()">
+    </div>
+    <button class="btn btn-primary" onclick="login()" style="width:100%">登录</button>
+  </div>
+
+  <!-- 主页面 -->
+  <div id="main-page" class="container" style="display:none">
+    <button class="btn btn-default btn-sm logout-btn" onclick="logout()" style="position:absolute;right:20px;top:20px">退出登录</button>
     <h1>Cookie 配置管理</h1>
     <p class="subtitle">管理知乎和小红书的 Cookie 和 Access Secret 配置池</p>
 
@@ -98,7 +119,7 @@
       <h2 id="edit-modal-title">新增配置</h2>
       <div class="form-group">
         <label>配置名称</label>
-        <input type="text" id="edit-label" placeholder="如：账号A、主号">
+        <input type="text" id="edit-label" placeholder="如：账号 A、主号">
       </div>
       <div class="form-group">
         <label>Cookie</label>
@@ -143,6 +164,104 @@
   <div id="toast-container"></div>
 
 <script>
+// ============================================================
+// 认证管理
+// ============================================================
+let authToken = localStorage.getItem('authToken');
+let currentUser = localStorage.getItem('currentUser');
+
+// 页面加载时检查登录状态
+window.addEventListener('DOMContentLoaded', async () => {
+  if (authToken) {
+    try {
+      const resp = await fetch('/api/cookie-configs/auth/verify', {
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      });
+      if (!resp.ok) {
+        throw new Error('Token 无效');
+      }
+      const data = await resp.json();
+      if (data.success) {
+        showMainPage();
+      } else {
+        showLoginPage();
+      }
+    } catch (err) {
+      showLoginPage();
+    }
+  } else {
+    showLoginPage();
+  }
+});
+
+function showLoginPage() {
+  document.getElementById('login-page').style.display = 'block';
+  document.getElementById('main-page').style.display = 'none';
+}
+
+function showMainPage() {
+  document.getElementById('login-page').style.display = 'none';
+  document.getElementById('main-page').style.display = 'block';
+  loadConfigs();
+}
+
+async function login() {
+  const username = document.getElementById('login-username').value.trim();
+  const password = document.getElementById('login-password').value.trim();
+
+  if (!username || !password) {
+    showToast('请输入用户名和密码', 'error');
+    return;
+  }
+
+  try {
+    const resp = await fetch('/api/cookie-configs/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    const data = await resp.json();
+    if (data.success) {
+      authToken = data.token;
+      currentUser = data.username;
+      localStorage.setItem('authToken', authToken);
+      localStorage.setItem('currentUser', currentUser);
+      showToast('登录成功', 'success');
+      showMainPage();
+    } else {
+      showToast('登录失败：' + data.error, 'error');
+    }
+  } catch (err) {
+    showToast('请求失败：' + err.message, 'error');
+  }
+}
+
+function logout() {
+  authToken = null;
+  currentUser = null;
+  localStorage.removeItem('authToken');
+  localStorage.removeItem('currentUser');
+  showToast('已退出登录', 'success');
+  showLoginPage();
+}
+
+// 封装带认证的 fetch 请求
+async function authFetch(url, options = {}) {
+  const headers = {
+    ...(options.headers || {}),
+    'Authorization': `Bearer ${authToken}`
+  };
+  const resp = await fetch(url, { ...options, headers });
+  if (resp.status === 401) {
+    logout();
+    throw new Error('未授权');
+  }
+  return resp;
+}
+
+// ============================================================
+// 业务逻辑
+// ============================================================
 let currentPlatform = 'zhihu';
 let editingId = null;
 
@@ -179,14 +298,14 @@ async function loadConfigs() {
   area.innerHTML = '<div class="loading">加载中...</div>';
 
   try {
-    const resp = await fetch(`/api/cookie-configs/cookie-configs?platform=${currentPlatform}`);
+    const resp = await authFetch(`/api/cookie-configs/cookie-configs?platform=${currentPlatform}`);
     const data = await resp.json();
-    if (!data.success) { area.innerHTML = `<div class="empty-state">加载失败: ${data.error}</div>`; return; }
+    if (!data.success) { area.innerHTML = `<div class="empty-state">加载失败：${data.error}</div>`; return; }
 
     const configs = data.data || [];
     renderConfigList(area, configs);
   } catch (err) {
-    area.innerHTML = `<div class="empty-state">加载失败: ${err.message}</div>`;
+    area.innerHTML = `<div class="empty-state">加载失败：${err.message}</div>`;
   }
 }
 
@@ -223,7 +342,7 @@ function renderConfigList(area, configs) {
     }
     html += `<td>${c.weight}</td>`;
     html += `<td>${c.useCount}</td>`;
-    html += `<td><span title="下次: ${nextRefresh}">${refreshTime}</span></td>`;
+    html += `<td><span title="下次：${nextRefresh}">${refreshTime}</span></td>`;
     html += `<td>${c.enabled ? '<span class="badge badge-green">启用</span>' : '<span class="badge badge-gray">禁用</span>'}</td>`;
     html += `<td class="actions-cell">`;
     html += `<button class="btn btn-default btn-sm" onclick="openEditModal(${c.id})">编辑</button>`;
@@ -236,7 +355,7 @@ function renderConfigList(area, configs) {
     if (c.recentLogs && c.recentLogs.length > 0) {
       const lastLog = c.recentLogs[c.recentLogs.length - 1];
       html += `<tr><td colspan="8" style="padding:4px 16px 12px;font-size:12px;color:#888">`;
-      html += `最近刷新: ${formatTime(lastLog.refresh_time)} | 状态: ${lastLog.status} | 来源: ${lastLog.source}`;
+      html += `最近刷新：${formatTime(lastLog.refresh_time)} | 状态：${lastLog.status} | 来源：${lastLog.source}`;
       html += '</td></tr>';
     }
   }
@@ -264,9 +383,9 @@ function openAddModal() {
 
 async function openEditModal(id) {
   try {
-    const resp = await fetch(`/api/cookie-configs/cookie-configs/${id}`);
+    const resp = await authFetch(`/api/cookie-configs/cookie-configs/${id}`);
     const data = await resp.json();
-    if (!data.success) { showToast('加载配置失败: ' + data.error, 'error'); return; }
+    if (!data.success) { showToast('加载配置失败：' + data.error, 'error'); return; }
 
     const c = data.data;
     editingId = c.id;
@@ -280,7 +399,7 @@ async function openEditModal(id) {
     document.getElementById('edit-submit-btn').textContent = '保存';
     document.getElementById('edit-modal').style.display = 'flex';
   } catch (err) {
-    showToast('加载失败: ' + err.message, 'error');
+    showToast('加载失败：' + err.message, 'error');
   }
 }
 
@@ -302,12 +421,12 @@ async function submitEdit() {
   try {
     let resp;
     if (editingId) {
-      resp = await fetch(`/api/cookie-configs/cookie-configs/${editingId}`, {
+      resp = await authFetch(`/api/cookie-configs/cookie-configs/${editingId}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
       });
     } else {
       body.platform = currentPlatform;
-      resp = await fetch('/api/cookie-configs/cookie-configs', {
+      resp = await authFetch('/api/cookie-configs/cookie-configs', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
       });
     }
@@ -317,10 +436,10 @@ async function submitEdit() {
       closeEditModal();
       loadConfigs();
     } else {
-      showToast('操作失败: ' + result.error, 'error');
+      showToast('操作失败：' + result.error, 'error');
     }
   } catch (err) {
-    showToast('请求失败: ' + err.message, 'error');
+    showToast('请求失败：' + err.message, 'error');
   }
 }
 
@@ -330,16 +449,16 @@ async function submitEdit() {
 async function deleteConfig(id) {
   if (!confirm('确定要删除此配置吗？')) return;
   try {
-    const resp = await fetch(`/api/cookie-configs/cookie-configs/${id}`, { method: 'DELETE' });
+    const resp = await authFetch(`/api/cookie-configs/cookie-configs/${id}`, { method: 'DELETE' });
     const result = await resp.json();
     if (result.success) {
       showToast('删除成功', 'success');
       loadConfigs();
     } else {
-      showToast('删除失败: ' + result.error, 'error');
+      showToast('删除失败：' + result.error, 'error');
     }
   } catch (err) {
-    showToast('请求失败: ' + err.message, 'error');
+    showToast('请求失败：' + err.message, 'error');
   }
 }
 
@@ -348,38 +467,38 @@ async function deleteConfig(id) {
 // ============================================================
 async function testConnection(id) {
   try {
-    const resp = await fetch(`/api/cookie-configs/cookie-configs/${id}/status`);
+    const resp = await authFetch(`/api/cookie-configs/cookie-configs/${id}/status`);
     const data = await resp.json();
     if (!data.success) { showToast('获取状态失败', 'error'); return; }
 
     const status = data.data;
     if (currentPlatform === 'zhihu') {
       // 先获取 Access Secret
-      const configResp = await fetch(`/api/cookie-configs/cookie-configs/${id}`);
+      const configResp = await authFetch(`/api/cookie-configs/cookie-configs/${id}`);
       const configData = await configResp.json();
       if (!configData.success || !configData.data.accessSecret) {
         showToast('未配置 Access Secret，无法测试知乎连接', 'error');
         return;
       }
-      const testResp = await fetch('/api/cookie-configs/cookie-configs/test-zhihu', {
+      const testResp = await authFetch('/api/cookie-configs/cookie-configs/test-zhihu', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ accessSecret: configData.data.accessSecret })
       });
       const testRes = await testResp.json();
-      showToast(testRes.success ? `连接成功！获取到 ${testRes.resultCount} 条结果` : `连接失败: ${testRes.error}`,
+      showToast(testRes.success ? `连接成功！获取到 ${testRes.resultCount} 条结果` : `连接失败：${testRes.error}`,
         testRes.success ? 'success' : 'error');
     } else {
       if (!status.cookie) { showToast('未配置 Cookie，无法测试', 'error'); return; }
-      const testResp = await fetch('/api/cookie-configs/cookie-configs/test-xiaohongshu', {
+      const testResp = await authFetch('/api/cookie-configs/cookie-configs/test-xiaohongshu', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cookie: status.cookie })
       });
       const testRes = await testResp.json();
-      showToast(testRes.success ? `连接成功！获取到 ${testRes.resultCount} 条结果` : `连接失败: ${testRes.error}`,
+      showToast(testRes.success ? `连接成功！获取到 ${testRes.resultCount} 条结果` : `连接失败：${testRes.error}`,
         testRes.success ? 'success' : 'error');
     }
   } catch (err) {
-    showToast('测试失败: ' + err.message, 'error');
+    showToast('测试失败：' + err.message, 'error');
   }
 }
 
@@ -397,16 +516,16 @@ async function startRefresh(configId) {
   document.getElementById('qr-result').style.display = 'none';
 
   try {
-    const resp = await fetch('/api/cookie-configs/cookie-configs/cookie/refresh', {
+    const resp = await authFetch('/api/cookie-configs/cookie-configs/cookie/refresh', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ configId })
     });
     const data = await resp.json();
-    if (!data.success) { showToast('启动刷新失败: ' + data.error, 'error'); closeQrModal(); return; }
+    if (!data.success) { showToast('启动刷新失败：' + data.error, 'error'); closeQrModal(); return; }
 
     pollQrStatus(data.taskId);
   } catch (err) {
-    showToast('请求失败: ' + err.message, 'error');
+    showToast('请求失败：' + err.message, 'error');
     closeQrModal();
   }
 }
@@ -416,7 +535,7 @@ function pollQrStatus(taskId) {
 
   async function poll() {
     try {
-      const resp = await fetch(`/api/cookie-configs/cookie-configs/cookie/refresh/${taskId}/status`);
+      const resp = await authFetch(`/api/cookie-configs/cookie-configs/cookie/refresh/${taskId}/status`);
       const status = await resp.json();
 
       document.getElementById('qr-status-text').textContent = status.message || '';
@@ -440,7 +559,7 @@ function pollQrStatus(taskId) {
       if (status.status === 'failed') {
         document.getElementById('qr-result').style.display = 'block';
         document.getElementById('qr-result').className = 'status-panel error';
-        document.getElementById('qr-result').textContent = '刷新失败: ' + (status.message || '未知错误');
+        document.getElementById('qr-result').textContent = '刷新失败：' + (status.message || '未知错误');
         return;
       }
 
@@ -479,7 +598,7 @@ function esc(str) {
 // ============================================================
 // 初始化
 // ============================================================
-loadConfigs();
+// 由 DOMContentLoaded 事件触发检查登录状态
 </script>
 </body>
 </html>
