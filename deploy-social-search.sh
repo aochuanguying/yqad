@@ -64,7 +64,7 @@ docker run -d --name social-search --restart unless-stopped \
   -e MYSQL_DATABASE=yqad_prod_db \
   -e REDIS_HOST=redis \
   -e REDIS_PORT=6379 \
-  -e ADMIN_USERNAME=wangfwuei \
+  -e ADMIN_USERNAME=wangfuwei \
   -e ADMIN_PASSWORD='Wfw7539148@' \
   -e JWT_SECRET='7cae58eafcbbc8b4c6af0884a85dd38ae0da5125088a3b01b1db659417f22762' \
   -p 3090:3090 \
