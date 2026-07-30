@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>Cookie 配置管理 - Social Search</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f2f5; color: #333; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+    h1 { font-size: 24px; margin-bottom: 8px; }
+    .subtitle { color: #666; font-size: 14px; margin-bottom: 24px; }
+
+    .tabs { display: flex; gap: 4px; margin-bottom: 24px; background: #fff; border-radius: 8px; padding: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    .tab { padding: 10px 24px; border: none; background: none; cursor: pointer; border-radius: 6px; font-size: 14px; color: #666; transition: all 0.2s; }
+    .tab:hover { color: #333; }
+    .tab.active { background: #1677ff; color: #fff; }
+
+    .card { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 16px; overflow: hidden; }
+    .card-header { padding: 16px 20px; border-bottom: 1px solid #f0f0f0; display: flex; justify-content: space-between; align-items: center; }
+    .card-header h3 { font-size: 16px; font-weight: 600; }
+    .card-body { padding: 20px; }
+
+    .btn { padding: 8px 16px; border: none; border-radius: 6px; font-size: 13px; cursor: pointer; transition: all 0.2s; }
+    .btn-primary { background: #1677ff; color: #fff; }
+    .btn-primary:hover { background: #4096ff; }
+    .btn-danger { background: #ff4d4f; color: #fff; }
+    .btn-danger:hover { background: #ff7875; }
+    .btn-default { background: #f5f5f5; color: #333; }
+    .btn-default:hover { background: #e8e8e8; }
+    .btn-success { background: #52c41a; color: #fff; }
+    .btn-sm { padding: 4px 10px; font-size: 12px; }
+
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 12px 16px; border-bottom: 1px solid #f0f0f0; }
+    th { font-size: 12px; color: #999; font-weight: 500; text-transform: uppercase; }
+    td { font-size: 14px; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+    .badge-green { background: #f6ffed; color: #52c41a; border: 1px solid #b7eb8f; }
+    .badge-red { background: #fff2f0; color: #ff4d4f; border: 1px solid #ffccc7; }
+    .badge-gray { background: #f5f5f5; color: #999; border: 1px solid #d9d9d9; }
+
+    .form-group { margin-bottom: 16px; }
+    .form-group label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; color: #555; }
+    .form-group input, .form-group textarea, .form-group select {
+      width: 100%; padding: 8px 12px; border: 1px solid #d9d9d9; border-radius: 6px;
+      font-size: 14px; transition: border-color 0.2s;
+    }
+    .form-group input:focus, .form-group textarea:focus, .form-group select:focus { outline: none; border-color: #1677ff; }
+    .form-group textarea { font-family: monospace; font-size: 13px; resize: vertical; }
+    .form-row { display: flex; gap: 12px; }
+    .form-row .form-group { flex: 1; }
+
+    .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+    .modal { background: #fff; border-radius: 12px; padding: 24px; width: 560px; max-width: 90vw; max-height: 80vh; overflow-y: auto; box-shadow: 0 8px 40px rgba(0,0,0,0.15); }
+    .modal h2 { font-size: 18px; margin-bottom: 20px; }
+    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+
+    .status-panel { padding: 12px 16px; border-radius: 6px; margin-bottom: 12px; }
+    .status-panel.info { background: #e6f7ff; border: 1px solid #91d5ff; }
+    .status-panel.success { background: #f6ffed; border: 1px solid #b7eb8f; }
+    .status-panel.error { background: #fff2f0; border: 1px solid #ffccc7; }
+
+    .qr-container { text-align: center; margin: 16px 0; }
+    .qr-container img { max-width: 200px; border-radius: 8px; border: 1px solid #e8e8e8; }
+
+    .actions-cell { display: flex; gap: 6px; flex-wrap: wrap; }
+    .empty-state { text-align: center; padding: 40px 20px; color: #999; }
+    .loading { text-align: center; padding: 40px; color: #999; }
+
+    .toast { position: fixed; top: 20px; right: 20px; padding: 12px 20px; border-radius: 8px; color: #fff; font-size: 14px; z-index: 2000; animation: slideIn 0.3s ease; }
+    .toast.success { background: #52c41a; }
+    .toast.error { background: #ff4d4f; }
+    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Cookie 配置管理</h1>
+    <p class="subtitle">管理知乎和小红书的 Cookie 和 Access Secret 配置池</p>
+
+    <div class="tabs">
+      <button class="tab active" data-platform="zhihu" onclick="switchTab('zhihu')">知乎</button>
+      <button class="tab" data-platform="xiaohongshu" onclick="switchTab('xiaohongshu')">小红书</button>
+    </div>
+
+    <div id="content-area">
+      <div class="loading">加载中...</div>
+    </div>
+  </div>
+
+  <!-- 编辑/新增弹窗 -->
+  <div id="edit-modal" class="modal-overlay" style="display:none">
+    <div class="modal">
+      <h2 id="edit-modal-title">新增配置</h2>
+      <div class="form-group">
+        <label>配置名称</label>
+        <input type="text" id="edit-label" placeholder="如：账号A、主号">
+      </div>
+      <div class="form-group">
+        <label>Cookie</label>
+        <textarea id="edit-cookie" rows="5" placeholder="a1=xxx; web_session=yyy; ..."></textarea>
+      </div>
+      <div id="edit-access-secret-group" class="form-group" style="display:none">
+        <label>Access Secret（知乎开放平台）</label>
+        <input type="text" id="edit-access-secret" placeholder="从 developer.zhihu.com 获取">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>权重 (0-100)</label>
+          <input type="number" id="edit-weight" value="10" min="0" max="100">
+        </div>
+        <div class="form-group">
+          <label>优先级</label>
+          <input type="number" id="edit-priority" value="0" min="0">
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-default" onclick="closeEditModal()">取消</button>
+        <button class="btn btn-primary" id="edit-submit-btn" onclick="submitEdit()">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 二维码弹窗 -->
+  <div id="qr-modal" class="modal-overlay" style="display:none">
+    <div class="modal" style="text-align:center">
+      <h2>扫码登录</h2>
+      <div id="qr-status-text" style="margin-bottom:8px;color:#666"></div>
+      <div class="qr-container">
+        <img id="qr-image" src="" alt="二维码" style="display:none">
+        <div id="qr-loading" style="padding:40px;color:#999">正在生成二维码...</div>
+      </div>
+      <div id="qr-message" style="margin: 12px 0;color:#333"></div>
+      <div id="qr-result" style="display:none" class="status-panel info"></div>
+      <button class="btn btn-default" onclick="closeQrModal()">取消</button>
+    </div>
+  </div>
+
+  <div id="toast-container"></div>
+
+<script>
+let currentPlatform = 'zhihu';
+let editingId = null;
+
+// ============================================================
+// 工具函数 - 时间格式化
+// ============================================================
+function formatTime(isoString) {
+  if (!isoString) return '-';
+  const date = new Date(isoString);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const seconds = String(date.getSeconds()).padStart(2, '0');
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+}
+
+// ============================================================
+// Tab 切换
+// ============================================================
+function switchTab(platform) {
+  currentPlatform = platform;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelector(`[data-platform="${platform}"]`).classList.add('active');
+  loadConfigs();
+}
+
+// ============================================================
+// 加载配置列表
+// ============================================================
+async function loadConfigs() {
+  const area = document.getElementById('content-area');
+  area.innerHTML = '<div class="loading">加载中...</div>';
+
+  try {
+    const resp = await fetch(`/api/cookie-configs/cookie-configs?platform=${currentPlatform}`);
+    const data = await resp.json();
+    if (!data.success) { area.innerHTML = `<div class="empty-state">加载失败: ${data.error}</div>`; return; }
+
+    const configs = data.data || [];
+    renderConfigList(area, configs);
+  } catch (err) {
+    area.innerHTML = `<div class="empty-state">加载失败: ${err.message}</div>`;
+  }
+}
+
+function renderConfigList(area, configs) {
+  if (configs.length === 0) {
+    area.innerHTML = `
+      <div class="card">
+        <div class="card-body">
+          <div class="empty-state">暂无配置，请点击下方按钮新增</div>
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="openAddModal()" style="margin-top:12px">+ 新增配置</button>
+    `;
+    return;
+  }
+
+  let html = '<div class="card"><table><thead><tr>';
+  html += '<th>名称</th><th>Cookie 长度</th>';
+  if (currentPlatform === 'zhihu') html += '<th>Access Secret</th>';
+  html += '<th>权重</th><th>使用次数</th><th>最后刷新</th><th>状态</th><th>操作</th>';
+  html += '</tr></thead><tbody>';
+
+  for (const c of configs) {
+    const hasCookie = c.cookieLength > 0;
+    const hasSecret = c.accessSecret && c.accessSecret.length > 0;
+    const refreshTime = c.lastRefreshAt ? new Date(c.lastRefreshAt).toLocaleString('zh-CN') : '-';
+    const nextRefresh = c.nextRefreshAt ? new Date(c.nextRefreshAt).toLocaleString('zh-CN') : '-';
+
+    html += '<tr>';
+    html += `<td><strong>${esc(c.label || '未命名')}</strong></td>`;
+    html += `<td>${hasCookie ? c.cookieLength + ' 字符' : '<span class="badge badge-red">无</span>'}</td>`;
+    if (currentPlatform === 'zhihu') {
+      html += `<td>${hasSecret ? '<span class="badge badge-green">已配置</span>' : '<span class="badge badge-red">缺失</span>'}</td>`;
+    }
+    html += `<td>${c.weight}</td>`;
+    html += `<td>${c.useCount}</td>`;
+    html += `<td><span title="下次: ${nextRefresh}">${refreshTime}</span></td>`;
+    html += `<td>${c.enabled ? '<span class="badge badge-green">启用</span>' : '<span class="badge badge-gray">禁用</span>'}</td>`;
+    html += `<td class="actions-cell">`;
+    html += `<button class="btn btn-default btn-sm" onclick="openEditModal(${c.id})">编辑</button>`;
+    html += `<button class="btn btn-default btn-sm" onclick="testConnection(${c.id})">测试连接</button>`;
+    html += `<button class="btn btn-primary btn-sm" onclick="startRefresh(${c.id})">扫码登录</button>`;
+    html += `<button class="btn btn-danger btn-sm" onclick="deleteConfig(${c.id})">删除</button>`;
+    html += '</td></tr>';
+
+    // 状态面板行
+    if (c.recentLogs && c.recentLogs.length > 0) {
+      const lastLog = c.recentLogs[c.recentLogs.length - 1];
+      html += `<tr><td colspan="8" style="padding:4px 16px 12px;font-size:12px;color:#888">`;
+      html += `最近刷新: ${formatTime(lastLog.refresh_time)} | 状态: ${lastLog.status} | 来源: ${lastLog.source}`;
+      html += '</td></tr>';
+    }
+  }
+
+  html += '</tbody></table></div>';
+  html += `<button class="btn btn-primary" onclick="openAddModal()" style="margin-top:12px">+ 新增配置</button>`;
+  area.innerHTML = html;
+}
+
+// ============================================================
+// 编辑/新增弹窗
+// ============================================================
+function openAddModal() {
+  editingId = null;
+  document.getElementById('edit-modal-title').textContent = '新增配置';
+  document.getElementById('edit-label').value = '';
+  document.getElementById('edit-cookie').value = '';
+  document.getElementById('edit-access-secret').value = '';
+  document.getElementById('edit-weight').value = '10';
+  document.getElementById('edit-priority').value = '0';
+  document.getElementById('edit-access-secret-group').style.display = currentPlatform === 'zhihu' ? 'block' : 'none';
+  document.getElementById('edit-submit-btn').textContent = '创建';
+  document.getElementById('edit-modal').style.display = 'flex';
+}
+
+async function openEditModal(id) {
+  try {
+    const resp = await fetch(`/api/cookie-configs/cookie-configs/${id}`);
+    const data = await resp.json();
+    if (!data.success) { showToast('加载配置失败: ' + data.error, 'error'); return; }
+
+    const c = data.data;
+    editingId = c.id;
+    document.getElementById('edit-modal-title').textContent = '编辑配置';
+    document.getElementById('edit-label').value = c.label || '';
+    document.getElementById('edit-cookie').value = c.cookie || '';
+    document.getElementById('edit-access-secret').value = c.accessSecret || '';
+    document.getElementById('edit-weight').value = c.weight;
+    document.getElementById('edit-priority').value = c.priority;
+    document.getElementById('edit-access-secret-group').style.display = currentPlatform === 'zhihu' ? 'block' : 'none';
+    document.getElementById('edit-submit-btn').textContent = '保存';
+    document.getElementById('edit-modal').style.display = 'flex';
+  } catch (err) {
+    showToast('加载失败: ' + err.message, 'error');
+  }
+}
+
+function closeEditModal() {
+  document.getElementById('edit-modal').style.display = 'none';
+}
+
+async function submitEdit() {
+  const body = {
+    label: document.getElementById('edit-label').value.trim(),
+    cookie: document.getElementById('edit-cookie').value.trim(),
+    priority: parseInt(document.getElementById('edit-priority').value) || 0,
+    weight: parseInt(document.getElementById('edit-weight').value) || 10,
+  };
+  if (currentPlatform === 'zhihu') {
+    body.accessSecret = document.getElementById('edit-access-secret').value.trim();
+  }
+
+  try {
+    let resp;
+    if (editingId) {
+      resp = await fetch(`/api/cookie-configs/cookie-configs/${editingId}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+      });
+    } else {
+      body.platform = currentPlatform;
+      resp = await fetch('/api/cookie-configs/cookie-configs', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+      });
+    }
+    const result = await resp.json();
+    if (result.success) {
+      showToast(editingId ? '更新成功' : '创建成功', 'success');
+      closeEditModal();
+      loadConfigs();
+    } else {
+      showToast('操作失败: ' + result.error, 'error');
+    }
+  } catch (err) {
+    showToast('请求失败: ' + err.message, 'error');
+  }
+}
+
+// ============================================================
+// 删除
+// ============================================================
+async function deleteConfig(id) {
+  if (!confirm('确定要删除此配置吗？')) return;
+  try {
+    const resp = await fetch(`/api/cookie-configs/cookie-configs/${id}`, { method: 'DELETE' });
+    const result = await resp.json();
+    if (result.success) {
+      showToast('删除成功', 'success');
+      loadConfigs();
+    } else {
+      showToast('删除失败: ' + result.error, 'error');
+    }
+  } catch (err) {
+    showToast('请求失败: ' + err.message, 'error');
+  }
+}
+
+// ============================================================
+// 测试连接
+// ============================================================
+async function testConnection(id) {
+  try {
+    const resp = await fetch(`/api/cookie-configs/cookie-configs/${id}/status`);
+    const data = await resp.json();
+    if (!data.success) { showToast('获取状态失败', 'error'); return; }
+
+    const status = data.data;
+    if (currentPlatform === 'zhihu') {
+      // 先获取 Access Secret
+      const configResp = await fetch(`/api/cookie-configs/cookie-configs/${id}`);
+      const configData = await configResp.json();
+      if (!configData.success || !configData.data.accessSecret) {
+        showToast('未配置 Access Secret，无法测试知乎连接', 'error');
+        return;
+      }
+      const testResp = await fetch('/api/cookie-configs/cookie-configs/test-zhihu', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessSecret: configData.data.accessSecret })
+      });
+      const testRes = await testResp.json();
+      showToast(testRes.success ? `连接成功！获取到 ${testRes.resultCount} 条结果` : `连接失败: ${testRes.error}`,
+        testRes.success ? 'success' : 'error');
+    } else {
+      if (!status.cookie) { showToast('未配置 Cookie，无法测试', 'error'); return; }
+      const testResp = await fetch('/api/cookie-configs/cookie-configs/test-xiaohongshu', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cookie: status.cookie })
+      });
+      const testRes = await testResp.json();
+      showToast(testRes.success ? `连接成功！获取到 ${testRes.resultCount} 条结果` : `连接失败: ${testRes.error}`,
+        testRes.success ? 'success' : 'error');
+    }
+  } catch (err) {
+    showToast('测试失败: ' + err.message, 'error');
+  }
+}
+
+// ============================================================
+// 扫码刷新
+// ============================================================
+let qrPollingTimer = null;
+
+async function startRefresh(configId) {
+  document.getElementById('qr-modal').style.display = 'flex';
+  document.getElementById('qr-status-text').textContent = '正在初始化...';
+  document.getElementById('qr-image').style.display = 'none';
+  document.getElementById('qr-loading').style.display = 'block';
+  document.getElementById('qr-message').textContent = '';
+  document.getElementById('qr-result').style.display = 'none';
+
+  try {
+    const resp = await fetch('/api/cookie-configs/cookie-configs/cookie/refresh', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ configId })
+    });
+    const data = await resp.json();
+    if (!data.success) { showToast('启动刷新失败: ' + data.error, 'error'); closeQrModal(); return; }
+
+    pollQrStatus(data.taskId);
+  } catch (err) {
+    showToast('请求失败: ' + err.message, 'error');
+    closeQrModal();
+  }
+}
+
+function pollQrStatus(taskId) {
+  if (qrPollingTimer) clearTimeout(qrPollingTimer);
+
+  async function poll() {
+    try {
+      const resp = await fetch(`/api/cookie-configs/cookie-configs/cookie/refresh/${taskId}/status`);
+      const status = await resp.json();
+
+      document.getElementById('qr-status-text').textContent = status.message || '';
+      document.getElementById('qr-message').textContent = status.message || '';
+
+      if (status.qrCodeBase64) {
+        document.getElementById('qr-loading').style.display = 'none';
+        const img = document.getElementById('qr-image');
+        img.src = 'data:image/png;base64,' + status.qrCodeBase64;
+        img.style.display = 'block';
+      }
+
+      if (status.status === 'success') {
+        document.getElementById('qr-result').style.display = 'block';
+        document.getElementById('qr-result').className = 'status-panel success';
+        document.getElementById('qr-result').textContent = '登录成功！Cookie 已保存';
+        setTimeout(() => { closeQrModal(); loadConfigs(); }, 2000);
+        return;
+      }
+
+      if (status.status === 'failed') {
+        document.getElementById('qr-result').style.display = 'block';
+        document.getElementById('qr-result').className = 'status-panel error';
+        document.getElementById('qr-result').textContent = '刷新失败: ' + (status.message || '未知错误');
+        return;
+      }
+
+      qrPollingTimer = setTimeout(poll, 2000);
+    } catch (err) {
+      qrPollingTimer = setTimeout(poll, 5000);
+    }
+  }
+
+  poll();
+}
+
+function closeQrModal() {
+  if (qrPollingTimer) { clearTimeout(qrPollingTimer); qrPollingTimer = null; }
+  document.getElementById('qr-modal').style.display = 'none';
+}
+
+// ============================================================
+// Toast
+// ============================================================
+function showToast(msg, type) {
+  const container = document.getElementById('toast-container');
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  container.appendChild(el);
+  setTimeout(() => { el.remove(); }, 3000);
+}
+
+function esc(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// ============================================================
+// 初始化
+// ============================================================
+loadConfigs();
+</script>
+</body>
+</html>
