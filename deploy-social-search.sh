@@ -67,6 +67,7 @@ docker run -d --name social-search --restart unless-stopped \
   -e ADMIN_USERNAME=wangfuwei \
   -e ADMIN_PASSWORD='Wfw7539148@' \
   -e JWT_SECRET='7cae58eafcbbc8b4c6af0884a85dd38ae0da5125088a3b01b1db659417f22762' \
+  -e API_KEYS='social-search-api-key-2026' \
   -p 3090:3090 \
   social-search:latest
 ENDSSH
