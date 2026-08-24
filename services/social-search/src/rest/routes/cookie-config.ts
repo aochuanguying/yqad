@@ -151,6 +151,16 @@ router.post('/cookie-configs/test-xiaohongshu', jwtMiddleware, async (req: Reque
   }
 });
 
+router.post('/cookie-configs/test-autohome', jwtMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { autohomeAdapter } = await import('../../adapters/autohome-adapter');
+    const results = await autohomeAdapter.search({ query: '新车', maxResults: 3, noCache: true });
+    res.json({ success: true, resultCount: results.length });
+  } catch (err: any) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
 // ============================================================
 // 扫码刷新
 // ============================================================

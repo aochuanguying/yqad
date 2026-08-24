@@ -106,6 +106,7 @@
     <div class="tabs">
       <button class="tab active" data-platform="zhihu" onclick="switchTab('zhihu')">知乎</button>
       <button class="tab" data-platform="xiaohongshu" onclick="switchTab('xiaohongshu')">小红书</button>
+      <button class="tab" data-platform="autohome" onclick="switchTab('autohome')">汽车之家</button>
     </div>
 
     <div id="content-area">
@@ -287,7 +288,55 @@ function switchTab(platform) {
   currentPlatform = platform;
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.querySelector(`[data-platform="${platform}"]`).classList.add('active');
-  loadConfigs();
+  if (platform === 'autohome') {
+    renderAutohomePage();
+  } else {
+    loadConfigs();
+  }
+}
+
+// ============================================================
+// 汽车之家页面
+// ============================================================
+function renderAutohomePage() {
+  const area = document.getElementById('content-area');
+  area.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <h3>汽车之家搜索</h3>
+        <button class="btn btn-primary btn-sm" onclick="testAutohome()">测试连接</button>
+      </div>
+      <div class="card-body">
+        <div style="margin-bottom:16px">
+          <span class="badge badge-green">无需 Cookie</span>
+          <span style="margin-left:8px;color:#666;font-size:13px">通过 Python 脚本抓取汽车之家论坛帖子，无需登录凭据</span>
+        </div>
+        <table>
+          <tr><th style="width:120px">搜索能力</th><td>论坛帖子搜索（标题+内容）</td></tr>
+          <tr><th>详情获取</th><td>帖子完整内容、图片、评论数、浏览数</td></tr>
+          <tr><th>频率限制</th><td>每分钟最多 10 次请求</td></tr>
+          <tr><th>缓存策略</th><td>搜索结果缓存 10 分钟</td></tr>
+        </table>
+        <div id="autohome-test-result" style="margin-top:16px"></div>
+      </div>
+    </div>
+  `;
+}
+
+async function testAutohome() {
+  const resultArea = document.getElementById('autohome-test-result');
+  resultArea.innerHTML = '<div class="status-panel info">正在测试连接...</div>';
+  try {
+    const resp = await authFetch('/api/cookie-configs/cookie-configs/test-autohome', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    const data = await resp.json();
+    if (data.success) {
+      resultArea.innerHTML = `<div class="status-panel success">✅ 连接正常，搜索到 ${data.resultCount} 条结果</div>`;
+    } else {
+      resultArea.innerHTML = `<div class="status-panel error">❌ 连接失败：${data.error}</div>`;
+    }
+  } catch (err) {
+    resultArea.innerHTML = `<div class="status-panel error">❌ 请求失败：${err.message}</div>`;
+  }
 }
 
 // ============================================================

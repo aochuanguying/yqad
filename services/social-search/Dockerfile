@@ -21,22 +21,35 @@ RUN python3 -m pip install --no-cache-dir --break-system-packages \
     pycryptodome \
     beautifulsoup4
 
-# 使用国内镜像源 - npm
-RUN npm config set registry https://registry.npmmirror.com
+# 复制 package.json 并安装 Node 依赖（不包括 playwright-core）
+COPY package*.json ./
+RUN rm -f ~/.npmrc .npmrc && \
+    echo "registry=https://registry.npmmirror.com" > .npmrc && \
+    echo "strict-ssl=false" >> .npmrc && \
+    npm config --global set registry https://registry.npmmirror.com && \
+    npm config --global set strict-ssl false && \
+    cat .npmrc && \
+    rm -rf node_modules && \
+    npm install --omit=dev --no-audit --network-timeout=300000 --legacy-peer-deps && \
+    curl -L -o /tmp/playwright-core.tgz https://registry.npmmirror.com/playwright-core/-/playwright-core-1.40.0.tgz && \
+    mkdir -p node_modules/playwright-core && \
+    tar -xzf /tmp/playwright-core.tgz -C node_modules/playwright-core --strip-components=1 && \
+    rm /tmp/playwright-core.tgz && \
+    npm cache clean --force
 
 # 使用国内镜像源 - Playwright 浏览器下载
 ENV PLAYWRIGHT_DOWNLOAD_HOST=https://npmmirror.com/mirrors/playwright
 
-# 安装 Playwright Chromium
-RUN npx playwright install chromium --with-deps
+# 安装 Playwright Chromium 浏览器（使用 playwright-core）
+RUN node node_modules/playwright-core/cli.js install chromium --with-deps
 
-# 复制 package.json 并安装 Node 依赖
-COPY package*.json ./
-RUN npm ci --only=production && npm cache clean --force
+# 安装 Python 版 Playwright 浏览器（汽车之家搜索脚本使用）
+RUN python3 -m playwright install chromium
 
-# 复制编译产物和脚本
+# 复制编译产物、脚本和前端文件
 COPY dist ./dist
 COPY scripts ./scripts
+COPY web ./web
 
 # 暴露端口
 EXPOSE 3090
