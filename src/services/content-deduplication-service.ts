@@ -93,8 +93,52 @@ class ContentDeduplicationService {
         },
       };
     } catch (error) {
-      logger.error('内容相似度检测失败:', error);
-      // 降级方案：返回不重复
+      logger.error('内容相似度检测失败（ChromaDB 不可用），降级为标题文本相似度检测:', error);
+      // 降级方案：从 post_history 查最近标题，做文本相似度兜底
+      try {
+        const recentPosts = await this.postHistoryStorage.queryPosts({
+          startDate: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000), // 最近14天
+          limit: 100,
+        });
+
+        if (recentPosts.posts.length > 0) {
+          let maxSim = 0;
+          let matchedTitle: string | undefined;
+          let matchedPostId: string | undefined;
+
+          for (const post of recentPosts.posts) {
+            const sim = this.calcTitleSimilarity(title, post.title);
+            if (sim > maxSim) {
+              maxSim = sim;
+              matchedTitle = post.title;
+              matchedPostId = post.id;
+            }
+          }
+
+          const isDuplicate = maxSim >= 0.7; // 标题文本相似度阈值 0.7
+          logger.info(
+            `【降级去重】标题文本相似度=${maxSim.toFixed(3)}, ` +
+            `结果=${isDuplicate ? '重复' : '通过'}` +
+            (matchedTitle ? `, 匹配帖子："${matchedTitle}"` : '')
+          );
+
+          return {
+            isDuplicate,
+            maxSimilarity: maxSim,
+            matchedPostId,
+            matchedTitle,
+            similarityDetails: {
+              titleSimilarity: maxSim,
+              contentSimilarity: 0,
+              weightedSimilarity: maxSim,
+            },
+          };
+        }
+      } catch (fallbackError) {
+        logger.error('降级标题去重也失败:', fallbackError);
+      }
+
+      // 最终兜底：返回不重复
       return {
         isDuplicate: false,
         maxSimilarity: 0,
@@ -107,6 +151,51 @@ class ContentDeduplicationService {
         },
       };
     }
+  }
+
+  /**
+   * 计算两个标题的文本相似度（基于最长公共子序列 + 关键词重合度）
+   */
+  private calcTitleSimilarity(a: string, b: string): number {
+    if (a === b) return 1;
+    if (!a || !b) return 0;
+
+    // 1. 基于字符的 LCS 相似度
+    const lcsLen = this.lcsLength(a, b);
+    const lcsSim = (2 * lcsLen) / (a.length + b.length);
+
+    // 2. 基于分词的 Jaccard 相似度（按标点和空格分词）
+    const tokensA = new Set(a.split(/[\s,，。！？、；：""''（）\-—·]+/).filter(Boolean));
+    const tokensB = new Set(b.split(/[\s,，。！？、；：""''（）\-—·]+/).filter(Boolean));
+    const intersection = [...tokensA].filter(t => tokensB.has(t)).length;
+    const union = new Set([...tokensA, ...tokensB]).size;
+    const jaccardSim = union > 0 ? intersection / union : 0;
+
+    // 综合取较高值
+    return Math.max(lcsSim, jaccardSim);
+  }
+
+  /**
+   * 最长公共子序列长度
+   */
+  private lcsLength(a: string, b: string): number {
+    const m = a.length;
+    const n = b.length;
+    // 空间优化：只用两行
+    let prev = new Array(n + 1).fill(0);
+    let curr = new Array(n + 1).fill(0);
+    for (let i = 1; i <= m; i++) {
+      for (let j = 1; j <= n; j++) {
+        if (a[i - 1] === b[j - 1]) {
+          curr[j] = prev[j - 1] + 1;
+        } else {
+          curr[j] = Math.max(prev[j], curr[j - 1]);
+        }
+      }
+      [prev, curr] = [curr, prev];
+      curr.fill(0);
+    }
+    return prev[n];
   }
 
   /**

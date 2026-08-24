@@ -65,7 +65,7 @@ export async function getAllTopics(): Promise<Topic[]> {
       direction: '',
       outline: '',
       materialPaths: [],
-      status: dbTopic.status as 'unused' | 'used',
+      status: dbTopic.status === 'available' ? 'unused' : 'used',
       usedAt: undefined,
       createdAt: dbTopic.created_at.toISOString(),
       useCount: dbTopic.current_use_count,

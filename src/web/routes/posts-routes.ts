@@ -15,6 +15,7 @@ import { taskCacheStorage } from '../../storage/redis/task-cache-storage';
 import { decrementTopicUseCount } from '../../web/services/topics-service';
 import { internetSearchManager } from '../../services/internet-search';
 import { searchRateLimitStorage } from '../../storage/redis/search-rate-limit-storage';
+import { getPostHistoryStorage } from '../../storage/mysql/post-history-storage';
 
 const logger = getLogger('posts-routes');
 
@@ -391,6 +392,21 @@ router.post('/confirm', apiTokenMiddleware, async (req, res) => {
       } catch (logError: any) {
         logger.warn(`记录回调成功日志失败：${logError.message}`);
       }
+
+      // 写入发帖历史（用于语义去重）
+      try {
+        await getPostHistoryStorage().createPost({
+          id: request.taskId,
+          title: pendingPost.title,
+          topic: pendingPost.topicId || null,
+          content: pendingPost.content,
+          imageUrls: pendingPost.images.map(img => img.url),
+          publishedAt: new Date(),
+        });
+        logger.info(`已写入发帖历史（含 ChromaDB 同步）：${pendingPost.title}`);
+      } catch (historyError: any) {
+        logger.warn(`写入发帖历史失败：${historyError.message}`);
+      }
       
       // 更新素材使用计数
       try {
@@ -434,6 +450,21 @@ router.post('/confirm', apiTokenMiddleware, async (req, res) => {
         logger.debug(`已记录自由模式回调成功日志：${pendingPost.title}`);
       } catch (logError: any) {
         logger.warn(`记录回调成功日志失败：${logError.message}`);
+      }
+
+      // 写入发帖历史（用于语义去重）
+      try {
+        await getPostHistoryStorage().createPost({
+          id: request.taskId,
+          title: pendingPost.title,
+          topic: null,
+          content: pendingPost.content,
+          imageUrls: pendingPost.images.map(img => img.url),
+          publishedAt: new Date(),
+        });
+        logger.info(`已写入发帖历史（含 ChromaDB 同步）：${pendingPost.title}`);
+      } catch (historyError: any) {
+        logger.warn(`写入发帖历史失败：${historyError.message}`);
       }
       
       // 更新素材使用计数（自由模式）
@@ -971,6 +1002,21 @@ router.post('/autojs/callback', apiTokenMiddleware, async (req, res) => {
       });
       
       logger.info(`已更新日志状态为成功：${log.id}`);
+
+      // 写入发帖历史（用于语义去重）
+      try {
+        await getPostHistoryStorage().createPost({
+          id: taskId,
+          title: cleanTitle,
+          topic: topicId || topicName || null,
+          content: cleanContent,
+          imageUrls: cleanImageUrls,
+          publishedAt: new Date(),
+        });
+        logger.info(`已写入发帖历史（含 ChromaDB 同步）：${cleanTitle}`);
+      } catch (historyError: any) {
+        logger.warn(`写入发帖历史失败：${historyError.message}`);
+      }
       
       res.json({
         success: true,

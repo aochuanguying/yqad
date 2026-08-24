@@ -578,8 +578,22 @@ export class AutoPostService {
       
       logger.info(`【语义去重】检查通过，相似度：${semanticDuplicateCheck.maxSimilarity.toFixed(3)}`);
     } catch (error) {
-      // ChromaDB 不可用时降级：依赖标题去重（generatePostWithDedup 已做）
-      logger.warn(`【语义去重】ChromaDB 不可用，降级为仅标题去重：${error instanceof Error ? error.message : String(error)}`);
+      // ChromaDB 不可用时降级：使用 contentDeduplicationService 的文本相似度兜底
+      logger.warn(`【语义去重】ChromaDB 不可用，降级为文本相似度检测：${error instanceof Error ? error.message : String(error)}`);
+      try {
+        const fallbackResult = await contentDeduplicationService.checkSimilarity(generated.title, generated.content);
+        if (fallbackResult.isDuplicate) {
+          logger.warn(
+            `【降级去重】检测到重复内容！相似度：${fallbackResult.maxSimilarity.toFixed(3)}, ` +
+            `匹配帖子：${fallbackResult.matchedTitle || fallbackResult.matchedPostId}，跳过该主题`
+          );
+          ctx.error = `降级去重检测到重复（相似度：${fallbackResult.maxSimilarity.toFixed(3)}）`;
+          return false;
+        }
+        logger.info(`【降级去重】检查通过，相似度：${fallbackResult.maxSimilarity.toFixed(3)}`);
+      } catch (fallbackError) {
+        logger.warn(`【降级去重】也失败，跳过去重检查：${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`);
+      }
     }
 
     return true;
