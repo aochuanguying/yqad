@@ -404,17 +404,8 @@ export class CookieRefreshService {
           req.on('timeout', () => { req.destroy(); resolve(false); });
         });
       } else {
-        const response = await fetch('https://edith.xiaohongshu.com/api/sns/web/v1/search/notes?keyword=test&page_size=1', {
-          headers: {
-            'Cookie': cookie,
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept': 'application/json',
-            'Referer': 'https://www.xiaohongshu.com/',
-          },
-        });
-        if (!response.ok) return false;
-        const data: any = await response.json();
-        return !!data.success;
+        // 使用与实际搜索相同的逻辑：Python + xhshow 签名请求
+        return await this.testXiaohongshuCookieViaPython(cookie);
       }
     } catch {
       return false;
@@ -535,6 +526,106 @@ export class CookieRefreshService {
         } catch { setTimeout(doCheck, 2000); }
       };
       doCheck();
+    });
+  }
+
+  // -------------------------------------------------------
+  // 小红书 Cookie 有效性验证（与实际搜索逻辑一致，使用 xhshow 签名）
+  // -------------------------------------------------------
+  private testXiaohongshuCookieViaPython(cookie: string): Promise<boolean> {
+    const { spawn } = require('child_process');
+    const { getConfig } = require('../../config/default');
+    const config = getConfig();
+
+    return new Promise((resolve) => {
+      const pythonScript = `
+import json
+import sys
+import requests
+from xhshow import Xhshow
+
+try:
+    cookie = sys.argv[1]
+
+    cookie_dict = {}
+    for item in cookie.split(';'):
+        if '=' in item:
+            key, value = item.split('=', 1)
+            cookie_dict[key.strip()] = value.strip()
+
+    client = Xhshow()
+    search_id = client.get_search_request_id()
+
+    url = "https://so.xiaohongshu.com/api/sns/web/v2/search/notes"
+    uri = "/api/sns/web/v2/search/notes"
+
+    payload = {
+        "keyword": "美食",
+        "page": 1,
+        "page_size": 20,
+        "search_id": search_id,
+        "sort": "general",
+        "note_type": 0,
+        "extend": {"title_encoding": 1, "desc_encoding": 1}
+    }
+
+    headers = client.sign_headers(
+        method="POST",
+        uri=uri,
+        cookies=cookie_dict,
+        payload=payload,
+        x_rap=False
+    )
+    headers["Content-Type"] = "application/json"
+    headers["Origin"] = "https://www.xiaohongshu.com"
+    headers["Referer"] = "https://www.xiaohongshu.com/explore"
+
+    response = requests.post(url, headers=headers, json=payload, cookies=cookie_dict, timeout=15)
+
+    if response.status_code != 200:
+        print(json.dumps({"valid": False, "reason": f"HTTP {response.status_code}"}))
+        sys.exit(0)
+
+    result = response.json()
+    if result.get('success'):
+        items = result.get('data', {}).get('items', [])
+        if len(items) > 0:
+            print(json.dumps({"valid": True}))
+        else:
+            print(json.dumps({"valid": False, "reason": "搜索无结果，Cookie 可能被风控"}))
+    else:
+        print(json.dumps({"valid": False, "reason": result.get('msg', 'not success')}))
+
+except Exception as e:
+    print(json.dumps({"valid": False, "reason": str(e)}))
+`;
+
+      const pyProcess = spawn(config.pythonExecutable, ['-c', pythonScript, cookie], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+        timeout: 20000,
+      });
+
+      let output = '';
+      pyProcess.stdout.on('data', (data: Buffer) => { output += data.toString(); });
+      pyProcess.stderr.on('data', () => {}); // 忽略 stderr
+
+      pyProcess.on('close', (code: number | null) => {
+        try {
+          const result = JSON.parse(output.trim());
+          resolve(!!result.valid);
+        } catch {
+          resolve(false);
+        }
+      });
+
+      pyProcess.on('error', () => resolve(false));
+
+      // 超时保护
+      setTimeout(() => {
+        try { pyProcess.kill(); } catch {}
+        resolve(false);
+      }, 20000);
     });
   }
 }
