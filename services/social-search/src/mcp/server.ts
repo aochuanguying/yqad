@@ -3,6 +3,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { zhihuAdapter } from '../adapters/zhihu-adapter';
 import { xiaohongshuAdapter } from '../adapters/xiaohongshu-adapter';
+import { autohomeAdapter } from '../adapters/autohome-adapter';
 import { cookiePool } from '../infra/cookie-pool';
 
 function createServer(): McpServer {
@@ -66,6 +67,34 @@ function createServer(): McpServer {
     },
     async (args) => {
       const result = await xiaohongshuAdapter.getContent({ noteId: args.noteId, xsecToken: args.xsecToken || '' });
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+    }
+  );
+
+  // 汽车之家搜索
+  server.tool(
+    'autohome_search',
+    '搜索汽车之家论坛帖子',
+    {
+      query: z.string().describe('搜索关键词'),
+      maxResults: z.number().optional().describe('最大返回结果数，默认 10'),
+      summaryMode: z.boolean().optional().describe('摘要模式，限制返回内容长度'),
+    },
+    async (args) => {
+      const results = await autohomeAdapter.search(args);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(results, null, 2) }] };
+    }
+  );
+
+  // 汽车之家帖子详情
+  server.tool(
+    'autohome_get_post',
+    '获取汽车之家论坛帖子的完整内容',
+    {
+      postUrl: z.string().describe('汽车之家帖子 URL'),
+    },
+    async (args) => {
+      const result = await autohomeAdapter.getContent({ postUrl: args.postUrl });
       return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
     }
   );

@@ -13,17 +13,23 @@ export class ZhihuAdapter extends BaseAdapter {
   async search(options: SearchOptions): Promise<SearchResult[]> {
     const { query, type = 'general', maxResults = 10, summaryMode = false, noCache = false } = options;
 
+    console.log(`[zhihu] 开始搜索：query="${query}", type=${type}, maxResults=${maxResults}`);
+
     // 缓存检查
     const cacheKey = buildCacheKey('zhihu', 'search', { query, type, maxResults });
     if (!noCache) {
       const cached = await cacheGet<SearchResult[]>(cacheKey);
-      if (cached) return cached;
+      if (cached) {
+        console.log(`[zhihu] 缓存命中`);
+        return cached;
+      }
     }
 
     // 频率控制
     const config = getConfig();
     const rateResult = await checkRateLimit('platform:zhihu', config.rateLimit.perPlatformPerMinute);
     if (!rateResult.allowed) {
+      console.log(`[zhihu] 触发频率限制，等待 ${rateResult.retryAfter}s`);
       await new Promise(resolve => setTimeout(resolve, (rateResult.retryAfter || 5) * 1000));
     }
 
@@ -31,6 +37,7 @@ export class ZhihuAdapter extends BaseAdapter {
 
     // 获取 access_secret（优先从配置，其次从数据库）
     const accessSecret = await this.getAccessSecret();
+    console.log(`[zhihu] accessSecret: ${accessSecret ? '已配置' : '未配置'}`);
     if (!accessSecret) {
       console.warn('[zhihu] 无 access_secret，退回到 Cookie API 搜索');
       return this.searchViaCookieApi(query, type, maxResults, summaryMode);
@@ -47,6 +54,7 @@ export class ZhihuAdapter extends BaseAdapter {
     }));
 
     await cacheSet(cacheKey, processed, config.cache.ttl);
+    console.log(`[zhihu] 搜索完成，返回 ${processed.length} 条结果`);
     return processed;
   }
 
@@ -71,7 +79,7 @@ export class ZhihuAdapter extends BaseAdapter {
   }
 
   /**
-   * 获取 access_secret（优先环境变量/配置，其次从数据库）
+   * 获取 access_secret（优先环境变量/配置，其次从 cookie_configs 池）
    */
   private async getAccessSecret(): Promise<string> {
     const config = getConfig();
@@ -79,27 +87,9 @@ export class ZhihuAdapter extends BaseAdapter {
       return config.zhihuAccessSecret;
     }
 
-    // 尝试从数据库获取
-    try {
-      const mysql = await import('mysql2/promise');
-      const conn = await mysql.createConnection({
-        host: config.mysql.host,
-        port: config.mysql.port,
-        user: config.mysql.user,
-        password: config.mysql.password,
-        database: config.mysql.database,
-      });
-      const [rows] = await conn.query(
-        'SELECT zhihu_access_secret FROM network_post_config WHERE enabled = 1 LIMIT 1'
-      ) as any;
-      await conn.end();
-
-      if (rows.length > 0 && rows[0].zhihu_access_secret) {
-        return rows[0].zhihu_access_secret;
-      }
-    } catch (err: any) {
-      console.warn('[zhihu] 从数据库获取 access_secret 失败:', err.message);
-    }
+    // 从 cookie_configs 池获取
+    const secret = await cookiePool.getAccessSecret('zhihu');
+    if (secret) return secret;
 
     return '';
   }

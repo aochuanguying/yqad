@@ -4,7 +4,7 @@ export function getOpenApiSpec(): object {
     info: {
       title: 'Social Search API',
       version: '1.0.0',
-      description: '社交平台内容搜索服务，支持知乎和小红书',
+      description: '社交平台内容搜索服务，支持知乎、小红书和汽车之家',
     },
     servers: [{ url: '/api/search' }],
     paths: {
@@ -102,6 +102,56 @@ export function getOpenApiSpec(): object {
                   required: ['noteId'],
                   properties: {
                     noteId: { type: 'string', description: '小红书笔记 ID' },
+                  },
+                },
+              },
+            },
+          },
+          responses: { '200': { description: '获取成功' } },
+        },
+      },
+      '/autohome': {
+        post: {
+          summary: '搜索汽车之家论坛帖子',
+          operationId: 'searchAutohome',
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['query'],
+                  properties: {
+                    query: { type: 'string', description: '搜索关键词' },
+                    maxResults: { type: 'number', default: 10, description: '最大返回结果数' },
+                    summaryMode: { type: 'boolean', default: false, description: '摘要模式' },
+                    noCache: { type: 'boolean', default: false, description: '跳过缓存' },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            '200': {
+              description: '搜索成功',
+              content: { 'application/json': { schema: { $ref: '#/components/schemas/SearchResponse' } } },
+            },
+          },
+        },
+      },
+      '/autohome/post': {
+        post: {
+          summary: '获取汽车之家帖子详情',
+          operationId: 'getAutohomePost',
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['postUrl'],
+                  properties: {
+                    postUrl: { type: 'string', description: '汽车之家帖子 URL' },
                   },
                 },
               },

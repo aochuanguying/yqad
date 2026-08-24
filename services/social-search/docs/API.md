@@ -13,8 +13,7 @@
 
 ## 一、MCP 客户端接入
 
-### Kiro / Cursor / Claude Desktop
-
+### Kiro / Cursor / Claude Deskt
 在 `~/.kiro/settings/mcp.json`（或对应客户端的 MCP 配置文件）中添加：
 
 ```json

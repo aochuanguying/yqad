@@ -1,79 +1,49 @@
-import mysql from 'mysql2/promise';
-import { getConfig } from '../config/default';
+import { cookieConfigStorage } from './cookie-config-storage';
 
 export interface CookieRecord {
   id: number;
   platform: string;
   cookie: string;
-  status: string;
-  lastUsedAt: number;
+  weight: number;
+  lastUsedAt: number; // timestamp
   useCount: number;
 }
 
 /**
- * Cookie 池管理
- * 从 MySQL 加载，LRU 轮转，有效性标记，定时刷新
+ * Cookie 池管理（v2）
+ * - 从 cookie_configs 表多记录加载
+ * - 加权均衡选择：score = weight / (minutesSinceLastUse + 1)
+ * - 失效标记自动降级
+ * - 每 5 分钟自动刷新
  */
 export class CookiePool {
   private pools: Map<string, CookieRecord[]> = new Map();
   private refreshInterval: ReturnType<typeof setInterval> | null = null;
-  private connection: mysql.Pool | null = null;
 
   async init(): Promise<void> {
-    const config = getConfig();
-    this.connection = mysql.createPool({
-      host: config.mysql.host,
-      port: config.mysql.port,
-      user: config.mysql.user,
-      password: config.mysql.password,
-      database: config.mysql.database,
-      connectionLimit: 5,
-    });
-
     await this.refresh();
-
-    // 每 5 分钟刷新一次
     this.refreshInterval = setInterval(() => this.refresh(), 5 * 60 * 1000);
-    console.log('[cookie-pool] Cookie 池已初始化');
+    console.log('[cookie-pool] Cookie 池已初始化（v2: 多配置 + 加权均衡）');
   }
 
-  /**
-   * 从数据库刷新 Cookie 池
-   * Cookie 存储在 network_post_config 表的 zhihu_cookie 和 xiaohongshu_cookie 列
-   */
   async refresh(): Promise<void> {
-    if (!this.connection) return;
-
     try {
-      const [rows] = await this.connection.query(
-        'SELECT zhihu_cookie, xiaohongshu_cookie FROM network_post_config WHERE enabled = 1 LIMIT 1'
-      );
-
-      const records = rows as any[];
+      const records = await cookieConfigStorage.getAllEnabledForPool();
       this.pools.clear();
 
-      if (records.length > 0) {
-        const row = records[0];
-        if (row.zhihu_cookie) {
-          this.pools.set('zhihu', [{
-            id: 1,
-            platform: 'zhihu',
-            cookie: row.zhihu_cookie,
-            status: 'valid',
-            lastUsedAt: 0,
-            useCount: 0,
-          }]);
+      for (const row of records) {
+        const platform = row.platform.toLowerCase();
+        if (!this.pools.has(platform)) {
+          this.pools.set(platform, []);
         }
-        if (row.xiaohongshu_cookie) {
-          this.pools.set('xiaohongshu', [{
-            id: 2,
-            platform: 'xiaohongshu',
-            cookie: row.xiaohongshu_cookie,
-            status: 'valid',
-            lastUsedAt: 0,
-            useCount: 0,
-          }]);
-        }
+        this.pools.get(platform)!.push({
+          id: row.id,
+          platform,
+          cookie: row.cookie,
+          weight: row.weight,
+          lastUsedAt: row.lastUsedAt ? row.lastUsedAt.getTime() : 0,
+          useCount: row.useCount || 0,
+        });
       }
 
       const platforms = [...this.pools.keys()];
@@ -85,18 +55,48 @@ export class CookiePool {
   }
 
   /**
-   * 获取指定平台的 Cookie（LRU：选择最近最久未使用的）
+   * 获取指定平台的 Cookie
+   * 策略：weighted_score = weight / (minutes_since_last_use + 1)
+   * - 权重越高越优先
+   * - 越久没用越优先（反爬：避免同一账号频繁使用）
    */
   get(platform: string): string | null {
     const pool = this.pools.get(platform.toLowerCase());
     if (!pool || pool.length === 0) return null;
 
-    // 按 lastUsedAt 升序排列，选最久没用的
-    pool.sort((a, b) => a.lastUsedAt - b.lastUsedAt);
-    const record = pool[0];
-    record.lastUsedAt = Date.now();
-    record.useCount++;
-    return record.cookie;
+    const now = Date.now();
+    let bestRecord: CookieRecord | null = null;
+    let bestScore = -1;
+
+    for (const record of pool) {
+      const minutesSinceLastUse = record.lastUsedAt === 0
+        ? 9999 // 从未用过的记录获得极高优先级
+        : (now - record.lastUsedAt) / 60000;
+      const score = record.weight / (minutesSinceLastUse + 1);
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestRecord = record;
+      }
+    }
+
+    if (!bestRecord) return null;
+
+    bestRecord.lastUsedAt = now;
+    bestRecord.useCount++;
+
+    console.log(`[cookie-pool] 使用 Cookie: ${platform} #${bestRecord.id}, useCount: ${bestRecord.useCount}`);
+
+    // 异步更新数据库统计数据（不阻塞主流程）
+    cookieConfigStorage.incrementUseCount(bestRecord.id)
+      .then(() => {
+        console.log(`[cookie-pool] 数据库更新成功：${platform} #${bestRecord.id}`);
+      })
+      .catch(err => {
+        console.error(`[cookie-pool] 数据库更新失败：${platform} #${bestRecord.id}`, err.message);
+      });
+
+    return bestRecord.cookie;
   }
 
   /**
@@ -110,20 +110,29 @@ export class CookiePool {
     if (index !== -1) {
       const removed = pool.splice(index, 1)[0];
       console.log(`[cookie-pool] 标记失效: ${platform} #${removed.id}`);
+
+      // 同时禁用数据库记录
+      cookieConfigStorage.update(removed.id, { enabled: false }).catch(() => {});
     }
   }
 
   /**
-   * 检查指定平台是否有可用 Cookie
+   * 获取平台 Access Secret（知乎专用，取池中第一条有效的 access_secret）
+   * 简化处理：取启用配置中第一条有 access_secret 的记录
    */
+  async getAccessSecret(platform: string): Promise<string> {
+    const configs = await cookieConfigStorage.getAllByPlatform(platform);
+    for (const c of configs) {
+      if (c.accessSecret) return c.accessSecret;
+    }
+    return '';
+  }
+
   hasAvailable(platform: string): boolean {
     const pool = this.pools.get(platform.toLowerCase());
     return !!pool && pool.length > 0;
   }
 
-  /**
-   * 获取池状态
-   */
   getStatus(): Record<string, number> {
     const status: Record<string, number> = {};
     for (const [platform, pool] of this.pools) {
@@ -136,10 +145,6 @@ export class CookiePool {
     if (this.refreshInterval) {
       clearInterval(this.refreshInterval);
       this.refreshInterval = null;
-    }
-    if (this.connection) {
-      await this.connection.end();
-      this.connection = null;
     }
   }
 }
