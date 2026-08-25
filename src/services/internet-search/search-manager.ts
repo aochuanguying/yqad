@@ -7,9 +7,7 @@
  */
 
 import { ISearchPlatform, SearchResult, PlatformConfig } from './platform-base';
-import { XiaohongshuSearch } from './xiaohongshu-search';
-import { ZhihuSearch } from './zhihu-search';
-import { AutohomeSearch } from './autohome-search';
+import { McpXiaohongshuSearch, McpZhihuSearch, McpAutohomeSearch } from './mcp-search-adapter';
 import { getInternetReferencePlatformStorage } from '../../storage/mysql/internet-reference-platform-storage';
 import { getInternetReferenceStorage, InternetReferenceConfig } from '../../storage/mysql/internet-reference-storage';
 import { getLogger } from '../../utils/logger';
@@ -161,29 +159,29 @@ export class InternetSearchManager {
    * 初始化所有平台
    */
   private initializePlatforms(): void {
-    // 注册所有平台
+    // 注册所有平台（通过 MCP 服务代理）
     try {
-      this.platforms.set('xiaohongshu', new XiaohongshuSearch());
-      logger.info('✅ 小红书搜索服务已初始化');
+      this.platforms.set('xiaohongshu', new McpXiaohongshuSearch());
+      logger.info('✅ 小红书搜索服务已初始化 (MCP)');
     } catch (error) {
       logger.warn('小红书搜索服务初始化失败:', error instanceof Error ? error.message : String(error));
     }
     
     try {
-      this.platforms.set('zhihu', new ZhihuSearch());
-      logger.info('✅ 知乎搜索服务已初始化');
+      this.platforms.set('zhihu', new McpZhihuSearch());
+      logger.info('✅ 知乎搜索服务已初始化 (MCP)');
     } catch (error) {
       logger.warn('知乎搜索服务初始化失败:', error instanceof Error ? error.message : String(error));
     }
     
     try {
-      this.platforms.set('autohome', new AutohomeSearch());
-      logger.info('✅ 汽车之家搜索服务已初始化');
+      this.platforms.set('autohome', new McpAutohomeSearch());
+      logger.info('✅ 汽车之家搜索服务已初始化 (MCP)');
     } catch (error) {
       logger.warn('汽车之家搜索服务初始化失败:', error instanceof Error ? error.message : String(error));
     }
     
-    logger.info(`已初始化 ${this.platforms.size} 个搜索平台`);
+    logger.info(`已初始化 ${this.platforms.size} 个搜索平台 (MCP 模式)`);
   }
   
   /**

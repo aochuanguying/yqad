@@ -13,7 +13,7 @@
 import { getLogger } from '../utils/logger';
 import { getInternetReferenceStorage } from '../storage/mysql/internet-reference-storage';
 import { internetSearchManager, SearchResult } from './internet-search';
-import { XiaohongshuSearch } from './internet-search/xiaohongshu-search';
+import { mcpSearchClient } from './internet-search/mcp-search-client';
 import { searchRateLimitStorage } from '../storage/redis/search-rate-limit-storage';
 
 const logger = getLogger('internet-reference-service');
@@ -278,17 +278,40 @@ export async function getXiaohongshuNoteDetail(
   try {
     logger.info(`开始获取小红书笔记详情：${noteId}`);
     
-    const xiaohongshu = new XiaohongshuSearch();
-    // 确保 Cookie 已加载（独立调用时不会经过 search() 的 ensureCookieLoaded）
-    await xiaohongshu.initialize();
-    const result = await xiaohongshu.getNoteDetail(noteId, xsecToken);
-    
-    if (result.success) {
-      logger.info(`笔记详情获取成功：${result.data?.title}`);
-    } else {
-      logger.warn(`笔记详情获取失败：${result.error}`);
-    }
-    
+    const detail = await mcpSearchClient.callTool<{
+      title: string;
+      content: string;
+      author: string;
+      url: string;
+      extra?: {
+        noteId: string;
+        images: string[];
+        tags: string[];
+        likeCount: string;
+        collectCount: string;
+        commentCount: string;
+      };
+    }>({
+      name: 'xiaohongshu_get_note',
+      arguments: { noteId, xsecToken: xsecToken || '' },
+    });
+
+    const result = {
+      success: true,
+      data: {
+        id: noteId,
+        title: detail.title || '',
+        content: detail.content || '',
+        author: detail.author || '',
+        likes: parseInt(detail.extra?.likeCount || '0') || 0,
+        collects: parseInt(detail.extra?.collectCount || '0') || 0,
+        comments: parseInt(detail.extra?.commentCount || '0') || 0,
+        images: detail.extra?.images || [],
+        url: detail.url || `https://www.xiaohongshu.com/explore/${noteId}`,
+      },
+    };
+
+    logger.info(`笔记详情获取成功：${result.data.title}`);
     return result;
   } catch (error) {
     logger.error('获取小红书笔记详情失败:', error instanceof Error ? error.message : String(error));
