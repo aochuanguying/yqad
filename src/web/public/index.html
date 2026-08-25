@@ -3749,6 +3749,10 @@
             <label class="block text-xs text-gray-600 mb-1">内容风格描述 <span class="text-gray-400">(最多500字)</span></label>
             <textarea id="gp-styleDescription" rows="3" class="w-full px-2 py-1.5 border rounded text-sm" maxlength="500" placeholder="例如：资深奥迪车主，喜欢自驾游和摄影。文风偏理性分享，语气亲切随和。"></textarea>
           </div>
+          <div>
+            <label class="block text-xs text-gray-600 mb-1">搜索关键词 <span class="text-gray-400">(逗号分隔，用于从各平台搜索参考素材)</span></label>
+            <input id="gp-searchKeywords" type="text" class="w-full px-2 py-1.5 border rounded text-sm" placeholder="例如：奥迪,奥迪 Q5L,奥迪用车,奥迪保养" />
+          </div>
           <div class="flex gap-2">
             <button onclick="saveGlobalPrompt()" class="px-4 py-1.5 bg-indigo-600 text-white rounded text-sm hover:bg-indigo-700">保存人设</button>
             <button onclick="toggleGlobalPromptForm()" class="px-4 py-1.5 bg-white border rounded text-sm hover:bg-gray-50">收起</button>
@@ -3827,7 +3831,8 @@
         if (globalPromptData && globalPromptData.personalInfo) {
           const p = globalPromptData.personalInfo;
           preview.innerHTML = `<span class="text-gray-700">🚗 ${escapeHtml(p.carModel || '未设置')} | 👤 ${escapeHtml(p.gender || '未设置')} | 🎂 ${escapeHtml(p.ageGroup || '未设置')}</span>
-            ${globalPromptData.styleDescription ? `<br><span class="text-gray-500 text-xs mt-1 block">风格: ${escapeHtml(globalPromptData.styleDescription.substring(0, 80))}${globalPromptData.styleDescription.length > 80 ? '...' : ''}</span>` : ''}`;
+            ${globalPromptData.styleDescription ? `<br><span class="text-gray-500 text-xs mt-1 block">风格: ${escapeHtml(globalPromptData.styleDescription.substring(0, 80))}${globalPromptData.styleDescription.length > 80 ? '...' : ''}</span>` : ''}
+            ${globalPromptData.searchKeywords && globalPromptData.searchKeywords.length > 0 ? `<br><span class="text-blue-500 text-xs block">🔍 搜索词: ${escapeHtml(globalPromptData.searchKeywords.join(', '))}</span>` : ''}`;
         } else {
           preview.innerHTML = '<span class="text-gray-400 italic">未配置人设，将使用社区风格分析生成内容</span>';
         }
@@ -3853,10 +3858,12 @@
         document.getElementById('gp-gender').value = p.gender || '';
         document.getElementById('gp-ageGroup').value = p.ageGroup || '';
         document.getElementById('gp-styleDescription').value = globalPromptData.styleDescription || '';
+        document.getElementById('gp-searchKeywords').value = (globalPromptData.searchKeywords || []).join(',');
       }
     }
 
     async function saveGlobalPrompt() {
+      const searchKeywordsRaw = document.getElementById('gp-searchKeywords').value.trim();
       const payload = {
         personalInfo: {
           carModel: document.getElementById('gp-carModel').value.trim(),
@@ -3864,6 +3871,7 @@
           ageGroup: document.getElementById('gp-ageGroup').value.trim(),
         },
         styleDescription: document.getElementById('gp-styleDescription').value.trim(),
+        searchKeywords: searchKeywordsRaw ? searchKeywordsRaw.split(',').map(s => s.trim()).filter(Boolean) : undefined,
       };
 
       try {
