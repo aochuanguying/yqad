@@ -16,7 +16,6 @@ services:
       # 环境配置
       - NODE_ENV=development
       - TZ=Asia/Shanghai
-      - DISPLAY=:99
       # MySQL 配置（根据实际情况修改）
       - MYSQL_HOST=192.168.50.50
       - MYSQL_PORT=3306

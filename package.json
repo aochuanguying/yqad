@@ -4,16 +4,13 @@
   "description": "一汽奥迪 APP 自动签到、评论与发帖系统",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc && mkdir -p dist/web/public && cp -r src/web/public/* dist/web/public/ && (mkdir -p dist/scripts && cp scripts/*.py dist/scripts/ 2>/dev/null || true)",
+    "build": "tsc && mkdir -p dist/web/public && cp -r src/web/public/* dist/web/public/",
     "start": "node dist/index.js",
     "dev": "node -r dotenv/config -r ts-node/register src/index.ts",
     "test": "jest --passWithNoTests",
     "generate-password-hash": "ts-node scripts/generate-password-hash.ts",
     "init-db": "tsx scripts/init-database.ts",
-    "safe-init-db": "tsx scripts/safe-init-database.ts",
-    "cookie:refresh": "tsx scripts/refresh-xiaohongshu-cookie.ts",
-    "cookie:status": "tsx scripts/refresh-xiaohongshu-cookie.ts --status",
-    "migrate:cookie-refresh": "tsx scripts/migrate-cookie-refresh-scheduler.ts"
+    "safe-init-db": "tsx scripts/safe-init-database.ts"
   },
   "keywords": [
     "audi",
@@ -52,7 +49,6 @@
     "mysql2": "^3.22.5",
     "node-cron": "^4.2.1",
     "openai": "^6.44.0",
-    "playwright": "^1.61.1",
     "readable-stream": "^4.7.0",
     "redis": "^6.0.0",
     "send": "^1.2.1",
