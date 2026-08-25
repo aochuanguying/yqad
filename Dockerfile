@@ -28,8 +28,11 @@ RUN python3 -m pip install --no-cache-dir --break-system-packages \
     pillow-heif || true
 
 # ============ 第三层：npm 依赖（仅 package.json 变动时重建）============
+# ONNXRUNTIME_NODE_INSTALL_CUDA=skip：跳过 onnxruntime-node 从 GitHub 下载 GPU 二进制
+# （X5 无 GPU，且 GitHub releases 国内直连超时）
 COPY package*.json ./
-RUN npm config set registry https://registry.npmmirror.com && \
+RUN export ONNXRUNTIME_NODE_INSTALL_CUDA=skip && \
+    npm config set registry https://registry.npmmirror.com && \
     npm ci --only=production && npm cache clean --force
 
 # ============ 第四层：目录与入口脚本（极少变动）============
