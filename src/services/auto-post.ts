@@ -1502,9 +1502,10 @@ export class AutoPostService {
         startDate: cutoff,
         limit: 1000,
       });
+      // 优先用 topic，没有则用 title（自由模式发帖 topic 为 NULL）
       return result.posts
-        .filter(p => p.topic)
-        .map(p => p.topic!);
+        .map(p => p.topic || p.title)
+        .filter(Boolean);
     } catch (error) {
       logger.error(`获取最近主题失败：${error instanceof Error ? error.message : String(error)}`);
       return [];

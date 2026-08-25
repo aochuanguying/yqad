@@ -66,7 +66,7 @@ export class PlatformAwareKeywordSelector implements ISearchKeywordSelector {
 
   /**
    * 知乎搜索词选择（任务 2.4）
-   * 特点：使用专业术语和问题形式
+   * 特点：使用专业术语和问题形式，小时级轮换避免重复
    */
   private selectZhihuKeyword(keywords: string[]): string {
     if (keywords.length === 0) return '';
@@ -77,16 +77,19 @@ export class PlatformAwareKeywordSelector implements ISearchKeywordSelector {
     );
     
     if (professionalKeywords.length > 0) {
-      const keyword = professionalKeywords[0];
+      const hour = Math.floor(Date.now() / 3600000);
+      const keyword = professionalKeywords[hour % professionalKeywords.length];
       logger.debug(`知乎专业搜索词选择：${keyword}`);
       return keyword;
     }
     
-    // 如果没有专业问句，选择最长的搜索词（充分利用 API 字符限制）
-    const longestKeyword = keywords.reduce((a, b) => a.length > b.length ? a : b);
-    logger.debug(`知乎搜索词选择（最长）：${longestKeyword}`);
+    // 没有专业问句时，按小时轮换关键词（而非固定选最长的）
+    const hour = Math.floor(Date.now() / 3600000);
+    const index = hour % keywords.length;
+    const keyword = keywords[index];
+    logger.debug(`知乎搜索词选择（轮换）：${keyword} (索引：${index})`);
     
-    return longestKeyword;
+    return keyword;
   }
 
   /**
