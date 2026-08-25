@@ -103,46 +103,6 @@ async function main() {
       }
       await organizeMaterials();
     },
-    refreshXiaohongshuCookie: async () => {
-      logger.info('🔄 开始自动刷新小红书 Cookie...');
-      try {
-        const { CookieScanner } = await import('./services/cookie-refresh/cookie-scanner');
-        const scanner = CookieScanner.getInstance();
-        
-        // 智能刷新模式：先检查 Cookie 是否有效，有效才续期，无效则跳过（不扫码）
-        const result = await scanner.smartRefreshCookie();
-        if (result.success) {
-          logger.info(`✅ 小红书 Cookie 自动刷新成功！版本：${result.version}`);
-        } else if (result.requiresManualRefresh) {
-          // Cookie 失效，需要用户手动刷新
-          logger.warn(`⚠️ 小红书 Cookie 已失效，请在 Web 页面手动刷新 Cookie`);
-        } else {
-          logger.error(`❌ 小红书 Cookie 自动刷新失败：${result.error}`);
-        }
-      } catch (error) {
-        logger.error(`❌ 小红书 Cookie 自动刷新异常：${error instanceof Error ? error.message : error}`);
-      }
-    },
-    refreshZhihuCookie: async () => {
-      logger.info('🔄 开始自动刷新知乎 Cookie...');
-      try {
-        const { ZhihuCookieScanner } = await import('./services/cookie-refresh/zhihu-cookie-scanner');
-        const scanner = ZhihuCookieScanner.getInstance();
-        
-        // 智能刷新模式：先检查 Cookie 是否有效，有效才续期，无效则跳过（不扫码）
-        const result = await scanner.smartRefreshCookie();
-        if (result.success) {
-          logger.info(`✅ 知乎 Cookie 自动刷新成功！版本：${result.version}`);
-        } else if (result.requiresManualRefresh) {
-          // Cookie 失效，需要用户手动刷新
-          logger.warn(`⚠️ 知乎 Cookie 已失效，请在 Web 页面手动刷新 Cookie`);
-        } else {
-          logger.error(`❌ 知乎 Cookie 自动刷新失败：${result.error}`);
-        }
-      } catch (error) {
-        logger.error(`❌ 知乎 Cookie 自动刷新异常：${error instanceof Error ? error.message : error}`);
-      }
-    },
   });
 
   // 启动调度器

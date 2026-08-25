@@ -7,4 +7,3 @@ export * from './platform-base';
 export * from './search-manager';
 export * from './mcp-search-client';
 export * from './mcp-search-adapter';
-export * from './xiaohongshu-search';
