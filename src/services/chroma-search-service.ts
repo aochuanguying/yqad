@@ -168,8 +168,20 @@ class ChromaSearchService {
         ? Math.max(...results.map(r => r.similarity)) 
         : 0;
       
-      // 判断是否重复（阈值 0.85）
-      const isDuplicate = maxSimilarity >= 0.85;
+      // 从数据库读取阈值（默认 0.90）
+      let threshold = 0.90;
+      try {
+        const { getContentDeduplicationStorage } = await import('../storage/mysql/content-deduplication-storage');
+        const dedupConfig = await getContentDeduplicationStorage().getConfig();
+        if (dedupConfig?.similarityThreshold) {
+          threshold = dedupConfig.similarityThreshold;
+        }
+      } catch (e) {
+        // 使用默认值
+      }
+
+      // 判断是否重复
+      const isDuplicate = maxSimilarity >= threshold;
       
       logger.info(
         `内容去重检测：${isDuplicate ? '重复' : '通过'} ` +
