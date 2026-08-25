@@ -15,6 +15,7 @@ import { getInternetReferenceStorage, InternetReferenceConfig } from '../../stor
 import { getLogger } from '../../utils/logger';
 import { searchRateLimitStorage } from '../../storage/redis/search-rate-limit-storage';
 import { getSearchEffectStorage } from '../../storage/mysql/search-effect-storage';
+import { RedisConnectionManager } from '../../utils/redis-connection-manager';
 
 const logger = getLogger('internet-search-manager');
 
@@ -22,17 +23,35 @@ const logger = getLogger('internet-search-manager');
  * 搜索词选择器接口（任务 2.1）
  */
 interface ISearchKeywordSelector {
-  select(keywords: string[], platform: string): string;
+  select(keywords: string[], platform: string): Promise<string>;
 }
 
 /**
- * 平台感知的搜索词选择器（任务 2.2）
+ * 基于调用计数的搜索词选择器
+ * 每次调用自增计数器，确保关键词均匀轮换
  */
 export class PlatformAwareKeywordSelector implements ISearchKeywordSelector {
+  private readonly COUNTER_KEY = 'prod:search:keyword_counter';
+
+  /**
+   * 获取下一个轮换索引（Redis INCR）
+   */
+  private async getNextIndex(): Promise<number> {
+    try {
+      const redis = RedisConnectionManager.getInstance().getClient();
+      const count = await redis.incr(this.COUNTER_KEY);
+      return count - 1; // INCR 从 1 开始，转为 0-based
+    } catch (error) {
+      // Redis 不可用时用随机数兜底
+      logger.warn(`Redis 计数器不可用，使用随机选择：${error instanceof Error ? error.message : String(error)}`);
+      return Math.floor(Math.random() * 1000);
+    }
+  }
+
   /**
    * 根据平台选择搜索词
    */
-  select(keywords: string[], platform: string): string {
+  async select(keywords: string[], platform: string): Promise<string> {
     switch (platform) {
       case 'xiaohongshu':
         return this.selectXiaohongshuKeyword(keywords);
@@ -46,29 +65,25 @@ export class PlatformAwareKeywordSelector implements ISearchKeywordSelector {
   }
 
   /**
-   * 小红书搜索词选择（任务 2.3）
-   * 特点：从预配置词库选择，避免频繁更换
+   * 小红书搜索词选择
+   * 按调用次数轮换，确保关键词均匀覆盖
    */
-  private selectXiaohongshuKeyword(keywords: string[]): string {
+  private async selectXiaohongshuKeyword(keywords: string[]): Promise<string> {
     if (keywords.length === 0) return '';
     
-    // 从预配置词库中选择，避免频繁更换触发风控
-    // 使用小时级切换，每小时使用同一个搜索词
-    const hour = Math.floor(Date.now() / 3600000);
-    const index = hour % keywords.length;
-    
-    // 优先选择"车型 + 场景"组合词（2-5 字）
+    const counter = await this.getNextIndex();
+    const index = counter % keywords.length;
     const keyword = keywords[index];
-    logger.debug(`小红书搜索词选择：${keyword} (索引：${index})`);
+    logger.info(`小红书搜索词选择：${keyword} (计数：${counter}, 索引：${index})`);
     
     return keyword;
   }
 
   /**
-   * 知乎搜索词选择（任务 2.4）
-   * 特点：使用专业术语和问题形式，小时级轮换避免重复
+   * 知乎搜索词选择
+   * 按调用次数轮换
    */
-  private selectZhihuKeyword(keywords: string[]): string {
+  private async selectZhihuKeyword(keywords: string[]): Promise<string> {
     if (keywords.length === 0) return '';
     
     // 优先选择包含"如何"、"评价"、"对比"的专业问句
@@ -77,30 +92,26 @@ export class PlatformAwareKeywordSelector implements ISearchKeywordSelector {
     );
     
     if (professionalKeywords.length > 0) {
-      const hour = Math.floor(Date.now() / 3600000);
-      const keyword = professionalKeywords[hour % professionalKeywords.length];
-      logger.debug(`知乎专业搜索词选择：${keyword}`);
+      const counter = await this.getNextIndex();
+      const keyword = professionalKeywords[counter % professionalKeywords.length];
+      logger.info(`知乎专业搜索词选择：${keyword}`);
       return keyword;
     }
     
-    // 没有专业问句时，按小时轮换关键词（而非固定选最长的）
-    const hour = Math.floor(Date.now() / 3600000);
-    const index = hour % keywords.length;
+    // 没有专业问句时，按调用次数轮换
+    const counter = await this.getNextIndex();
+    const index = counter % keywords.length;
     const keyword = keywords[index];
-    logger.debug(`知乎搜索词选择（轮换）：${keyword} (索引：${index})`);
+    logger.info(`知乎搜索词选择（轮换）：${keyword} (计数：${counter}, 索引：${index})`);
     
     return keyword;
   }
 
   /**
    * 汽车之家搜索词选择
-   * 特点：使用精准的论坛术语，优先返回论坛帖子
-   * 策略：
-   * - 包含"提车"、"作业"、"用车"等词优先
-   * - 纯车型词自动拼接论坛术语后缀（避免只返回车型卡片）
-   * - 避免太宽泛的词（如"奥迪"会返回综合结果无论坛帖子）
+   * 选最长车型词 + 按计数轮换拼接后缀
    */
-  private selectAutohomeKeyword(keywords: string[]): string {
+  private async selectAutohomeKeyword(keywords: string[]): Promise<string> {
     if (keywords.length === 0) return '';
     
     // 论坛术语列表
@@ -112,21 +123,21 @@ export class PlatformAwareKeywordSelector implements ISearchKeywordSelector {
     );
     
     if (forumKeywords.length > 0) {
-      const keyword = forumKeywords[0];
-      logger.debug(`汽车之家搜索词选择（论坛术语）：${keyword}`);
+      const counter = await this.getNextIndex();
+      const keyword = forumKeywords[counter % forumKeywords.length];
+      logger.info(`汽车之家搜索词选择（论坛术语）：${keyword}`);
       return keyword;
     }
     
-    // 没有论坛术语的词：选最长的车型词 + 拼接随机论坛术语
-    // 例如 "奥迪 Q5L" → "奥迪Q5L提车"
+    // 没有论坛术语的词：选最长的车型词 + 轮换拼接后缀
     const suffixes = ['提车', '用车', '作业', '油耗', '保养'];
-    const suffix = suffixes[Math.floor(Date.now() / 3600000) % suffixes.length]; // 每小时换一个
+    const counter = await this.getNextIndex();
+    const suffix = suffixes[counter % suffixes.length];
     
-    // 选择最长的关键词（通常包含车型信息）
     const longestKeyword = keywords.reduce((a, b) => a.length > b.length ? a : b);
     const combined = `${longestKeyword.replace(/\s+/g, '')}${suffix}`;
     
-    logger.debug(`汽车之家搜索词选择（自动拼接）：${combined}（原词：${longestKeyword}）`);
+    logger.info(`汽车之家搜索词选择（自动拼接）：${combined}（原词：${longestKeyword}, 计数：${counter}）`);
     return combined;
   }
 }
@@ -417,7 +428,7 @@ export class InternetSearchManager {
     const platformName = platform.getPlatformName();
     
     // 任务 2.6: 根据平台选择搜索词
-    const selectedKeyword = keywordSelector.select(keywords, platformName);
+    const selectedKeyword = await keywordSelector.select(keywords, platformName);
     
     try {
       logger.info(`开始搜索，平台：${platform.getPlatformDisplayName()}, 原始关键词：${keywords.join(', ')}, 优化后搜索词：${selectedKeyword}`);
