@@ -55,9 +55,9 @@ class BarkClient {
     
     const serverUrl = config.barkServer || DEFAULT_BARK_SERVER;
     
-    // Bark API 需要将 key 包含在 URL 路径中：https://api.day.app/{key}/push
+    // Bark V2 标准 REST 用法：POST {server}/push，device_key 放在请求体中
     this.axiosInstance = axios.create({
-      baseURL: `${serverUrl}/${config.barkKey}`,
+      baseURL: serverUrl,
       timeout: API_TIMEOUT_MS,
       headers: {
         'Content-Type': 'application/json',
@@ -104,6 +104,7 @@ class BarkClient {
       logger.info('发送 Bark 推送', { title, bodyLength: body.length });
       
       const payload: any = {
+        device_key: this.config!.barkKey,
         title: title,
         body: body,
       };
@@ -155,6 +156,7 @@ class BarkClient {
 
       // 尝试发送一条测试消息
       const response = await testAxios.post(PUSH_ENDPOINT, {
+        device_key: barkKey,
         title: '测试连接',
         body: 'Bark API 连接测试',
       });

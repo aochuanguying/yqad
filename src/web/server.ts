@@ -88,9 +88,10 @@ export function createWebApp(params?: { includeApiRoutes?: boolean }): express.E
   const app = express();
 
   // === 关键配置：信任代理（必须在 rate-limit 之前设置）===
-  // 启用信任代理，允许使用 X-Forwarded-For 头识别真实用户 IP
-  app.set('trust proxy', true);
-  logger.info('已启用 trust proxy 设置，支持 X-Forwarded-For 头');
+  // 信任一层反向代理（Nginx Proxy Manager），用于通过 X-Forwarded-For 识别真实用户 IP
+  // 注意：不可设为 true（信任所有代理），否则 express-rate-limit 会因安全校验失败而抛错
+  app.set('trust proxy', 1);
+  logger.info('已启用 trust proxy 设置（信任一层反代），支持 X-Forwarded-For 头');
 
   // 安全中间件：设置安全响应头
   app.use(helmet({
