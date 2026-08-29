@@ -309,6 +309,13 @@ export class AuthService {
         this.updateTokenFromResponse(newToken);
       });
     }
+    // 注入 401 强制刷新回调：接口返回 401 时主动通过 Telecom API 拉取最新 Token
+    if (this.api && 'setTokenRefreshHandler' in this.api) {
+      (this.api as any).setTokenRefreshHandler(async (): Promise<string | null> => {
+        const ok = await this.forceRefreshToken();
+        return ok ? this.token!.accessToken : null;
+      });
+    }
   }
 
   /**

@@ -34,9 +34,17 @@ const FEED_TYPE_MAP: Record<string, string> = {
  */
 export type TokenRenewalCallback = (newToken: string) => void;
 
+/**
+ * Token 强制刷新回调类型
+ * 当接口返回 401 时主动触发，通过 Telecom API 从手机 APP 获取最新 Token。
+ * 成功返回新 Token，失败返回 null。
+ */
+export type TokenRefreshHandler = () => Promise<string | null>;
+
 export class RealAudiApi implements IAudiApi {
   private _client: AxiosInstance;
   private tokenRenewalCallback: TokenRenewalCallback | null = null;
+  private tokenRefreshHandler: TokenRefreshHandler | null = null;
 
   private get client(): AxiosInstance {
     return this._client;
@@ -58,6 +66,14 @@ export class RealAudiApi implements IAudiApi {
    */
   setTokenRenewalCallback(callback: TokenRenewalCallback): void {
     this.tokenRenewalCallback = callback;
+  }
+
+  /**
+   * 设置 Token 强制刷新回调（由 AuthService 注入）
+   * 用于接口返回 401 时主动刷新 Token 并重试。
+   */
+  setTokenRefreshHandler(handler: TokenRefreshHandler): void {
+    this.tokenRefreshHandler = handler;
   }
 
   // ========== 请求头构建 ==========
@@ -211,8 +227,6 @@ export class RealAudiApi implements IAudiApi {
 
   async publishComment(accessToken: string, postId: string, content: string, contentType?: string): Promise<PublishCommentResponse> {
     const config = loadConfig();
-    const nonce = crypto.randomUUID();
-    const timestamp = String(Date.now());
 
     const body: Record<string, string> = {
       content,
@@ -223,13 +237,31 @@ export class RealAudiApi implements IAudiApi {
       ipRegion: config.api.ipRegion || '',
     };
 
-    const response = await this.client.post(
-      `/cnapi/v1/comment_center/comment/save?nonce=${nonce}&timestamp=${timestamp}`,
-      body,
-      { headers: this.buildAppHeaders(accessToken) },
-    );
+    // 发送评论请求（每次重新生成 nonce/timestamp，附带指定 token）
+    const doPublish = async (token: string): Promise<AxiosResponse> => {
+      return this.client.post(
+        `/cnapi/v1/comment_center/comment/save?nonce=${crypto.randomUUID()}&timestamp=${String(Date.now())}`,
+        body,
+        { headers: this.buildAppHeaders(token) },
+      );
+    };
 
-    this.checkTokenRenewal(response, accessToken);
+    let currentToken = accessToken;
+    let response = await doPublish(currentToken);
+    this.checkTokenRenewal(response, currentToken);
+
+    // Token 失效（401）时，主动通过 Telecom API 刷新后重试一次
+    if (response.data.code === 401 && this.tokenRefreshHandler) {
+      logger.warn('评论发布返回 401，尝试强制刷新 Token 后重试...');
+      const newToken = await this.tokenRefreshHandler();
+      if (newToken && newToken !== currentToken) {
+        currentToken = newToken;
+        response = await doPublish(currentToken);
+        this.checkTokenRenewal(response, currentToken);
+      } else {
+        logger.error('Token 强制刷新失败，无法重试评论发布');
+      }
+    }
 
     const data = response.data;
     if (data.code === 0) {
