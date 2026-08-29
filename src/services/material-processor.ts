@@ -458,6 +458,7 @@ export async function processMaterial(fileInfo: MaterialFileInfo): Promise<Mater
       source: 'local',
       path: destPath, // 使用 processed 目录的路径
       url: undefined,
+      description, // Vision 生成的图片描述，用于向量化
       qualityScore: null,
       matchedKeywords: tags,
       usageCount: 0,
@@ -467,28 +468,8 @@ export async function processMaterial(fileInfo: MaterialFileInfo): Promise<Mater
     const record = await materialRecordStorage.upsertMaterialRecord(input);
     logger.info(`素材录入数据库：${record.id}`);
     
-    // 7. 生成向量（如果 ChromaDB 已初始化）
-    try {
-      if (materialVectorStorage.isInitialized) {
-        const vectorText = path.basename(fileInfo.path);
-        const embedding = await embeddingVectorizer.generateEmbedding(vectorText);
-        
-        await materialVectorStorage.addVector(
-          `material_${record.id}`,
-          embedding,
-          {
-            file_path: record.path,
-            file_name: path.basename(fileInfo.path),
-          }
-        );
-        logger.info(`生成向量嵌入：material_${record.id}`);
-      } else {
-        logger.warn('ChromaDB 未初始化，跳过向量生成');
-      }
-    } catch (vectorError) {
-      logger.warn(`生成向量失败：${vectorError instanceof Error ? vectorError.message : String(vectorError)}`);
-      // 向量生成失败不影响主流程
-    }
+    // 向量写入已由 upsertMaterialRecord → syncToChromaDB 统一负责（含 findByFilePath 幂等去重），
+    // 此处不再重复 addVector，避免同一素材双写导致向量累积。
     
     const duration = Date.now() - startTime;
     logger.info(`素材处理完成：${fileInfo.path} (${duration}ms)`);
@@ -567,15 +548,3 @@ export async function batchProcessMaterials(
   };
 }
 
-/**
- * 构建向量文本
- */
-function buildVectorText(description: string, tags: string[], filePath: string): string {
-  const fileName = path.basename(filePath);
-  const parts = [
-    fileName,
-    description,
-    tags.join(' '),
-  ];
-  return parts.filter(p => p.trim()).join(' ');
-}

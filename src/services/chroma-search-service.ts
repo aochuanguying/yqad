@@ -112,6 +112,11 @@ class ChromaSearchService {
       // 1. 生成查询向量
       const queryEmbedding = await embeddingVectorizer.generateEmbedding(options.query);
       
+      // 确保存储已初始化（避免未初始化被 catch 静默返回空结果）
+      if (!materialVectorStorage.isInitialized) {
+        await materialVectorStorage.initialize();
+      }
+      
       // 2. ChromaDB 相似度搜索
       const chromaResults = await materialVectorStorage.searchSimilar(
         queryEmbedding,
@@ -156,6 +161,11 @@ class ChromaSearchService {
     try {
       const text = `${title} ${content}`;
       const queryEmbedding = await embeddingVectorizer.generateEmbedding(text);
+      
+      // 确保存储已初始化（与其它 chroma storage 一致的懒初始化）
+      if (!contentDedupStorage.isInitialized) {
+        await contentDedupStorage.initialize();
+      }
       
       // 使用 content-dedup Collection 搜索
       const results = await contentDedupStorage.searchSimilar(
@@ -214,6 +224,11 @@ class ChromaSearchService {
       
       // 1. 生成查询向量
       const queryEmbedding = await embeddingVectorizer.generateEmbedding(options.referenceText);
+      
+      // 确保存储已初始化（避免未初始化被 catch 静默返回空结果）
+      if (!topicRecommendStorage.isInitialized) {
+        await topicRecommendStorage.initialize();
+      }
       
       // 2. 使用 topic-recommend Collection 搜索
       const recommendations = await topicRecommendStorage.recommendTopics(

@@ -1,14 +1,14 @@
 /**
- * 内容去重服务（使用 ChromaDB + OpenAI Embedding）
+ * 内容去重服务（使用 ChromaDB + 本地 Embedding）
  * 
  * 功能：
- * 1. 基于 OpenAI Embedding 生成高质量向量
+ * 1. 基于本地 embedding 服务生成高质量语义向量
  * 2. 基于 ChromaDB 进行语义相似度搜索
  * 3. 与历史发帖进行比对，检测重复内容
  * 4. 支持标题和内容的加权相似度计算
  * 
  * 技术栈：
- * - OpenAI Embedding API (text-embedding-3-small, 1536 维)
+ * - 本地 Embedding 服务 (bge-m3, 1024 维, OpenAI 兼容接口)
  * - ChromaDB 向量数据库
  * - 语义相似度（cosine similarity）
  */

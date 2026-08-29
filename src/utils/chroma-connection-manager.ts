@@ -181,31 +181,31 @@ class ChromaConnectionManager {
       {
         name: this.getPrefixedCollectionName('materials'),
         description: 'Material embeddings for similarity search and recommendation',
-        dimension: 1536, // 使用 OpenAI Embedding 维度
+        dimension: 1024, // bge-m3 维度
         distanceFunction: 'cosine',
       },
       {
         name: this.getPrefixedCollectionName('content_dedup'),
         description: 'Post content embeddings for duplication detection',
-        dimension: 1536,
+        dimension: 1024,
         distanceFunction: 'cosine',
       },
       {
         name: this.getPrefixedCollectionName('topic_recommend'),
         description: 'Topic embeddings for recommendation system',
-        dimension: 1536,
+        dimension: 1024,
         distanceFunction: 'cosine',
       },
       {
         name: this.getPrefixedCollectionName('sensitive_variants'),
         description: 'Sensitive word variants for semantic detection',
-        dimension: 1536,
+        dimension: 1024,
         distanceFunction: 'cosine',
       },
       {
         name: this.getPrefixedCollectionName('comment_sentiment'),
         description: 'Comment sentiment analysis and clustering',
-        dimension: 1536,
+        dimension: 1024,
         distanceFunction: 'cosine',
       },
     ];

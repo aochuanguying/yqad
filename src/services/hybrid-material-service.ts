@@ -334,6 +334,17 @@ class HybridMaterialService {
    * 下载网络图片到本地（支持重定向）
    */
   private async downloadImageToTemp(url: string, maxRedirects: number = 3): Promise<string | null> {
+    // 去水印服务对部分平台图片会下载裁剪后返回本地路径（如 nowm_xxx.jpg），
+    // 这类已是本地文件的路径不应再走网络下载，否则会因 Invalid URL 失败。
+    if (!/^https?:\/\//i.test(url)) {
+      if (fs.existsSync(url)) {
+        logger.info(`downloadImageToTemp: 检测到本地文件路径，直接使用 ${url}`);
+        return url;
+      }
+      logger.warn(`downloadImageToTemp: 非 URL 且本地文件不存在，跳过 ${url}`);
+      return null;
+    }
+
     logger.info(`downloadImageToTemp: 开始下载 ${url}`);
     
     const config = loadConfig();

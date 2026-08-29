@@ -33,6 +33,11 @@ chromadb:
     baseUrl: "http://192.168.50.10:8000"
   production:
     baseUrl: "http://192.168.50.10:8000"
+embedding:
+  url: "http://192.168.50.10:8100/v1/embeddings"
+  model: "bge-m3"
+  dimension: 1024
+  timeout: 30000
 web:
   enabled: true
   port: 3000

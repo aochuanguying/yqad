@@ -15,6 +15,7 @@ export interface MaterialRecord {
   source: 'local' | 'internet';
   path: string;
   url?: string;
+  description?: string;
   quality_score?: any;
   matched_keywords?: any;
   usage_count: number;
@@ -29,6 +30,7 @@ export interface CreateMaterialRecordInput {
   source: 'local' | 'internet';
   path: string;
   url?: string;
+  description?: string;
   qualityScore?: any;
   matchedKeywords?: any;
   usageCount?: number;
@@ -45,13 +47,14 @@ export class MaterialRecordStorage extends BaseDAO {
       
       const sql = `
         INSERT INTO material_records (
-          id, source, path, url, quality_score, matched_keywords, usage_count, associated_posts
+          id, source, path, url, description, quality_score, matched_keywords, usage_count, associated_posts
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
           source = VALUES(source),
           path = VALUES(path),
           url = VALUES(url),
+          description = VALUES(description),
           quality_score = VALUES(quality_score),
           matched_keywords = VALUES(matched_keywords),
           usage_count = VALUES(usage_count),
@@ -86,6 +89,7 @@ export class MaterialRecordStorage extends BaseDAO {
         input.source,
         input.path,
         input.url || null,
+        input.description || null,
         input.qualityScore ? JSON.stringify(input.qualityScore) : null,
         matchedKeywordsArray ? JSON.stringify(matchedKeywordsArray) : null,
         input.usageCount || 0,
@@ -165,10 +169,14 @@ export class MaterialRecordStorage extends BaseDAO {
   }
 
   /**
-   * 构建向量文本
+   * 构建向量文本（文件名 + 匹配关键词，纳入更多语义信息；无关键词时退化为文件名）
    */
   private buildVectorText(record: MaterialRecord): string {
-    return record.path.split('/').pop() || '';
+    const keywords = Array.isArray(record.matched_keywords) ? record.matched_keywords.filter(Boolean) : [];
+    const desc = (record.description || '').trim();
+    // 优先使用大模型生成的图片描述；无描述时退化为文件名
+    const base = desc || (record.path.split('/').pop() || '');
+    return keywords.length > 0 ? `${base} ${keywords.join(' ')}` : base;
   }
 
   /**
@@ -243,6 +251,7 @@ export class MaterialRecordStorage extends BaseDAO {
       source: row.source,
       path: row.path,
       url: row.url,
+      description: row.description || undefined,
       quality_score: qualityScore,
       matched_keywords: matchedKeywords,
       usage_count: row.usage_count,
@@ -351,10 +360,10 @@ export class MaterialRecordStorage extends BaseDAO {
       const deleted = await this.delete(sql, [id]);
       
       if (deleted > 0) {
-        // 2. 同步删除 ChromaDB 向量
+        // 2. 同步删除 ChromaDB 向量（向量 id 带 material_ 前缀，需与写入一致）
         try {
-          await materialVectorStorage.deleteVector(id);
-          logger.info(`删除素材记录及 ChromaDB 向量：${id}`);
+          await materialVectorStorage.deleteVector(`material_${id}`);
+          logger.info(`删除素材记录及 ChromaDB 向量：material_${id}`);
         } catch (chromaError) {
           logger.warn(`删除 ChromaDB 向量失败：${id}, 但 MySQL 删除成功`, chromaError);
           // 不抛出错误，避免 MySQL 删除失败

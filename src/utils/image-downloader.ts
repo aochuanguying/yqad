@@ -45,6 +45,16 @@ export async function downloadImages(urls: string[]): Promise<string[]> {
 
   const downloadTasks = limitedUrls.map(async (url, index) => {
     try {
+      // 去水印后部分图片是本地文件路径（非 URL），直接复用，不走网络下载
+      if (!/^https?:\/\//i.test(url)) {
+        if (fs.existsSync(url)) {
+          logger.info(`检测到本地图片路径，直接使用: ${url}`);
+          return url;
+        }
+        logger.warn(`图片下载失败 [${index}] ${url}: 非 URL 且本地文件不存在`);
+        return null;
+      }
+
       const response = await axios.get(url, {
         responseType: 'arraybuffer',
         timeout: 15000,

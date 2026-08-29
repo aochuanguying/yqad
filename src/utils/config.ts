@@ -215,6 +215,13 @@ export interface AppConfig {
     enableSuspiciousDetection?: boolean;  // 是否启用疑似水军检测
     logOnly?: boolean;  // 仅记录日志，不影响主流程（默认 true）
   };
+  // 文本向量化（embedding）服务配置
+  embedding?: {
+    url?: string;
+    model?: string;
+    dimension?: number;
+    timeout?: number;
+  };
   // 互联网搜索配置
   internetSearch?: {
     enabled?: boolean;

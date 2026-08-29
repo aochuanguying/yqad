@@ -64,11 +64,11 @@ class MaterialIndexRebuildService {
       // 1. 初始化 ChromaDB 连接
       await materialVectorStorage.initialize();
 
-      // 2. 清理现有索引（如果需要）
+      // 2. 清理现有索引（如果需要）——真正清空集合，避免与历史向量叠加导致净增
       if (cleanExisting) {
-        logger.info('清理现有索引...');
-        // 注意：ChromaDB 的 clear 方法可能需要权限，这里使用软清理
-        // 实际使用时可以根据需要调整
+        logger.info('清理现有素材向量...');
+        await materialVectorStorage.clear();
+        logger.info('现有素材向量已清空');
       }
 
       // 3. 获取所有素材记录
@@ -154,7 +154,8 @@ class MaterialIndexRebuildService {
         // 生成文档描述（用于向量化）
         const document = this.buildMaterialDocument(material);
         
-        ids.push(material.id);
+        // 统一使用 material_ 前缀，与写入/删除路径一致，避免 id 体系分裂导致累积
+        ids.push(`material_${material.id}`);
         documents.push(document);
         metadatas.push({
           file_path: material.path,
@@ -185,14 +186,14 @@ class MaterialIndexRebuildService {
 
   /**
    * 构建素材文档（用于向量化）
+   * 与 material-record-storage.buildVectorText 保持一致：文件名 + 匹配关键词
    */
   private buildMaterialDocument(material: MaterialRecord): string {
-    const parts: string[] = [];
-    parts.push(`素材:${material.id}`);
-    parts.push(`来源:${material.source}`);
-    parts.push(`路径:${material.path}`);
-    
-    return parts.join(' ');
+    const keywords = Array.isArray(material.matched_keywords) ? material.matched_keywords.filter(Boolean) : [];
+    const desc = (material.description || '').trim();
+    // 与 material-record-storage.buildVectorText 一致：优先描述，退化文件名
+    const base = desc || (material.path.split('/').pop() || '');
+    return keywords.length > 0 ? `${base} ${keywords.join(' ')}` : base;
   }
 
   /**
