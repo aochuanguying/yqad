@@ -38,6 +38,11 @@ function createApp() {
     res.json({ status: 'ok', cookiePool: cookiePool.getStatus() });
   });
 
+  // 根路径重定向到管理页面
+  app.get('/', (_req, res) => {
+    res.redirect('/admin');
+  });
+
   // Web 管理页面 - 直接用路由返回 HTML，不用 static 中间件
   const webDir = path.join(__dirname, '../../web');
   const fs = require('fs');
