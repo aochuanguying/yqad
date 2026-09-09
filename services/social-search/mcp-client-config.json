@@ -3,7 +3,7 @@
     "social-search": {
       "url": "http://192.168.50.10:3090/mcp",
       "headers": {
-        "Authorization": "Bearer social-search-api-key-2026",
+        "Authorization": "Bearer f6758b51d76a164f0ca6ea09f7caf50f12455379b698e601",
         "Content-Type": "application/json",
         "Accept": "application/json, text/event-stream"
       }

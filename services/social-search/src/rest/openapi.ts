@@ -4,7 +4,7 @@ export function getOpenApiSpec(): object {
     info: {
       title: 'Social Search API',
       version: '1.0.0',
-      description: '社交平台内容搜索服务，支持知乎、小红书和汽车之家',
+      description: '社交平台内容搜索服务，支持知乎、小红书、汽车之家和哔哩哔哩',
     },
     servers: [{ url: '/api/search' }],
     paths: {
@@ -152,6 +152,56 @@ export function getOpenApiSpec(): object {
                   required: ['postUrl'],
                   properties: {
                     postUrl: { type: 'string', description: '汽车之家帖子 URL' },
+                  },
+                },
+              },
+            },
+          },
+          responses: { '200': { description: '获取成功' } },
+        },
+      },
+      '/bilibili': {
+        post: {
+          summary: '搜索哔哩哔哩视频',
+          operationId: 'searchBilibili',
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['query'],
+                  properties: {
+                    query: { type: 'string', description: '搜索关键词' },
+                    maxResults: { type: 'number', default: 10, description: '最大返回结果数' },
+                    summaryMode: { type: 'boolean', default: false, description: '摘要模式' },
+                    noCache: { type: 'boolean', default: false, description: '跳过缓存' },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            '200': {
+              description: '搜索成功',
+              content: { 'application/json': { schema: { $ref: '#/components/schemas/SearchResponse' } } },
+            },
+          },
+        },
+      },
+      '/bilibili/content': {
+        post: {
+          summary: '获取哔哩哔哩视频详情',
+          operationId: 'getBilibiliContent',
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    bvid: { type: 'string', description: '视频 BV 号（与 url 二选一）' },
+                    url: { type: 'string', description: '视频 URL（与 bvid 二选一）' },
                   },
                 },
               },

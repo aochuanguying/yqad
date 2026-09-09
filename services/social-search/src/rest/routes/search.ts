@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { zhihuAdapter } from '../../adapters/zhihu-adapter';
 import { xiaohongshuAdapter } from '../../adapters/xiaohongshu-adapter';
 import { autohomeAdapter } from '../../adapters/autohome-adapter';
+import { bilibiliAdapter } from '../../adapters/bilibili-adapter';
 
 const router = Router();
 
@@ -121,6 +122,48 @@ router.post('/autohome/post', async (req: Request, res: Response) => {
     }
 
     const result = await autohomeAdapter.getContent({ postUrl });
+    if ('error' in result) {
+      res.status(404).json(result);
+      return;
+    }
+    res.json({ success: true, data: result });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Internal Error', message: err.message });
+  }
+});
+
+/**
+ * POST /api/search/bilibili
+ */
+router.post('/bilibili', async (req: Request, res: Response) => {
+  try {
+    const { query, maxResults, summaryMode, noCache } = req.body;
+
+    if (!query || typeof query !== 'string') {
+      res.status(400).json({ error: 'Bad Request', message: '缺少 query 参数' });
+      return;
+    }
+
+    const results = await bilibiliAdapter.search({ query, maxResults, summaryMode, noCache });
+    res.json({ success: true, data: results, count: results.length });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Internal Error', message: err.message });
+  }
+});
+
+/**
+ * POST /api/search/bilibili/content
+ */
+router.post('/bilibili/content', async (req: Request, res: Response) => {
+  try {
+    const { bvid, url } = req.body;
+
+    if ((!bvid || typeof bvid !== 'string') && (!url || typeof url !== 'string')) {
+      res.status(400).json({ error: 'Bad Request', message: '缺少 bvid 或 url 参数' });
+      return;
+    }
+
+    const result = await bilibiliAdapter.getContent({ bvid: bvid || '', url: url || '' });
     if ('error' in result) {
       res.status(404).json(result);
       return;

@@ -5,7 +5,7 @@
 ## 配置信息
 
 - **服务器地址**: `http://192.168.50.10:3090/mcp`
-- **API Key**: `social-search-api-key-2026`
+- **API Key**: `f6758b51d76a164f0ca6ea09f7caf50f12455379b698e601`
 - **连接模式**: HTTP (Streamable HTTP)
 
 ## Claude Desktop
@@ -23,7 +23,7 @@
     "social-search": {
       "url": "http://192.168.50.10:3090/mcp",
       "headers": {
-        "Authorization": "Bearer social-search-api-key-2026"
+        "Authorization": "Bearer f6758b51d76a164f0ca6ea09f7caf50f12455379b698e601"
       }
     }
   }
@@ -44,7 +44,7 @@
     "social-search": {
       "url": "http://192.168.50.10:3090/mcp",
       "headers": {
-        "Authorization": "Bearer social-search-api-key-2026",
+        "Authorization": "Bearer f6758b51d76a164f0ca6ea09f7caf50f12455379b698e601",
         "Accept": "application/json, text/event-stream"
       }
     }
@@ -62,7 +62,7 @@
     "social-search": {
       "url": "http://192.168.50.10:3090/mcp",
       "headers": {
-        "Authorization": "Bearer social-search-api-key-2026",
+        "Authorization": "Bearer f6758b51d76a164f0ca6ea09f7caf50f12455379b698e601",
         "Content-Type": "application/json",
         "Accept": "application/json, text/event-stream"
       }
@@ -75,11 +75,14 @@
 
 连接成功后，你可以使用以下工具：
 
-1. **zhihu_search** - 搜索知乎内容
-   - 参数：`query` (搜索关键词)
-   
-2. **xiaohongshu_search** - 搜索小红书内容
-   - 参数：`query` (搜索关键词)
+1. **zhihu_search** - 搜索知乎问答和文章
+2. **zhihu_get_content** - 获取知乎回答或文章的完整内容
+3. **xiaohongshu_search** - 搜索小红书笔记
+4. **xiaohongshu_get_note** - 获取小红书笔记的完整内容
+5. **autohome_search** - 搜索汽车之家论坛帖子
+6. **autohome_get_post** - 获取汽车之家论坛帖子的完整内容
+7. **bilibili_search** - 搜索哔哩哔哩（B站）视频
+8. **bilibili_get_content** - 获取哔哩哔哩（B站）视频的简介和基本信息
 
 ## 测试连接
 
@@ -88,7 +91,7 @@
 ```bash
 # 测试认证
 curl -X POST http://192.168.50.10:3090/mcp \
-  -H "Authorization: Bearer social-search-api-key-2026" \
+  -H "Authorization: Bearer f6758b51d76a164f0ca6ea09f7caf50f12455379b698e601" \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
   -d '{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0.0"}}}'
