@@ -271,15 +271,19 @@ check_prerequisites() {
         log_success "Nginx 已安装：$(nginx -v 2>&1)"
     fi
 
-    # 检查 Certbot 或 acme.sh
-    if command -v certbot &> /dev/null; then
-        log_success "Certbot 已安装：$(certbot --version)"
-    elif [[ -x "$HOME/.acme.sh/acme.sh" ]]; then
-        log_success "acme.sh 已安装：$($HOME/.acme.sh/acme.sh --version)"
-    else
-        log_warning "Certbot 和 acme.sh 都未安装，将跳过 SSL 证书自动申请"
-        log_warning "请稍后手动配置 SSL 证书或使用 acme.sh 申请"
+    # 检查 Certbot
+    if ! command -v certbot &> /dev/null; then
+        log_warning "Certbot 未安装，正在尝试安装..."
+        if command -v apt &> /dev/null; then
+            sudo apt update && sudo apt install -y certbot python3-certbot-nginx
+        elif command -v yum &> /dev/null; then
+            sudo yum install -y certbot python3-certbot-nginx
+        else
+            log_error "无法自动安装 Certbot，请手动安装"
+            exit 1
+        fi
     fi
+    log_success "Certbot 已安装：$(certbot --version)"
 
     # 检查域名解析
     log_info "检查域名解析：$DOMAIN"
@@ -588,38 +592,36 @@ EOF
 # 函数：申请 SSL 证书
 ################################################################################
 request_ssl_certificate() {
-    log_info "申请 SSL 证书..."
+    log_info "申请 Let's Encrypt SSL 证书..."
 
-    # 检查是否有 acme.sh
-    if [[ -x "$HOME/.acme.sh/acme.sh" ]]; then
-        log_info "使用 acme.sh 申请证书..."
-        
-        # 创建 webroot 目录
-        sudo mkdir -p /var/www/certbot
-        sudo chown -R $USER: /var/www/certbot
-        
-        # 使用 DNS 手动验证模式申请证书
-        log_warning "acme.sh 需要使用 DNS 验证，请手动添加 TXT 记录"
-        log_info "请参考以下说明手动申请证书："
-        echo ""
-        echo "1. 执行以下命令生成 DNS 验证信息："
-        echo "   $HOME/.acme.sh/acme.sh --issue --dns -d $DOMAIN --yes-I-know-dns-manual-mode-enough-go-ahead-please"
-        echo ""
-        echo "2. 根据提示添加 DNS TXT 记录"
-        echo ""
-        echo "3. 验证完成后，证书将保存在：$HOME/.acme.sh/$DOMAIN/"
-        echo ""
-        echo "4. 然后手动复制证书到 Nginx 配置目录："
-        echo "   sudo mkdir -p /etc/letsencrypt/live/$DOMAIN"
-        echo "   sudo cp $HOME/.acme.sh/$DOMAIN/*.pem /etc/letsencrypt/live/$DOMAIN/"
-        echo ""
-        
-        # 跳过自动申请，让用户手动完成
-        log_warning "SSL 证书申请已跳过，请手动完成"
-        return 0
+    # 创建 webroot 目录
+    sudo mkdir -p /var/www/certbot
+
+    # 使用 --webroot 模式申请证书（避免端口冲突）
+    sudo certbot certonly \
+        --webroot \
+        --webroot-path=/var/www/certbot \
+        --email "$EMAIL" \
+        --agree-tos \
+        --no-eff-email \
+        --force-renewal \
+        -d "$DOMAIN"
+
+    if [[ $? -eq 0 ]]; then
+        log_success "SSL 证书申请成功"
     else
-        log_error "未找到 acme.sh，无法申请 SSL 证书"
+        log_error "SSL 证书申请失败"
         exit 1
+    fi
+
+    # 配置自动续期
+    log_info "配置 SSL 证书自动续期..."
+    if ! sudo grep -q "certbot renew" /etc/crontab; then
+        local NGINX_CMD=$(get_nginx_cmd)
+        echo "0 3 * * * root certbot renew --quiet --deploy-hook '$NGINX_CMD -s reload'" | sudo tee -a /etc/crontab > /dev/null
+        log_success "SSL 证书自动续期已配置（每天 3:00 检查）"
+    else
+        log_warning "SSL 证书自动续期已存在"
     fi
 }
 

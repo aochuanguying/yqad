@@ -5,12 +5,14 @@ higpt:
   apiKey: ""
   userKey: ""
   proxyUrl: ""
-  timeoutMs: 120000  # 默认 120 秒，减少偶发超时
+  timeoutMs: 120000
+
+# 请求体大小限制 (所有模型生效)
+maxRequestBodyKB: 4096
+
 modelAliases:
-  # 新别名
-  qwen3-5: qwen3-5-397b
-  deepseek-v4-pro: deepseek-v4-pro
-  # 旧别名兼容（保持向后兼容）
-  higpt: qwen3-5-397b
-  deepseek: deepseek-v4-pro
+  # 主要别名
+  qwen: qwen3-5-397b
+  qwen-vip: qwen3-5-397b-vip
+  glm: xinghai-ultra
   # *-raw 由网关自动推导（-raw 后缀），无需在此单独声明

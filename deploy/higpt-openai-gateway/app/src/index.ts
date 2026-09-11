@@ -4,7 +4,7 @@ import { GatewayConfig, loadConfig } from './config';
 import { randomUUID } from 'crypto';
 import { logger } from './logger';
 
-const JSON_BODY_LIMIT = '50mb';
+const JSON_BODY_LIMIT = '10mb'; // 限制最大 10MB，减少 DeepSeek 请求失败
 
 function redact(value: string): string {
   if (!value) return value;
@@ -310,23 +310,84 @@ export function createApp(config: GatewayConfig, options: CreateAppOptions = {})
       sendOpenAIError(res, 400, 'Missing required fields: model, messages', 'invalid_request_error');
       return;
     }
+    
+    // 检查消息历史长度，防止请求过大
+    const rawBodySize = Buffer.byteLength(JSON.stringify(body), 'utf8');
+    if (rawBodySize > 500 * 1024) { // 500KB 警告阈值
+      logger.warn('large_request_body', { 
+        sizeKB: Math.round(rawBodySize / 1024),
+        model: body.model,
+        messageCount: Array.isArray(body.messages) ? body.messages.length : 0
+      }, getRequestId(req));
+    }
 
     const { upstreamModel, rawMode } = resolveModel(config, String(body.model));
     const isStream = body.stream === true;
-    
-    // 为 DeepSeek 模型自动添加默认参数
-    const upstreamBody = { ...body, model: upstreamModel };
+
+    // 拒绝未知模型
+    const knownModels = new Set([
+      ...Object.keys(config.modelAliases),
+      ...Object.values(config.modelAliases),
+    ]);
+    const baseModelName = String(body.model).replace(/-raw$/, '');
+    if (!knownModels.has(baseModelName) && !knownModels.has(upstreamModel)) {
+      sendOpenAIError(res, 400,
+        `Unknown model: ${body.model}. Available: ${[...Object.keys(config.modelAliases)].join(', ')}`,
+        'invalid_request_error');
+      return;
+    }
+
+    // 构建上游请求体
+    let upstreamBody = { ...body, model: upstreamModel };
+
+    // DeepSeek 模型自动添加 chat_template_kwargs
     if (upstreamModel.includes('deepseek')) {
       if (!upstreamBody.chat_template_kwargs) {
         upstreamBody.chat_template_kwargs = { thinking: false };
-        logger.debug('auto_added_chat_template_kwargs', { model: upstreamModel }, getRequestId(req));
-      } else {
-        logger.debug('using_client_chat_template_kwargs', { model: upstreamModel, kwargs: upstreamBody.chat_template_kwargs }, getRequestId(req));
       }
+    }
+
+    // Qwen 系列：非 raw 模式自动关闭推理（enable_thinking:false）
+    // 避免思考过程占满 max_tokens 导致 content 为空；qwen-raw（rawMode）保留推理
+    if (!rawMode && upstreamModel.includes('qwen')) {
+      if (!upstreamBody.chat_template_kwargs) {
+        upstreamBody.chat_template_kwargs = { enable_thinking: false };
+      }
+    }
+
+    // 所有模型：检查请求体大小，过大则自动截断历史消息
+    let bodySize = Buffer.byteLength(JSON.stringify(upstreamBody), 'utf8');
+    // 按模型获取阈值：先查 modelMaxBodyKB 表，再用全局 maxRequestBodyKB 兜底
+    const modelMaxKB = (config.modelMaxBodyKB && config.modelMaxBodyKB[upstreamModel])
+      || config.maxRequestBodyKB
+      || 400;
+    const MAX_BODY_SIZE = modelMaxKB * 1024;
+
+    if (bodySize > MAX_BODY_SIZE && Array.isArray(upstreamBody.messages)) {
+      const originalCount = upstreamBody.messages.length;
+
+      // 保留 system 消息和最后几条消息
+      const systemMessages = upstreamBody.messages.filter((m: any) => m.role === 'system');
+      let nonSystemMessages = upstreamBody.messages.filter((m: any) => m.role !== 'system');
+
+      // 从前往后移除最旧消息，保留最后至少 5 条
+      while (nonSystemMessages.length > 5 && bodySize > MAX_BODY_SIZE) {
+        nonSystemMessages = nonSystemMessages.slice(1);
+        upstreamBody = { ...upstreamBody, messages: [...systemMessages, ...nonSystemMessages] };
+        bodySize = Buffer.byteLength(JSON.stringify(upstreamBody), 'utf8');
+      }
+
+      const finalCount = systemMessages.length + nonSystemMessages.length;
+      logger.warn('auto_trimmed_large_request', {
+        originalCount,
+        finalCount,
+        removedCount: originalCount - finalCount,
+        sizeKB: Math.round(bodySize / 1024),
+        model: upstreamModel,
+      }, getRequestId(req));
     }
     const upstreamUrl = buildUpstreamUrl(config, '/chat/completions');
     const startedAt = Date.now();
-    let retryCount = 0;
 
     try {
       const upstreamRes = await axiosWithRetry(
@@ -418,7 +479,7 @@ export function createApp(config: GatewayConfig, options: CreateAppOptions = {})
       const requestId = getRequestId(req);
       const safeProxy = config.higpt.proxyUrl ? redact(config.higpt.proxyUrl) : '';
       const safeUrl = toSafeUrl(upstreamUrl);
-      const bodySize = Buffer.byteLength(JSON.stringify(upstreamBody), 'utf8');
+      const errBodySize = Buffer.byteLength(JSON.stringify(upstreamBody), 'utf8');
       
       if (upstreamRes.status === 401 || upstreamRes.status === 403) {
         logger.error('upstream_auth_error', {
@@ -429,7 +490,7 @@ export function createApp(config: GatewayConfig, options: CreateAppOptions = {})
           stream: isStream,
           model: body.model,
           upstreamModel,
-          bodyBytes: bodySize,
+          bodyBytes: errBodySize,
         }, requestId);
         sendOpenAIError(res, 502, 'Upstream authentication failed', 'upstream_error');
         return;
@@ -443,7 +504,7 @@ export function createApp(config: GatewayConfig, options: CreateAppOptions = {})
         stream: isStream,
         model: body.model,
         upstreamModel,
-        bodyBytes: bodySize,
+        bodyBytes: errBodySize,
       }, requestId);
       sendOpenAIError(res, 502, `Upstream error: status=${upstreamRes.status}`, 'upstream_error');
     } catch (err) {
@@ -452,7 +513,7 @@ export function createApp(config: GatewayConfig, options: CreateAppOptions = {})
       const requestId = getRequestId(req);
       const safeProxy = config.higpt.proxyUrl ? redact(config.higpt.proxyUrl) : '';
       const safeUrl = toSafeUrl(upstreamUrl);
-      const bodySize = Buffer.byteLength(JSON.stringify(upstreamBody), 'utf8');
+      const catchBodySize = Buffer.byteLength(JSON.stringify(upstreamBody), 'utf8');
       
       if (e.code === 'ECONNABORTED') {
         logger.error('upstream_timeout', {
@@ -462,7 +523,7 @@ export function createApp(config: GatewayConfig, options: CreateAppOptions = {})
           stream: isStream,
           model: body.model,
           upstreamModel,
-          bodyBytes: bodySize,
+          bodyBytes: catchBodySize,
           errorCode: e.code,
           errorMessage: toSafeAxiosErrorLog(e),
         }, requestId);
@@ -477,7 +538,7 @@ export function createApp(config: GatewayConfig, options: CreateAppOptions = {})
         stream: isStream,
         model: body.model,
         upstreamModel,
-        bodyBytes: bodySize,
+        bodyBytes: catchBodySize,
         errorCode: e.code,
         errorMessage: toSafeAxiosErrorLog(e),
       }, requestId);

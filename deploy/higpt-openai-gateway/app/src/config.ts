@@ -13,6 +13,8 @@ export interface GatewayConfig {
     timeoutMs: number;
   };
   modelAliases: Record<string, string>;
+  maxRequestBodyKB?: number;
+  modelMaxBodyKB?: Record<string, number>;
 }
 
 let cached: GatewayConfig | null = null;
