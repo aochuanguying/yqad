@@ -4,7 +4,7 @@
  */
 
 import axios from 'axios';
-import { loadConfig } from '../utils/config';
+import { loadConfig, loadAIProvidersFromDB } from '../utils/config';
 import { getLogger } from '../utils/logger';
 import { FallbackChain } from './middleware/fallback-chain';
 
@@ -72,6 +72,17 @@ export function initFallbackChain(): void {
 
   fallbackChain.initProviders(aiConfig.providers);
   logger.info(`✓ FallbackChain 初始化完成 (${aiConfig.providers.length} 个 provider)`);
+}
+
+/**
+ * 热重载 FallbackChain
+ * 从数据库重新加载 AI Provider 配置并重建 FallbackChain 实例
+ * 用于 Web UI 修改 provider 配置后即时生效，无需重启进程
+ */
+export async function reloadFallbackChain(): Promise<void> {
+  await loadAIProvidersFromDB();
+  initFallbackChain();
+  logger.info('✓ FallbackChain 已热重载');
 }
 
 /**
@@ -167,8 +178,8 @@ export async function generateContent(
         const requestBody: any = {
           model: provider.model,
           messages,
-          temperature: provider.temperature ?? 0.7,
-          max_tokens: provider.maxTokens ?? 1000,
+          temperature: Number(provider.temperature ?? 0.7),
+          max_tokens: Number(provider.maxTokens ?? 1000),
         };
 
         const url = `${provider.baseUrl}/chat/completions`;
@@ -224,8 +235,8 @@ export async function generateContent(
   const requestBody: any = {
     model: provider.model,
     messages,
-    temperature: provider.temperature ?? 0.7,
-    max_tokens: provider.maxTokens ?? 1000,
+    temperature: Number(provider.temperature ?? 0.7),
+    max_tokens: Number(provider.maxTokens ?? 1000),
   };
 
   const url = `${provider.baseUrl}/chat/completions`;

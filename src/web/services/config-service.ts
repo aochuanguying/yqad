@@ -6,6 +6,7 @@ import { getLogger } from '../../utils/logger';
 import { configEvents } from './config-events';
 import { validateConfigGroup } from './config-validator';
 import { aiProviderStorage } from '../../storage/mysql/ai-provider-storage';
+import { reloadFallbackChain } from '../../ai';
 import { apiConfigStorage } from '../../storage/mysql/api-config-storage';
 import { commentConfigStorage } from '../../storage/mysql/comment-config-storage';
 import { postConfigStorage } from '../../storage/mysql/post-config-storage';
@@ -442,6 +443,12 @@ export async function updateConfigGroup(
     // 特殊处理 ai 配置：只更新数据库，不写回配置文件
     else if (group === 'ai' && newValues.providers) {
       await aiProviderStorage.saveProviders(newValues.providers);
+      // 保存后热重载 FallbackChain，使新配置即时生效，无需重启
+      try {
+        await reloadFallbackChain();
+      } catch (err) {
+        logger.warn('AI Provider 配置已保存，但热重载 FallbackChain 失败，需重启后生效:', err);
+      }
       // 不更新 fullConfig[group]，保持配置文件干净
     } 
     else {

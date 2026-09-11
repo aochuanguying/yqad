@@ -7,6 +7,7 @@
 export {
   generateContent,
   initFallbackChain,
+  reloadFallbackChain,
 } from './client';
 
 export {
