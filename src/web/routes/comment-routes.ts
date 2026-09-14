@@ -4,6 +4,7 @@ import { AutoCommentService } from '../../services/auto-comment';
 import { RealAudiApi } from '../../api/real-client';
 import { getLogger } from '../../utils/logger';
 import { loadConfig } from '../../utils/config';
+import { verifyApiToken, getTokenStatus } from '../../utils/api-token';
 import { getCommentLogStorage } from '../../storage/mysql/comment-log-storage';
 
 const logger = getLogger('comment-routes');
@@ -15,6 +16,50 @@ let isCommentTaskRunning = false;
 
 // MySQL 评论日志存储
 const commentLogStorage = getCommentLogStorage();
+
+/**
+ * API Token 鉴权中间件
+ * 用于验证远程 API 的独立 Token，与登录 Token 分离（与发帖 API 一致）
+ */
+async function apiTokenMiddleware(req: any, res: any, next: any) {
+  try {
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      logger.warn('鉴权失败：缺少 Authorization 头');
+      return res.status(401).json({ error: '缺少 Authorization 头', code: 'UNAUTHORIZED' });
+    }
+
+    const token = authHeader.split(' ')[1];
+    if (!token) {
+      logger.warn('鉴权失败：Token 格式无效');
+      return res.status(401).json({ error: 'Token 格式无效', code: 'INVALID_TOKEN' });
+    }
+
+    // 特殊标记：从配置文件读取 Token
+    if (token === 'configured') {
+      const status = await getTokenStatus();
+      if (status.configured) {
+        logger.info('配置文件 Token 鉴权成功');
+        return next();
+      }
+      logger.warn('配置文件中未配置 Token');
+      return res.status(401).json({ error: '配置文件中未配置 Token', code: 'TOKEN_NOT_CONFIGURED' });
+    }
+
+    const isValid = await verifyApiToken(token);
+    if (!isValid) {
+      logger.warn(`鉴权失败：Token 无效 - ${token.substring(0, 10)}...`);
+      return res.status(401).json({ error: 'Token 无效', code: 'INVALID_TOKEN' });
+    }
+
+    logger.info(`API Token 鉴权成功，Token 前缀：${token.substring(0, 10)}...`);
+    next();
+  } catch (error: any) {
+    logger.error(`API Token 鉴权异常：${error.message}`);
+    res.status(401).json({ error: '鉴权失败', code: 'AUTH_FAILED' });
+  }
+}
 
 /**
  * POST /api/comment/execute
@@ -110,6 +155,28 @@ router.get('/logs', async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     logger.error(`获取评论日志失败：${error.message}`);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      code: 'INTERNAL_ERROR',
+    });
+  }
+});
+
+/**
+ * GET /api/comment/today-success
+ * 查询今天是否有评论成功（使用 API Token 鉴权）
+ * 有任意一条成功评论返回 hasSuccess=true，否则 false
+ */
+router.get('/today-success', apiTokenMiddleware, async (req: Request, res: Response) => {
+  try {
+    const hasSuccess = await commentLogStorage.hasTodaySuccessComment();
+    res.json({
+      success: true,
+      data: { hasSuccess },
+    });
+  } catch (error: any) {
+    logger.error(`查询今日成功评论失败：${error.message}`);
     res.status(500).json({
       success: false,
       error: error.message,

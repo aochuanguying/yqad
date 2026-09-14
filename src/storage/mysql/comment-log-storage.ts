@@ -147,6 +147,15 @@ export class CommentLogStorage extends BaseDAO {
     const result = await this.queryOne<{ count: number }>(sql, [today]);
     return result?.count || 0;
   }
+
+  /**
+   * 今天是否存在成功的评论
+   */
+  async hasTodaySuccessComment(): Promise<boolean> {
+    const sql = `SELECT COUNT(*) as count FROM comment_logs WHERE DATE(created_at) = CURDATE() AND success = 1`;
+    const result = await this.queryOne<{ count: number }>(sql, []);
+    return (result?.count || 0) > 0;
+  }
 }
 
 // 导出单例
