@@ -16,3 +16,14 @@ modelAliases:
   qwen-vip: qwen3-5-397b-vip
   glm: xinghai-ultra
   # *-raw 由网关自动推导（-raw 后缀），无需在此单独声明
+
+# Xinference 上游（embedding / rerank）。敏感字段（username/password）放 local.yaml，勿提交。
+# 未配置则 /v1/embeddings 与 /v1/rerank 返回 503。
+# xinference:
+#   baseUrl: http://10.19.197.12:9997
+#   username: admin
+#   password: ""                       # 放 local.yaml
+#   proxyUrl: http://10.30.5.33:11081  # 经 xray 隧道访问 197.x 内网
+#   timeoutMs: 60000
+#   embeddingModels: [bge-m3]
+#   rerankModels: [bge-reranker-v2-m3]

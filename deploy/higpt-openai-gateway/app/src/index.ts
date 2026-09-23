@@ -268,6 +268,107 @@ function buildAxiosConfig(config: GatewayConfig): Pick<AxiosRequestConfig, 'time
   };
 }
 
+// ===== Xinference 上游（embedding / rerank）支持 =====
+
+/** 构建访问 xinference 的 proxy agent（经 xray 隧道访问内网时用） */
+function getXinferenceAgent(config: GatewayConfig): any | undefined {
+  const proxyUrl = (config.xinference?.proxyUrl || '').trim();
+  if (!proxyUrl) return undefined;
+  if (proxyUrl.startsWith('socks')) {
+    const { SocksProxyAgent } = require('socks-proxy-agent');
+    return new SocksProxyAgent(proxyUrl);
+  }
+  if (proxyUrl.startsWith('http://') || proxyUrl.startsWith('https://')) {
+    const { HttpsProxyAgent } = require('https-proxy-agent');
+    return new HttpsProxyAgent(proxyUrl);
+  }
+  throw new Error(`Unsupported xinference.proxyUrl: ${proxyUrl}`);
+}
+
+function buildXinferenceAxiosConfig(config: GatewayConfig): Pick<AxiosRequestConfig, 'timeout' | 'httpAgent' | 'httpsAgent' | 'proxy'> {
+  const agent = getXinferenceAgent(config);
+  return {
+    timeout: config.xinference?.timeoutMs || 60000,
+    httpAgent: agent,
+    httpsAgent: agent,
+    proxy: false,
+  };
+}
+
+// xinference JWT token 缓存（进程内）
+let xinfTokenCache: { token: string; fetchedAt: number } | null = null;
+const XINF_TOKEN_TTL_MS = 20 * 60 * 1000; // 20 分钟主动刷新（JWT 通常 30 分钟）
+
+/** 获取 xinference token；forceRefresh=true 时强制重新登录（如遇 401） */
+async function getXinferenceToken(config: GatewayConfig, forceRefresh = false): Promise<string> {
+  const xinf = config.xinference!;
+  if (!forceRefresh && xinfTokenCache && (Date.now() - xinfTokenCache.fetchedAt) < XINF_TOKEN_TTL_MS) {
+    return xinfTokenCache.token;
+  }
+  const url = xinf.baseUrl.replace(/\/+$/, '') + '/token';
+  const res = await axios.post(
+    url,
+    { username: xinf.username, password: xinf.password },
+    { ...buildXinferenceAxiosConfig(config), headers: { 'content-type': 'application/json' }, validateStatus: () => true }
+  );
+  if (res.status < 200 || res.status >= 300 || !res.data || !res.data.access_token) {
+    throw new Error(`xinference login failed: status=${res.status}`);
+  }
+  xinfTokenCache = { token: res.data.access_token, fetchedAt: Date.now() };
+  return xinfTokenCache.token;
+}
+
+/** 转发一个请求到 xinference 指定路径，带 token + 401 自动刷新重试一次 */
+async function forwardToXinference(
+  config: GatewayConfig,
+  pathname: string,
+  body: any,
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const xinf = config.xinference!;
+  const url = xinf.baseUrl.replace(/\/+$/, '') + pathname;
+  const requestId = getRequestId(req);
+  const startedAt = Date.now();
+
+  const doPost = async (token: string) =>
+    axios.post(url, body, {
+      ...buildXinferenceAxiosConfig(config),
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      responseType: 'json',
+      validateStatus: () => true,
+    });
+
+  try {
+    let token = await getXinferenceToken(config);
+    let upstreamRes = await axiosWithRetry(() => doPost(token), 1, 500);
+
+    // token 过期 → 刷新重试一次
+    if (upstreamRes.status === 401 || upstreamRes.status === 403) {
+      token = await getXinferenceToken(config, true);
+      upstreamRes = await doPost(token);
+    }
+
+    const durationMs = Date.now() - startedAt;
+    if (durationMs > 10000) {
+      logger.warn('slow_xinference_request', { durationMs, path: pathname, model: body?.model }, requestId);
+    }
+
+    if (upstreamRes.status >= 200 && upstreamRes.status < 300) {
+      res.status(upstreamRes.status).json(upstreamRes.data);
+      return;
+    }
+    logger.error('xinference_error_response', { status: upstreamRes.status, path: pathname, model: body?.model }, requestId);
+    sendOpenAIError(res, 502, `Xinference error: status=${upstreamRes.status}`, 'upstream_error');
+  } catch (err) {
+    const e = err as AxiosError;
+    logger.error('xinference_request_failed', {
+      path: pathname, model: body?.model, errorCode: e.code, errorMessage: toSafeAxiosErrorLog(e),
+    }, requestId);
+    sendOpenAIError(res, 502, 'Xinference request failed', 'upstream_error');
+  }
+}
+
 type CreateAppOptions = {
   jsonBodyLimit?: string;
 };
@@ -297,7 +398,50 @@ export function createApp(config: GatewayConfig, options: CreateAppOptions = {})
     for (const v of Object.values(config.modelAliases)) {
       ids.add(v);               // e.g. "qwen3-5-397b"
     }
+    // 加入 xinference 的 embedding / rerank 模型
+    if (config.xinference) {
+      for (const m of config.xinference.embeddingModels || []) ids.add(m);
+      for (const m of config.xinference.rerankModels || []) ids.add(m);
+    }
     res.json({ object: 'list', data: [...ids].map(id => ({ id, object: 'model' })) });
+  });
+
+  // ===== Embeddings（转发 xinference，标准 OpenAI 格式） =====
+  app.post('/v1/embeddings', async (req, res) => {
+    const body = req.body as any;
+    if (!config.xinference) {
+      sendOpenAIError(res, 503, 'Embeddings not configured', 'server_error');
+      return;
+    }
+    if (!body || typeof body !== 'object' || !body.model || body.input === undefined) {
+      sendOpenAIError(res, 400, 'Missing required fields: model, input', 'invalid_request_error');
+      return;
+    }
+    const allowed = config.xinference.embeddingModels || [];
+    if (allowed.length && !allowed.includes(String(body.model))) {
+      sendOpenAIError(res, 400, `Unknown embedding model: ${body.model}. Available: ${allowed.join(', ')}`, 'invalid_request_error');
+      return;
+    }
+    await forwardToXinference(config, '/v1/embeddings', body, req, res);
+  });
+
+  // ===== Rerank（转发 xinference） =====
+  app.post('/v1/rerank', async (req, res) => {
+    const body = req.body as any;
+    if (!config.xinference) {
+      sendOpenAIError(res, 503, 'Rerank not configured', 'server_error');
+      return;
+    }
+    if (!body || typeof body !== 'object' || !body.model || !body.query || !Array.isArray(body.documents)) {
+      sendOpenAIError(res, 400, 'Missing required fields: model, query, documents[]', 'invalid_request_error');
+      return;
+    }
+    const allowed = config.xinference.rerankModels || [];
+    if (allowed.length && !allowed.includes(String(body.model))) {
+      sendOpenAIError(res, 400, `Unknown rerank model: ${body.model}. Available: ${allowed.join(', ')}`, 'invalid_request_error');
+      return;
+    }
+    await forwardToXinference(config, '/v1/rerank', body, req, res);
   });
 
   app.post('/v1/chat/completions', async (req, res) => {
