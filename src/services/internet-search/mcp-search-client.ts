@@ -36,7 +36,7 @@ export class McpSearchClient {
 
   constructor() {
     this.config = {
-      endpoint: process.env.MCP_SEARCH_ENDPOINT || 'http://192.168.50.10:3090/mcp',
+      endpoint: process.env.MCP_SEARCH_ENDPOINT || 'https://mcp.fssc.top/mcp',
       apiKey: process.env.MCP_SEARCH_API_KEY || 'f6758b51d76a164f0ca6ea09f7caf50f12455379b698e601',
       timeout: parseInt(process.env.MCP_SEARCH_TIMEOUT || '60000', 10),
     };
