@@ -34,7 +34,8 @@ chromadb:
   production:
     baseUrl: "http://192.168.50.10:8000"
 embedding:
-  url: "http://192.168.50.10:8100/v1/embeddings"
+  url: "https://ai.fssc.top/v1/embeddings"
+  apiKey: "LqgltIIdlFVQFdi5EMa98HtRVXzq6KGA"
   model: "bge-m3"
   dimension: 1024
   timeout: 30000

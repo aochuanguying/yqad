@@ -23,6 +23,8 @@ export interface EmbeddingConfig {
   dimension?: number;
   /** embedding 服务地址（OpenAI 兼容 /v1/embeddings） */
   url?: string;
+  /** API Key（走 ai.fssc.top 等网关时用，作为 Bearer token；本地服务留空即可） */
+  apiKey?: string;
   /** 模型名 */
   model?: string;
   /** 单次请求超时（毫秒） */
@@ -40,7 +42,8 @@ function resolveEmbeddingConfig(config?: Partial<EmbeddingConfig>): Required<Emb
     // 忽略配置加载失败，使用默认值
   }
   return {
-    url: process.env.EMBEDDING_URL || config?.url || fileCfg.url || 'http://192.168.50.10:8100/v1/embeddings',
+    url: process.env.EMBEDDING_URL || config?.url || fileCfg.url || 'https://ai.fssc.top/v1/embeddings',
+    apiKey: process.env.EMBEDDING_API_KEY || config?.apiKey || fileCfg.apiKey || '',
     model: process.env.EMBEDDING_MODEL || config?.model || fileCfg.model || 'bge-m3',
     dimension: config?.dimension || fileCfg.dimension || 1024,
     timeout: config?.timeout || fileCfg.timeout || 30000,
@@ -53,6 +56,7 @@ function resolveEmbeddingConfig(config?: Partial<EmbeddingConfig>): Required<Emb
 export class EmbeddingVectorizer {
   private dimension: number;
   private url: string;
+  private apiKey: string;
   private model: string;
   private timeout: number;
   private initialized = false;
@@ -64,10 +68,11 @@ export class EmbeddingVectorizer {
     const resolved = resolveEmbeddingConfig(config);
     this.dimension = resolved.dimension;
     this.url = resolved.url;
+    this.apiKey = resolved.apiKey;
     this.model = resolved.model;
     this.timeout = resolved.timeout;
     this.initialized = true;
-    logger.info(`EmbeddingVectorizer 初始化完成：model=${this.model}, ${this.dimension}维, url=${this.url}`);
+    logger.info(`EmbeddingVectorizer 初始化完成：model=${this.model}, ${this.dimension}维, url=${this.url}, 鉴权=${this.apiKey ? '已配置' : '无'}`);
   }
 
   /**
@@ -78,9 +83,13 @@ export class EmbeddingVectorizer {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeout);
     try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (this.apiKey) {
+        headers['Authorization'] = `Bearer ${this.apiKey}`;
+      }
       const resp = await fetch(this.url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ model: this.model, input }),
         signal: controller.signal,
       });
