@@ -21,6 +21,14 @@ from playwright.async_api import async_playwright
 SEARCH_API = "https://sou.api.autohome.com.cn/v1/search"
 SEARCH_URL = "https://sou.autohome.com.cn"
 
+
+def _get_proxy():
+    """从环境变量读取代理，供 Playwright launch 使用（浏览器默认不读 HTTP_PROXY）。
+    部署在无法直连公网的内网机时必须显式传代理。"""
+    proxy_url = os.environ.get("HTTP_PROXY") or os.environ.get("http_proxy") \
+        or os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
+    return {"server": proxy_url} if proxy_url else None
+
 # base64 图片临时保存目录
 TEMP_IMG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "temp_images")
 
@@ -58,7 +66,8 @@ async def search_posts(keyword: str, max_results: int = 10, fetch_content: bool 
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=True,
-            args=['--no-sandbox', '--disable-setuid-sandbox']
+            args=['--no-sandbox', '--disable-setuid-sandbox'],
+            proxy=_get_proxy()
         )
         context = await browser.new_context(
             viewport={'width': 1920, 'height': 1080},
@@ -292,7 +301,8 @@ async def get_post_detail(post_url: str):
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=True,
-            args=['--no-sandbox', '--disable-setuid-sandbox']
+            args=['--no-sandbox', '--disable-setuid-sandbox'],
+            proxy=_get_proxy()
         )
         
         try:

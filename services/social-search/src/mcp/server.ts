@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { zhihuAdapter } from '../adapters/zhihu-adapter';
 import { xiaohongshuAdapter } from '../adapters/xiaohongshu-adapter';
 import { autohomeAdapter } from '../adapters/autohome-adapter';
+import { bilibiliAdapter } from '../adapters/bilibili-adapter';
 import { cookiePool } from '../infra/cookie-pool';
 
 function createServer(): McpServer {
@@ -95,6 +96,35 @@ function createServer(): McpServer {
     },
     async (args) => {
       const result = await autohomeAdapter.getContent({ postUrl: args.postUrl });
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+    }
+  );
+
+  // 哔哩哔哩视频搜索
+  server.tool(
+    'bilibili_search',
+    '搜索哔哩哔哩（B站）视频',
+    {
+      query: z.string().describe('搜索关键词'),
+      maxResults: z.number().optional().describe('最大返回结果数，默认 10'),
+      summaryMode: z.boolean().optional().describe('摘要模式，限制返回内容长度'),
+    },
+    async (args) => {
+      const results = await bilibiliAdapter.search(args);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(results, null, 2) }] };
+    }
+  );
+
+  // 哔哩哔哩视频详情
+  server.tool(
+    'bilibili_get_content',
+    '获取哔哩哔哩（B站）视频的简介和基本信息',
+    {
+      bvid: z.string().optional().describe('视频 BV 号，如 BV1xx411c7mD'),
+      url: z.string().optional().describe('视频 URL（可从中解析 BV 号，与 bvid 二选一）'),
+    },
+    async (args) => {
+      const result = await bilibiliAdapter.getContent({ bvid: args.bvid || '', url: args.url || '' });
       return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
     }
   );
