@@ -78,11 +78,24 @@ export class AutohomeAdapter extends BaseAdapter {
 
       let output = '';
       let errorOutput = '';
+      let settled = false;
+
+      // 超时兜底：Python 子进程卡死时强制 kill，避免残留 chromium 进程占内存
+      const killTimer = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          try { pyProcess.kill('SIGKILL'); } catch {}
+          reject(new Error('汽车之家搜索超时（120s），已终止进程'));
+        }
+      }, 120000);
 
       pyProcess.stdout.on('data', (data: Buffer) => { output += data.toString(); });
       pyProcess.stderr.on('data', (data: Buffer) => { errorOutput += data.toString(); });
 
       pyProcess.on('close', (code) => {
+        clearTimeout(killTimer);
+        if (settled) return;
+        settled = true;
         if (code !== 0) {
           console.warn('[autohome] Python stderr:', errorOutput);
           reject(new Error(`Python 退出码 ${code}: ${errorOutput || output}`));
@@ -118,6 +131,9 @@ export class AutohomeAdapter extends BaseAdapter {
       });
 
       pyProcess.on('error', (err) => {
+        clearTimeout(killTimer);
+        if (settled) return;
+        settled = true;
         reject(new Error(`Python 进程启动失败: ${err.message}`));
       });
     });

@@ -338,10 +338,11 @@ export class CookieRefreshService {
     const isValid = await this.testCookie(platform, config.cookie);
     if (isValid) {
       // Cookie 有效，尝试浏览器续期
+      let browser: any = null;
       try {
         const { chromium } = await import('playwright-core');
         const isDocker = fs.existsSync('/.dockerenv') || process.env.NODE_ENV === 'production';
-        const browser = await chromium.launch({
+        browser = await chromium.launch({
           headless: isDocker,
           args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled'],
         });
@@ -369,8 +370,6 @@ export class CookieRefreshService {
           ? this.extractZhihuCookie(cookies)
           : this.extractXiaohongshuCookie(cookies);
 
-        await browser.close();
-
         if (newCookie) {
           // 验证新 Cookie
           const newIsValid = await this.testCookie(platform, newCookie);
@@ -383,6 +382,9 @@ export class CookieRefreshService {
         console.log(`[cookie-refresh] ${platform} #${configId} 续期后验证失败，保留原 Cookie`);
       } catch (err: any) {
         console.warn(`[cookie-refresh] ${platform} #${configId} 浏览器续期出错:`, err.message);
+      } finally {
+        // 无论成功失败都关闭浏览器，避免 chromium 进程泄漏、内存长时间不释放
+        if (browser) await browser.close().catch(() => {});
       }
     } else {
       // Cookie 失效
