@@ -394,15 +394,17 @@ export class CookieRefreshService {
   private async testCookie(platform: Platform, cookie: string): Promise<boolean> {
     try {
       if (platform === 'zhihu') {
-        const https = await import('https');
-        return new Promise((resolve) => {
-          const req = https.get('https://www.zhihu.com/api/v4/me', {
+        // 用 fetch（已被 undici 全局代理接管，支持 HTTP_PROXY）而非 https.get（不走代理）
+        // 否则部署在无法直连公网的内网机上会恒超时、误判 Cookie 失效
+        try {
+          const res = await fetch('https://www.zhihu.com/api/v4/me', {
             headers: { 'Cookie': cookie },
-            timeout: 10000,
-          }, (res: any) => resolve(res.statusCode === 200));
-          req.on('error', () => resolve(false));
-          req.on('timeout', () => { req.destroy(); resolve(false); });
-        });
+            signal: AbortSignal.timeout(10000),
+          });
+          return res.status === 200;
+        } catch {
+          return false;
+        }
       } else {
         // 使用与实际搜索相同的逻辑：Python + xhshow 签名请求
         return await this.testXiaohongshuCookieViaPython(cookie);
