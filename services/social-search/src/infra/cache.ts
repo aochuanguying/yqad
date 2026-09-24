@@ -11,6 +11,8 @@ function getRedis(): Redis {
       port: config.redis.port,
       db: config.redis.db,
       keyPrefix: config.redis.keyPrefix,
+      username: config.redis.username,
+      password: config.redis.password,
       lazyConnect: true,
       maxRetriesPerRequest: 3,
       retryStrategy(times) {

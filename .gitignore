@@ -80,3 +80,8 @@ scripts/xiaohongshu_browser_data/
 
 # Database backups
 database/backups/
+
+# social-search 部署脚本与内网盘点文档（含明文凭据，不入库）
+services/social-search/deploy-178.sh
+services/social-search/docs/服务器盘点.md
+services/social-search/docs/AI基础设施-服务清单.md

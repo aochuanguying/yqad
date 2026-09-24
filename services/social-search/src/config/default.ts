@@ -12,6 +12,8 @@ export interface AppConfig {
     port: number;
     db: number;
     keyPrefix: string;
+    username?: string;
+    password?: string;
   };
   apiKeys: string[];
   rateLimit: {
@@ -37,7 +39,7 @@ export function getConfig(): AppConfig {
       host: process.env.MYSQL_HOST || '192.168.50.10',
       port: parseInt(process.env.MYSQL_PORT || '3306', 10),
       user: process.env.MYSQL_USER || 'root',
-      password: process.env.MYSQL_PASSWORD || 'Wfw7539148@',
+      password: process.env.MYSQL_PASSWORD || '',
       database: process.env.MYSQL_DATABASE || 'yqad_prod_db',
     },
     redis: {
@@ -45,6 +47,8 @@ export function getConfig(): AppConfig {
       port: parseInt(process.env.REDIS_PORT || '6379', 10),
       db: parseInt(process.env.REDIS_DB || '2', 10),
       keyPrefix: process.env.REDIS_KEY_PREFIX || 'social-search:',
+      username: process.env.REDIS_USERNAME || undefined,
+      password: process.env.REDIS_PASSWORD || undefined,
     },
     apiKeys: (process.env.API_KEYS || 'dev-test-key').split(',').map(k => k.trim()),
     rateLimit: {

@@ -31,6 +31,7 @@ RUN rm -f ~/.npmrc .npmrc && \
     cat .npmrc && \
     rm -rf node_modules && \
     npm install --omit=dev --no-audit --network-timeout=300000 --legacy-peer-deps && \
+    npm install undici@6.21.0 --omit=dev --no-audit --no-save --legacy-peer-deps --registry=https://registry.npmjs.org --network-timeout=300000 && \
     curl -L -o /tmp/playwright-core.tgz https://registry.npmmirror.com/playwright-core/-/playwright-core-1.40.0.tgz && \
     mkdir -p node_modules/playwright-core && \
     tar -xzf /tmp/playwright-core.tgz -C node_modules/playwright-core --strip-components=1 && \
