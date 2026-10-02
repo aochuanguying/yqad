@@ -571,13 +571,34 @@ export function createApp(config: GatewayConfig, options: CreateAppOptions = {})
           res.setHeader('Connection', 'keep-alive');
           res.status(200);
 
+          // SSE 心跳：在等待上游首个 chunk 期间，定期发送注释行保持连接
+          // 防止客户端因上游 prefill 延迟（大上下文时可达 10-25 秒）而超时断开
+          let firstChunkReceived = false;
+          const heartbeatTimer = setInterval(() => {
+            if (!firstChunkReceived) {
+              res.write(': heartbeat\n\n');
+            }
+          }, 5000);
+
           if (rawMode) {
             // raw 模式直接透传
+            upstreamRes.data.on('data', () => {
+              firstChunkReceived = true;
+              clearInterval(heartbeatTimer);
+            });
+            upstreamRes.data.on('end', () => {
+              clearInterval(heartbeatTimer);
+            });
+            upstreamRes.data.on('error', () => {
+              clearInterval(heartbeatTimer);
+            });
             upstreamRes.data.pipe(res);
           } else {
             // 标准模式：过滤 reasoning_content chunk
             let buffer = '';
             upstreamRes.data.on('data', (chunk: Buffer) => {
+              firstChunkReceived = true;
+              clearInterval(heartbeatTimer);
               buffer += chunk.toString();
               const lines = buffer.split('\n');
               // 最后一个元素可能不完整，留在 buffer 里
@@ -595,6 +616,7 @@ export function createApp(config: GatewayConfig, options: CreateAppOptions = {})
               }
             });
             upstreamRes.data.on('end', () => {
+              clearInterval(heartbeatTimer);
               // 处理 buffer 中剩余内容
               if (buffer.trim()) {
                 const filtered = filterStreamChunk(buffer.trim());
@@ -605,6 +627,7 @@ export function createApp(config: GatewayConfig, options: CreateAppOptions = {})
               res.end();
             });
             upstreamRes.data.on('error', () => {
+              clearInterval(heartbeatTimer);
               res.end();
             });
           }
