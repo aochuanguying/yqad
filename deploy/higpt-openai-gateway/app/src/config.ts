@@ -5,6 +5,16 @@ import yaml from 'yaml';
 export interface GatewayConfig {
   port: number;
   gatewayApiKey: string;
+  // 上游与模型路由的持久化文件（管理页读写）。默认 config/upstreams.json。
+  // 文件不存在时，用下面的 higpt + modelAliases 生成初始内容；此后以该文件为准。
+  upstreamsFile?: string;
+  // 管理页 /admin/。未设置 password 时管理页关闭。
+  admin?: {
+    password?: string;
+    allowedCidrs?: string[];      // 默认 127/8、10/8、172.16/12、192.168/16
+    sessionTtlMinutes?: number;   // 默认 480
+  };
+  // 旧版单上游配置：仅用于首次生成 upstreams.json（迁移）
   higpt: {
     baseUrl: string;
     apiKey: string;
@@ -59,6 +69,10 @@ export function loadConfig(): GatewayConfig {
     if (Number.isFinite(v) && v > 0) config.port = v;
   }
   if (process.env.GATEWAY_API_KEY) config.gatewayApiKey = process.env.GATEWAY_API_KEY;
+  if (process.env.ADMIN_PASSWORD) config.admin = { ...(config.admin || {}), password: process.env.ADMIN_PASSWORD };
+  if (process.env.UPSTREAMS_FILE) config.upstreamsFile = process.env.UPSTREAMS_FILE;
+  config.higpt = config.higpt || ({} as any);
+  config.modelAliases = config.modelAliases || {};
   if (process.env.HIGPT_BASE_URL) config.higpt.baseUrl = process.env.HIGPT_BASE_URL;
   if (process.env.HIGPT_API_KEY) config.higpt.apiKey = process.env.HIGPT_API_KEY;
   if (process.env.HIGPT_USER_KEY) config.higpt.userKey = process.env.HIGPT_USER_KEY;

@@ -99,7 +99,7 @@ sudo ./health-check.sh -d hx.hxfssc.com
 
 - **HiGPT 网关**: `https://hx.hxfssc.com/higpt/v1`
 - **API Key**: `.env` 中的 `GATEWAY_API_KEY`
-- **Model**: `higpt`（默认别名）或 `qwen3-5-397b`
+- **Model**: `qwen`（→ qwen3-5-397b）或 `glm`（→ histar-ultra）
 
 ### v2ray 客户端配置
 
@@ -207,7 +207,7 @@ curl -X POST "${GATEWAY_URL}/higpt/v1/chat/completions" \
   -H "Authorization: Bearer ${API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "higpt",
+    "model": "qwen",
     "messages": [{"role": "user", "content": "你好"}],
     "max_tokens": 100
   }'

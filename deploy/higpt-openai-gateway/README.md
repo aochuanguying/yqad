@@ -44,7 +44,7 @@ deploy/higpt-openai-gateway/
 
 - Base URL：`http://<NAS>:3000/v1`
 - API Key：`.env` 里的 `GATEWAY_API_KEY`
-- Model：`higpt`（默认别名）或 `qwen3-5-397b`
+- Model：`qwen`（→ qwen3-5-397b）或 `glm`（→ histar-ultra）
 
 ## 在 Linux 服务器部署（推荐）
 
@@ -129,7 +129,7 @@ sudo nginx -s reload
 
 - Base URL：`https://higpt.yourdomain.com/higpt/v1`
 - API Key：`.env` 里的 `GATEWAY_API_KEY`
-- Model：`higpt`（默认别名）或 `qwen3-5-397b`
+- Model：`qwen`（→ qwen3-5-397b）或 `glm`（→ histar-ultra）
 
 ### 测试
 
@@ -142,7 +142,7 @@ curl -X POST "${GATEWAY_URL}/higpt/v1/chat/completions" \
   -H "Authorization: Bearer ${API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "higpt",
+    "model": "qwen",
     "messages": [{"role": "user", "content": "你好"}],
     "max_tokens": 100
   }'
@@ -166,3 +166,42 @@ sudo certbot renew --dry-run
 # 健康检查
 sudo ./health-check.sh -d higpt.yourdomain.com
 ```
+
+## 管理页：多上游在线配置（/admin/）
+
+- 地址：`https://<域名>/admin/` 或 `http://<内网IP>/admin/`；仅 `admin.allowedCidrs`（默认内网网段）可访问，需管理员密码（`admin.password` / `ADMIN_PASSWORD`）。
+- 可配置多套上游：地址（baseUrl）、`user_key`（以 URL 参数 `?user_key=` 传递）、API Key（以 `Authorization: Bearer` 传递）、代理、超时、启用。
+- 模型路由：客户端 `model` → 指定上游 + 上游实际模型，并可设置默认思考开关。
+- 保存后立即生效，无需重启；进行中的请求不受影响。配置存 `config/upstreams.json`（600），每次保存自动备份 `upstreams.json.bak.<时间>`（保留最近 20 份）。
+- 密钥在页面掩码显示，留空=不修改，勾“清空”=删除。两人同时编辑时后保存者会收到冲突提示（409），需重新加载。
+- 首次启动时若 `upstreams.json` 不存在，用 yaml 中的 `higpt` + `modelAliases` 自动生成（上游 id=`higpt`）。之后以该文件为准。
+- 回滚：用 `upstreams.json.bak.*` 覆盖 `upstreams.json`，在管理页点“从文件重新加载”（或重启容器）。
+
+## 网关 API Key（调用方凭证）
+
+- 调用方以 `Authorization: Bearer <网关 Key>` 调用 `/v1/*`（chat / embeddings / rerank / models），校验通过才转发；上游的 user_key、API Key 由网关按上游配置附加，调用方无需也无法接触。
+- 在管理页“网关 API Key”中管理：生成（明文**只显示一次**）、停用 / 启用、改名、删除，立即生效，无需重启。可同时存在多个 Key，便于按调用方分发。
+- 存储：`upstreams.json` 的 `apiKeys`，只存 SHA-256，明文不落盘。至少保留一个启用的 Key（停用 / 删除最后一个会被拒绝）。
+- 迁移：首次启动若 `apiKeys` 为空，把 yaml 的 `gatewayApiKey` 导入为“默认”Key，现有调用方不受影响；之后 yaml 的 `gatewayApiKey` 不再使用。
+- 更换 Key：生成新 Key → 发给调用方 → 在列表看“最近使用 / 调用次数”（自网关启动统计），确认旧 Key 不再被使用 → 停用旧 Key（观察一段时间无误后删除）。
+
+## 思考（推理）开关
+
+上游（`qwen3-5-397b`、`histar-ultra`/GLM-5.2）唯一都认的开关是 `chat_template_kwargs.enable_thinking`。网关把常见写法统一翻译成它，并从请求体移除其它别名（避免上游误读，例如 GLM 收到 `thinking_budget` 会回答失控）。
+
+| 优先级 | 写法 | 来源 | 开 | 关 |
+|---|---|---|---|---|
+| 1 | `chat_template_kwargs.enable_thinking` | vLLM / SGLang（Qwen3） | `true` | `false` |
+| 2 | `chat_template_kwargs.thinking` | vLLM DeepSeek-V3.1 | `true` | `false` |
+| 3 | `enable_thinking` | 阿里云百炼 DashScope、硅基流动 | `true` | `false` |
+| 4 | `thinking: {"type": ...}` | 智谱 GLM、火山方舟、Anthropic、Kimi | `enabled` | `disabled`（`auto` = 未指定） |
+| 5 | `reasoning: {...}` | OpenRouter | `enabled:true` / `effort` / `max_tokens>0` | `enabled:false` / `max_tokens:0` |
+| 6 | `reasoning_effort` | OpenAI | `low`/`medium`/`high`/`xhigh` | `none`/`minimal` |
+| 7 | `thinking_budget` | DashScope / Gemini | `>0` 或 `-1` | `0` |
+| 8 | 都没传 | 管理页模型路由的 **默认思考** 开关（默认关） | | |
+
+- 多个写法同时出现时按优先级取第一个；以上字段放在 `extra_body` 里同样识别。布尔值也接受 `"true"/"false"`、`1/0`。
+- 取值非法（如 `reasoning_effort: "ultra"`）返回 400，不静默忽略。
+- 只控制开/关：`effort`、`budget_tokens`、`thinking_budget` 的数值不下发（上游不支持推理深度控制，实测无效）。
+- 响应原样透传：开启思考时返回 `reasoning_content`。
+- 响应头 `x-gateway-thinking: on|off;source=<生效的写法>` 便于排查。

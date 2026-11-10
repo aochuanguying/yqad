@@ -370,10 +370,8 @@ higpt:
   proxyUrl: ""
   timeoutMs: 120000
 modelAliases:
-  qwen3-5: qwen3-5-397b
-  deepseek-v4-pro: deepseek-v4-pro
-  higpt: qwen3-5-397b
-  deepseek: deepseek-v4-pro
+  qwen: qwen3-5-397b
+  glm: histar-ultra
 EOF
         log_success "config/local.yaml 文件已生成"
     else

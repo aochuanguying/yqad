@@ -229,7 +229,7 @@ check_https_api() {
         -H "Authorization: Bearer $GATEWAY_API_KEY" \
         -H "Content-Type: application/json" \
         -d '{
-            "model": "higpt",
+            "model": "qwen",
             "messages": [{"role": "user", "content": "你好"}],
             "max_tokens": 10
         }' \

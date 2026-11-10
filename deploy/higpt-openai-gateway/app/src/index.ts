@@ -1,6 +1,10 @@
 import express, { Request, Response, NextFunction } from 'express';
 import axios, { AxiosError, AxiosRequestConfig } from 'axios';
+import path from 'path';
 import { GatewayConfig, loadConfig } from './config';
+import { UpstreamStore, Upstream, seedFromConfig } from './upstream-store';
+import { mountAdmin } from './admin';
+import { normalizeThinking, ThinkingParamError } from './thinking';
 import { randomUUID } from 'crypto';
 import { logger } from './logger';
 
@@ -126,123 +130,34 @@ function validateConfig(config: GatewayConfig): void {
     throw new Error('port 配置无效');
   }
 
-  assertNonEmpty(config.gatewayApiKey, 'gatewayApiKey');
-  assertNonEmpty(config.higpt.baseUrl, 'higpt.baseUrl');
-  assertNonEmpty(config.higpt.apiKey, 'higpt.apiKey');
-  assertNonEmpty(config.higpt.userKey, 'higpt.userKey');
-
-  try {
-    new URL(config.higpt.baseUrl);
-  } catch {
-    throw new Error('higpt.baseUrl 不是合法 URL');
-  }
-
-  if (!Number.isFinite(config.higpt.timeoutMs) || config.higpt.timeoutMs <= 0) {
-    throw new Error('higpt.timeoutMs 配置无效');
-  }
-
-  if (config.modelAliases === null || typeof config.modelAliases !== 'object') {
-    throw new Error('modelAliases 配置无效');
-  }
+  // 网关 API Key 在 upstreams.json 的 apiKeys 中管理（首次启动从 yaml gatewayApiKey 导入），此处不再强制
+  // 上游地址/密钥/模型路由由 UpstreamStore 校验（upstreams.json），此处不再要求 higpt.*
 }
 
-function requireGatewayAuth(expected: string): express.RequestHandler {
+/** 校验网关 API Key（Authorization: Bearer <key>），每个请求读最新配置，配置页更换后立即生效 */
+function requireGatewayAuth(store: UpstreamStore): express.RequestHandler {
   return (req: Request, res: Response, next: NextFunction) => {
     const raw = req.header('authorization') || '';
     const token = raw.toLowerCase().startsWith('bearer ') ? raw.slice('bearer '.length).trim() : '';
-
-    if (!token || !expected || token !== expected) {
+    const key = store.verifyApiKey(token);
+    if (!key) {
       sendOpenAIError(res, 401, 'Unauthorized', 'authentication_error');
       return;
     }
-
+    (req as any).gatewayKeyName = key.name;
     next();
   };
 }
 
-function buildUpstreamUrl(config: GatewayConfig, pathname: string): string {
-  const url = new URL(config.higpt.baseUrl);
+function buildUpstreamUrl(upstream: Upstream, pathname: string): string {
+  const url = new URL(upstream.baseUrl);
   url.pathname = url.pathname.replace(/\/+$/, '') + pathname;
-  url.searchParams.set('user_key', config.higpt.userKey);
+  if (upstream.userKey) url.searchParams.set('user_key', upstream.userKey);
   return url.toString();
 }
 
-/**
- * 解析模型名，返回 { upstreamModel, rawMode }
- * - rawMode=false: 请求标准模式，过滤 reasoning_content（如 "higpt"）
- * - rawMode=true:  请求原始模式，保留全部字段（如 "higpt-raw"）
- *
- * 规则：模型名以 "-raw" 结尾时进入原始模式，剥掉后缀再查别名表
- */
-function resolveModel(config: GatewayConfig, model: string): { upstreamModel: string; rawMode: boolean } {
-  const RAW_SUFFIX = '-raw';
-
-  const rawMode = model.endsWith(RAW_SUFFIX);
-  const baseModel = rawMode ? model.slice(0, -RAW_SUFFIX.length) : model;
-  const upstreamModel = config.modelAliases[baseModel] || baseModel;
-
-  return { upstreamModel, rawMode };
-}
-
-/**
- * 过滤非流式响应，移除 message 中的 reasoning_content 字段
- * 使响应符合标准 OpenAI 格式
- */
-function stripReasoningContent(data: any): any {
-  if (!data || typeof data !== 'object') return data;
-  if (!Array.isArray(data.choices)) return data;
-
-  return {
-    ...data,
-    choices: data.choices.map((choice: any) => {
-      if (!choice.message) return choice;
-      const { reasoning_content, ...cleanMessage } = choice.message;
-      return { ...choice, message: cleanMessage };
-    }),
-  };
-}
-
-/**
- * 处理流式响应，过滤掉只含 reasoning_content 的 chunk
- * 流式响应格式: "data: {...}\n\ndata: {...}\n\n...data: [DONE]\n\n"
- * - delta 中只有 reasoning_content 的 chunk → 丢弃
- * - delta 中有 content 的 chunk → 保留，同时移除 delta 里的 reasoning_content
- * - finish_reason chunk 和 [DONE] → 保留
- */
-function filterStreamChunk(line: string): string {
-  if (!line.startsWith('data: ')) return line;
-  const payload = line.slice('data: '.length).trim();
-  if (payload === '[DONE]') return line;
-
-  let chunk: any;
-  try {
-    chunk = JSON.parse(payload);
-  } catch {
-    return line; // 解析失败原样透传
-  }
-
-  if (!Array.isArray(chunk.choices)) return line;
-
-  const filteredChoices = chunk.choices
-    .map((choice: any) => {
-      if (!choice.delta) return choice;
-      const { reasoning_content, ...cleanDelta } = choice.delta;
-      return { ...choice, delta: cleanDelta };
-    })
-    // 丢弃 delta 为空且没有 finish_reason 的 chunk（原本只含 reasoning_content）
-    .filter((choice: any) => {
-      if (choice.finish_reason) return true;
-      const delta = choice.delta || {};
-      return Object.keys(delta).length > 0;
-    });
-
-  if (filteredChoices.length === 0) return ''; // 整个 chunk 都是 reasoning，丢弃
-
-  return 'data: ' + JSON.stringify({ ...chunk, choices: filteredChoices });
-}
-
-function getProxyAgent(config: GatewayConfig): any | undefined {
-  const proxyUrl = (config.higpt.proxyUrl || '').trim();
+function getProxyAgent(upstream: Upstream): any | undefined {
+  const proxyUrl = (upstream.proxyUrl || '').trim();
   if (!proxyUrl) return undefined;
 
   if (proxyUrl.startsWith('socks')) {
@@ -258,10 +173,10 @@ function getProxyAgent(config: GatewayConfig): any | undefined {
   throw new Error(`Unsupported proxyUrl: ${proxyUrl}`);
 }
 
-function buildAxiosConfig(config: GatewayConfig): Pick<AxiosRequestConfig, 'timeout' | 'httpAgent' | 'httpsAgent' | 'proxy'> {
-  const agent = getProxyAgent(config);
+function buildAxiosConfig(upstream: Upstream): Pick<AxiosRequestConfig, 'timeout' | 'httpAgent' | 'httpsAgent' | 'proxy'> {
+  const agent = getProxyAgent(upstream);
   return {
-    timeout: config.higpt.timeoutMs,
+    timeout: upstream.timeoutMs,
     httpAgent: agent,
     httpsAgent: agent,
     proxy: false,
@@ -371,11 +286,14 @@ async function forwardToXinference(
 
 type CreateAppOptions = {
   jsonBodyLimit?: string;
+  // 上游配置存储；不传则用 config.higpt + modelAliases 生成仅内存的存储（测试用）
+  store?: UpstreamStore;
 };
 
 export function createApp(config: GatewayConfig, options: CreateAppOptions = {}): express.Express {
   const app = express();
   const jsonLimit = options.jsonBodyLimit || JSON_BODY_LIMIT;
+  const store = options.store || UpstreamStore.inMemory(seedFromConfig(config));
 
   app.use(express.json({ limit: jsonLimit }));
   app.use((req: Request, res: Response, next: NextFunction) => {
@@ -386,18 +304,14 @@ export function createApp(config: GatewayConfig, options: CreateAppOptions = {})
 
   app.get('/health', (_req, res) => res.json({ ok: true }));
 
-  app.use('/v1', requireGatewayAuth(config.gatewayApiKey));
+  mountAdmin(app, { config, store });
+
+  app.use('/v1', requireGatewayAuth(store));
 
   app.get('/v1/models', (_req, res) => {
-    // 列出所有别名（含 -raw 变体）和对应的上游模型名
-    const ids = new Set<string>();
-    for (const alias of Object.keys(config.modelAliases)) {
-      ids.add(alias);           // e.g. "higpt"
-      ids.add(`${alias}-raw`);  // e.g. "higpt-raw"
-    }
-    for (const v of Object.values(config.modelAliases)) {
-      ids.add(v);               // e.g. "qwen3-5-397b"
-    }
+    // 列出可用模型名和对应的上游模型名
+    // 每次请求读取最新上游配置（管理页保存后立即生效）
+    const ids = new Set<string>(store.listModelIds());
     // 加入 xinference 的 embedding / rerank 模型
     if (config.xinference) {
       for (const m of config.xinference.embeddingModels || []) ids.add(m);
@@ -465,39 +379,33 @@ export function createApp(config: GatewayConfig, options: CreateAppOptions = {})
       }, getRequestId(req));
     }
 
-    const { upstreamModel, rawMode } = resolveModel(config, String(body.model));
-    const isStream = body.stream === true;
-
-    // 拒绝未知模型
-    const knownModels = new Set([
-      ...Object.keys(config.modelAliases),
-      ...Object.values(config.modelAliases),
-    ]);
-    const baseModelName = String(body.model).replace(/-raw$/, '');
-    if (!knownModels.has(baseModelName) && !knownModels.has(upstreamModel)) {
+    // 按模型路由选上游（每个请求读最新配置，管理页保存后立即生效）
+    const resolved = store.resolve(String(body.model));
+    if (!resolved) {
       sendOpenAIError(res, 400,
-        `Unknown model: ${body.model}. Available: ${[...Object.keys(config.modelAliases)].join(', ')}`,
+        `Unknown model: ${body.model}. Available: ${store.availableNames().join(', ')}`,
         'invalid_request_error');
       return;
     }
+    const { upstream, route, upstreamModel } = resolved;
+    const isStream = body.stream === true;
+
+    // 思考开关：把各家常见写法（enable_thinking / thinking.type / reasoning / reasoning_effort / thinking_budget 等）
+    // 统一成上游认的 chat_template_kwargs.enable_thinking；都没传时用模型路由的“默认思考”。见 thinking.ts。
+    let normalized;
+    try {
+      normalized = normalizeThinking(body, route.thinking);
+    } catch (e) {
+      if (e instanceof ThinkingParamError) {
+        sendOpenAIError(res, 400, e.message, 'invalid_request_error');
+        return;
+      }
+      throw e;
+    }
+    res.setHeader('x-gateway-thinking', `${normalized.thinking ? 'on' : 'off'};source=${normalized.source}`);
 
     // 构建上游请求体
-    let upstreamBody = { ...body, model: upstreamModel };
-
-    // DeepSeek 模型自动添加 chat_template_kwargs
-    if (upstreamModel.includes('deepseek')) {
-      if (!upstreamBody.chat_template_kwargs) {
-        upstreamBody.chat_template_kwargs = { thinking: false };
-      }
-    }
-
-    // Qwen 系列：非 raw 模式自动关闭推理（enable_thinking:false）
-    // 避免思考过程占满 max_tokens 导致 content 为空；qwen-raw（rawMode）保留推理
-    if (!rawMode && upstreamModel.includes('qwen')) {
-      if (!upstreamBody.chat_template_kwargs) {
-        upstreamBody.chat_template_kwargs = { enable_thinking: false };
-      }
-    }
+    let upstreamBody: any = { ...normalized.body, model: upstreamModel };
 
     // 所有模型：检查请求体大小，过大则自动截断历史消息
     let bodySize = Buffer.byteLength(JSON.stringify(upstreamBody), 'utf8');
@@ -530,15 +438,15 @@ export function createApp(config: GatewayConfig, options: CreateAppOptions = {})
         model: upstreamModel,
       }, getRequestId(req));
     }
-    const upstreamUrl = buildUpstreamUrl(config, '/chat/completions');
+    const upstreamUrl = buildUpstreamUrl(upstream, '/chat/completions');
     const startedAt = Date.now();
 
     try {
       const upstreamRes = await axiosWithRetry(
         () => axios.post(upstreamUrl, upstreamBody, {
-          ...buildAxiosConfig(config),
+          ...buildAxiosConfig(upstream),
           headers: {
-            authorization: `Bearer ${config.higpt.apiKey}`,
+            ...(upstream.apiKey ? { authorization: `Bearer ${upstream.apiKey}` } : {}),
             'content-type': 'application/json',
           },
           responseType: isStream ? 'stream' : 'json',
@@ -559,6 +467,7 @@ export function createApp(config: GatewayConfig, options: CreateAppOptions = {})
           url: safeUrl,
           stream: isStream,
           model: body.model,
+          upstreamId: upstream.id,
           upstreamModel,
         }, requestId);
       }
@@ -580,63 +489,22 @@ export function createApp(config: GatewayConfig, options: CreateAppOptions = {})
             }
           }, 5000);
 
-          if (rawMode) {
-            // raw 模式直接透传
-            upstreamRes.data.on('data', () => {
-              firstChunkReceived = true;
-              clearInterval(heartbeatTimer);
-            });
-            upstreamRes.data.on('end', () => {
-              clearInterval(heartbeatTimer);
-            });
-            upstreamRes.data.on('error', () => {
-              clearInterval(heartbeatTimer);
-            });
-            upstreamRes.data.pipe(res);
-          } else {
-            // 标准模式：过滤 reasoning_content chunk
-            let buffer = '';
-            upstreamRes.data.on('data', (chunk: Buffer) => {
-              firstChunkReceived = true;
-              clearInterval(heartbeatTimer);
-              buffer += chunk.toString();
-              const lines = buffer.split('\n');
-              // 最后一个元素可能不完整，留在 buffer 里
-              buffer = lines.pop() || '';
-              for (const line of lines) {
-                const trimmed = line.trim();
-                if (!trimmed) {
-                  res.write('\n');
-                  continue;
-                }
-                const filtered = filterStreamChunk(trimmed);
-                if (filtered) {
-                  res.write(filtered + '\n');
-                }
-              }
-            });
-            upstreamRes.data.on('end', () => {
-              clearInterval(heartbeatTimer);
-              // 处理 buffer 中剩余内容
-              if (buffer.trim()) {
-                const filtered = filterStreamChunk(buffer.trim());
-                if (filtered) {
-                  res.write(filtered + '\n');
-                }
-              }
-              res.end();
-            });
-            upstreamRes.data.on('error', () => {
-              clearInterval(heartbeatTimer);
-              res.end();
-            });
-          }
+          // 上游响应原样透传
+          upstreamRes.data.on('data', () => {
+            firstChunkReceived = true;
+            clearInterval(heartbeatTimer);
+          });
+          upstreamRes.data.on('end', () => {
+            clearInterval(heartbeatTimer);
+          });
+          upstreamRes.data.on('error', () => {
+            clearInterval(heartbeatTimer);
+            if (!res.writableEnded) res.end();
+          });
+          upstreamRes.data.pipe(res);
         } else {
-          // 非流式响应
-          const responseData = rawMode
-            ? upstreamRes.data
-            : stripReasoningContent(upstreamRes.data);
-          res.status(upstreamRes.status).json(responseData);
+          // 非流式响应原样透传
+          res.status(upstreamRes.status).json(upstreamRes.data);
         }
         return;
       }
@@ -644,7 +512,7 @@ export function createApp(config: GatewayConfig, options: CreateAppOptions = {})
       // 上游返回错误状态码
       const durationMs = Date.now() - startedAt;
       const requestId = getRequestId(req);
-      const safeProxy = config.higpt.proxyUrl ? redact(config.higpt.proxyUrl) : '';
+      const safeProxy = upstream.proxyUrl ? redact(upstream.proxyUrl) : '';
       const safeUrl = toSafeUrl(upstreamUrl);
       const errBodySize = Buffer.byteLength(JSON.stringify(upstreamBody), 'utf8');
       
@@ -656,6 +524,7 @@ export function createApp(config: GatewayConfig, options: CreateAppOptions = {})
           proxy: safeProxy,
           stream: isStream,
           model: body.model,
+          upstreamId: upstream.id,
           upstreamModel,
           bodyBytes: errBodySize,
         }, requestId);
@@ -670,6 +539,7 @@ export function createApp(config: GatewayConfig, options: CreateAppOptions = {})
         proxy: safeProxy,
         stream: isStream,
         model: body.model,
+        upstreamId: upstream.id,
         upstreamModel,
         bodyBytes: errBodySize,
       }, requestId);
@@ -678,7 +548,7 @@ export function createApp(config: GatewayConfig, options: CreateAppOptions = {})
       const e = err as AxiosError;
       const durationMs = Date.now() - startedAt;
       const requestId = getRequestId(req);
-      const safeProxy = config.higpt.proxyUrl ? redact(config.higpt.proxyUrl) : '';
+      const safeProxy = upstream.proxyUrl ? redact(upstream.proxyUrl) : '';
       const safeUrl = toSafeUrl(upstreamUrl);
       const catchBodySize = Buffer.byteLength(JSON.stringify(upstreamBody), 'utf8');
       
@@ -689,6 +559,7 @@ export function createApp(config: GatewayConfig, options: CreateAppOptions = {})
           proxy: safeProxy,
           stream: isStream,
           model: body.model,
+          upstreamId: upstream.id,
           upstreamModel,
           bodyBytes: catchBodySize,
           errorCode: e.code,
@@ -704,6 +575,7 @@ export function createApp(config: GatewayConfig, options: CreateAppOptions = {})
         proxy: safeProxy,
         stream: isStream,
         model: body.model,
+        upstreamId: upstream.id,
         upstreamModel,
         bodyBytes: catchBodySize,
         errorCode: e.code,
@@ -735,14 +607,23 @@ export function createApp(config: GatewayConfig, options: CreateAppOptions = {})
 function start(): void {
   const config = loadConfig();
   validateConfig(config);
-  const app = createApp(config);
+  const upstreamsFile = path.resolve(process.cwd(), config.upstreamsFile || 'config/upstreams.json');
+  const { store, seeded } = UpstreamStore.open(upstreamsFile, config);
+  if (!store.get().apiKeys.some(k => k.enabled)) {
+    throw new Error('没有可用的网关 API Key：请在 yaml 设置 gatewayApiKey（首次导入），或在 upstreams.json 的 apiKeys 中启用至少一个');
+  }
+  const app = createApp(config, { store });
+  const state = store.get();
 
   app.listen(config.port, () => {
     logger.info('server_started', {
       port: config.port,
-      upstreamBaseUrl: redact(config.higpt.baseUrl),
-      proxyConfigured: !!config.higpt.proxyUrl,
-      timeoutMs: config.higpt.timeoutMs,
+      upstreamsFile,
+      upstreamsSeededFromYaml: seeded,
+      upstreams: state.upstreams.map(u => ({ id: u.id, baseUrl: redact(u.baseUrl), enabled: u.enabled })),
+      models: state.models.length,
+      gatewayApiKeys: state.apiKeys.filter(k => k.enabled).length,
+      adminEnabled: !!(config.admin?.password || '').trim(),
     }, undefined, `HiGPT OpenAI gateway listening on :${config.port}`);
   });
 }

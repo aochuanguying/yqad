@@ -51,6 +51,9 @@ Thumbs.db
 
 # Config overrides
 config/local.yaml
+**/config/local.yaml
+**/config/upstreams.json
+**/config/upstreams.json.*
 
 # Temporary files
 *.tmp

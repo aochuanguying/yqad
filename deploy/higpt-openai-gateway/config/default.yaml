@@ -1,5 +1,15 @@
 port: 3000
-gatewayApiKey: ""
+gatewayApiKey: ""   # 仅首次启动导入为网关 Key；之后在管理页 /admin/ 管理（可多个、可更换）
+# ===== 管理页 /admin/（上游地址、user_key、API Key、模型路由在线配置，保存即生效） =====
+# 未设置 admin.password 时管理页关闭。密码放 local.yaml 或环境变量 ADMIN_PASSWORD，勿提交。
+# admin:
+#   password: ""
+#   allowedCidrs: [127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16]  # 默认值，仅内网可打开
+#   sessionTtlMinutes: 480
+# 上游配置文件（管理页读写，含密钥，权限 600）。不存在时用下面 higpt + modelAliases 生成；之后以该文件为准，
+# 再改 higpt/modelAliases 不会生效（除非删除该文件重新生成）。
+# upstreamsFile: config/upstreams.json
+# 旧版单上游配置：仅用于首次生成 upstreams.json
 higpt:
   baseUrl: https://inner-apisix.hisense.com/higpt-new/v1
   apiKey: ""
@@ -13,9 +23,7 @@ maxRequestBodyKB: 4096
 modelAliases:
   # 主要别名
   qwen: qwen3-5-397b
-  qwen-vip: qwen3-5-397b-vip
   glm: histar-ultra
-  # *-raw 由网关自动推导（-raw 后缀），无需在此单独声明
 
 # Xinference 上游（embedding / rerank）。敏感字段（username/password）放 local.yaml，勿提交。
 # 未配置则 /v1/embeddings 与 /v1/rerank 返回 503。
